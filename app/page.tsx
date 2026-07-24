@@ -6,7 +6,7 @@ const workflow = [
   {
     number: "01",
     title: "Publiez une version",
-    text: "Revaloop fige ce que le client doit tester et prépare un accès privé.",
+    text: "Revaloop associe les consignes et les retours à une version précise.",
   },
   {
     number: "02",
@@ -68,7 +68,7 @@ export default function Home() {
         <div className="hero-copy">
           <p className="eyebrow">
             <span className="live-dot" aria-hidden="true" />
-            Recette client, enfin fluide
+            Prototype interactif open source
           </p>
           <h1>
             Votre client ne veut pas
@@ -77,7 +77,7 @@ export default function Home() {
           <p className="hero-lead">
             Il veut savoir quoi tester, vous montrer précisément ce qui bloque
             et valider la bonne version. Revaloop rassemble tout cela dans un
-            lien privé.
+            lien de revue dédié.
           </p>
           <div className="hero-actions">
             <Link className="button button-primary" href="/dashboard">
@@ -92,9 +92,9 @@ export default function Home() {
             </Link>
           </div>
           <div className="hero-proof">
-            <span>Sans compte client</span>
-            <span>Versionné</span>
-            <span>Auto-hébergeable</span>
+            <span>Portail de revue fonctionnel</span>
+            <span>Données synthétiques</span>
+            <span>Tunnel sur la feuille de route</span>
           </div>
         </div>
 
@@ -109,7 +109,7 @@ export default function Home() {
               <span aria-hidden="true">⌁</span>
               review.revaloop.dev/maison-matisse
             </div>
-            <span className="browser-secure">Privé</span>
+            <span className="browser-secure">Démo</span>
           </div>
           <div className="product-shell">
             <aside className="product-sidebar">
@@ -188,8 +188,8 @@ export default function Home() {
             <p className="eyebrow">Le contexte suit le retour</p>
             <h2>Plus jamais « ça ne marche pas » sans savoir où regarder.</h2>
             <p>
-              Position, page, type d’appareil, version et discussion restent
-              attachés au même retour.
+              Position, page, type d’appareil, version et statut restent
+              associés au même retour.
             </p>
           </div>
           <div className="annotation-demo">
@@ -239,17 +239,21 @@ export default function Home() {
 
       <section className="trust-section" id="confiance">
         <div className="trust-copy">
-          <p className="eyebrow eyebrow-light">Privé par conception</p>
-          <h2>Le projet reste chez vous. Le contrôle aussi.</h2>
+          <p className="eyebrow eyebrow-light">Confidentialité documentée</p>
+          <h2>Conçu pour rendre le contrôle vérifiable.</h2>
           <p>
-            Revaloop sépare la version de test, ses données et ses accès. Les
-            liens expirent, les sessions se révoquent et l’auto-hébergement
-            reste un chemin de première classe.
+            Cette pré-alpha utilise uniquement des données synthétiques. Le
+            modèle cible prévoit des liens expirants, des sessions révocables et
+            un chemin d’auto-hébergement ; ces garanties restent documentées
+            comme futures tant qu’elles ne sont pas testées de bout en bout.
           </p>
-          <Link className="text-link text-link-light" href="/dashboard">
+          <a
+            className="text-link text-link-light"
+            href="https://github.com/rfielbal/Revaloop/blob/main/docs/THREAT_MODEL.md"
+          >
             Voir le modèle de sécurité
             <span aria-hidden="true">↗</span>
-          </Link>
+          </a>
         </div>
         <div className="trust-layers" aria-label="Couches de confiance">
           <div>
@@ -259,13 +263,13 @@ export default function Home() {
           </div>
           <div>
             <span>02</span>
-            <strong>Accès limité et révocable</strong>
-            <small>Un client, une version, une durée</small>
+            <strong>Accès privé en conception</strong>
+            <small>Sessions, rotation et révocation prévues avant la bêta</small>
           </div>
           <div>
             <span>03</span>
-            <strong>Déploiement au choix</strong>
-            <small>Cloud managé ou infrastructure privée</small>
+            <strong>Architecture ouverte</strong>
+            <small>Portail présent, agent et relais encore à construire</small>
           </div>
         </div>
       </section>
@@ -277,9 +281,9 @@ export default function Home() {
         </div>
         <div className="opensource-copy">
           <p>
-            L’agent, le protocole et le portail sont conçus ouvertement. La
-            feuille de route distingue les fonctions disponibles de celles qui
-            exigent encore un durcissement.
+            Le portail de revue est déjà inspectable. L’agent local et le relais
+            sont spécifiés dans la feuille de route, qui distingue les fonctions
+            disponibles de celles qui exigent encore un durcissement.
           </p>
           <Link className="button button-ink" href="/dashboard">
             Découvrir le prototype

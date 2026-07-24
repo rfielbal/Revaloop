@@ -2,6 +2,8 @@ import {
   createDecision,
   createFeedback,
   getReviewByToken,
+  ReviewConflictError,
+  ReviewExpiredError,
 } from "../../../../db/repository";
 import type {
   FeedbackPriority,
@@ -26,6 +28,30 @@ function cleanText(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
+function repositoryErrorResponse(error: unknown) {
+  if (error instanceof ReviewExpiredError) {
+    return Response.json(
+      { error: error.message },
+      {
+        status: error.status,
+        headers: { "Cache-Control": "no-store" },
+      },
+    );
+  }
+
+  if (error instanceof ReviewConflictError) {
+    return Response.json(
+      { error: error.message },
+      {
+        status: error.status,
+        headers: { "Cache-Control": "no-store" },
+      },
+    );
+  }
+
+  return null;
+}
+
 export async function GET(_request: Request, context: RouteContext) {
   const { token } = await context.params;
 
@@ -43,6 +69,12 @@ export async function GET(_request: Request, context: RouteContext) {
       },
     });
   } catch (error) {
+    const errorResponse = repositoryErrorResponse(error);
+
+    if (errorResponse) {
+      return errorResponse;
+    }
+
     console.error("Impossible de charger la recette", error);
     return Response.json(
       { error: "Cette recette est momentanément indisponible." },
@@ -122,6 +154,12 @@ export async function POST(request: Request, context: RouteContext) {
 
     return Response.json({ error: "Action inconnue." }, { status: 400 });
   } catch (error) {
+    const errorResponse = repositoryErrorResponse(error);
+
+    if (errorResponse) {
+      return errorResponse;
+    }
+
     console.error("Impossible d’enregistrer la recette", error);
     return Response.json(
       { error: "Le retour n’a pas pu être enregistré." },

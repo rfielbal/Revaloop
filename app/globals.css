@@ -1159,6 +1159,13 @@ textarea:focus-visible {
   color: #fff;
 }
 
+.workspace-nav-item:disabled,
+.add-project-button:disabled,
+.detail-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .nav-glyph {
   color: var(--lime);
   font-size: 15px;
@@ -2659,6 +2666,12 @@ textarea:focus-visible {
   transform: translateX(294px);
 }
 
+.review-sidepanel:not(.open) .review-panel-tabs,
+.review-sidepanel:not(.open) .brief-panel,
+.review-sidepanel:not(.open) .review-feedback-panel {
+  visibility: hidden;
+}
+
 .sidepanel-toggle {
   align-items: center;
   background: var(--ink);
@@ -3011,6 +3024,18 @@ textarea:focus-visible {
   margin: 0;
 }
 
+.client-review-actions {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.client-review-actions .button {
+  font-size: 9px;
+  min-height: 38px;
+  width: 100%;
+}
+
 .review-toolbar {
   align-items: center;
   background: var(--ink);
@@ -3095,6 +3120,11 @@ textarea:focus-visible {
   height: 27px;
   justify-content: center;
   width: 27px;
+}
+
+.composer-pin.general {
+  background: var(--violet-soft);
+  color: var(--violet);
 }
 
 .composer-heading strong {
@@ -3236,6 +3266,12 @@ textarea:focus-visible {
   transform: translateY(-1px);
 }
 
+.finish-choice:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
 .finish-choice > span {
   align-items: center;
   background: var(--violet-soft);
@@ -3271,6 +3307,17 @@ textarea:focus-visible {
   margin-bottom: 0 !important;
 }
 
+.finish-blocker {
+  background: #fff5d8;
+  border: 1px solid #f0dda4;
+  border-radius: 9px;
+  color: #725d2d !important;
+  font-size: 9px !important;
+  line-height: 1.5;
+  margin: 16px 0 0 !important;
+  padding: 10px 12px;
+}
+
 .review-toast {
   align-items: center;
   background: var(--surface);
@@ -3287,6 +3334,74 @@ textarea:focus-visible {
   padding: 9px 12px;
   position: fixed;
   z-index: 25;
+}
+
+.review-unavailable {
+  align-items: center;
+  background:
+    radial-gradient(circle at 20% 18%, rgba(223, 255, 79, 0.2), transparent 28%),
+    var(--paper);
+  display: flex;
+  flex-direction: column;
+  gap: 72px;
+  min-height: 100vh;
+  padding: 34px 24px;
+}
+
+.review-unavailable > a {
+  align-self: flex-start;
+}
+
+.review-unavailable > section {
+  background: var(--surface);
+  border: 1px solid var(--line-dark);
+  border-radius: 22px;
+  box-shadow: var(--shadow-lg);
+  max-width: 560px;
+  padding: 42px;
+  text-align: center;
+  width: 100%;
+}
+
+.review-unavailable > section > span {
+  align-items: center;
+  background: var(--violet-soft);
+  border-radius: 50%;
+  color: var(--violet);
+  display: inline-flex;
+  font-size: 24px;
+  height: 58px;
+  justify-content: center;
+  margin-bottom: 22px;
+  width: 58px;
+}
+
+.review-unavailable .eyebrow {
+  justify-content: center;
+}
+
+.review-unavailable h1 {
+  font-size: clamp(32px, 5vw, 52px);
+  letter-spacing: -0.055em;
+  margin: 18px 0 14px;
+}
+
+.review-unavailable section > p:not(.eyebrow) {
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.review-unavailable .review-unavailable-help {
+  border-top: 1px solid var(--line);
+  color: var(--ink-faint);
+  font-size: 11px;
+  margin: 24px 0 0;
+  padding-top: 20px;
+}
+
+.mobile-sidebar-backdrop {
+  display: none;
 }
 
 @media (max-width: 1180px) {
@@ -3639,7 +3754,77 @@ textarea:focus-visible {
   }
 
   .workspace-sidebar {
-    display: none;
+    align-items: stretch;
+    display: flex;
+    inset: 0 auto 0 0;
+    min-height: 100vh;
+    padding: 28px 18px 18px;
+    position: fixed;
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+    width: min(84vw, 290px);
+    z-index: 70;
+  }
+
+  .workspace-sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  .workspace-sidebar .brand strong,
+  .workspace-sidebar .nav-section-label,
+  .workspace-sidebar .workspace-nav-item,
+  .workspace-sidebar .project-nav-item,
+  .workspace-sidebar .add-project-button,
+  .workspace-sidebar .sidebar-profile > span:not(.avatar) {
+    display: flex;
+  }
+
+  .workspace-sidebar .workspace-nav-item {
+    display: grid;
+  }
+
+  .workspace-sidebar .project-nav-item {
+    display: grid;
+    margin-top: 0;
+  }
+
+  .workspace-sidebar .project-nav-item > span:last-child {
+    display: flex;
+  }
+
+  .workspace-sidebar .sidebar-profile {
+    display: grid;
+    justify-content: initial;
+    padding: 18px 7px 3px;
+  }
+
+  .workspace-sidebar > a {
+    padding: 0 11px;
+  }
+
+  .workspace-nav {
+    align-items: stretch;
+  }
+
+  .workspace-nav-item.active {
+    display: grid;
+    height: auto;
+    justify-content: initial;
+    padding: 0 11px;
+    width: auto;
+  }
+
+  .workspace-nav-item.active .nav-count {
+    display: flex;
+  }
+
+  .mobile-sidebar-backdrop {
+    background: rgba(23, 24, 20, 0.5);
+    border: 0;
+    display: block;
+    inset: 0;
+    position: fixed;
+    z-index: 65;
   }
 
   .workspace-main {
@@ -3797,7 +3982,7 @@ textarea:focus-visible {
 
   .review-sidepanel {
     bottom: 0;
-    height: 68%;
+    height: 58%;
     left: 0;
     position: fixed;
     right: 0;
@@ -3827,13 +4012,46 @@ textarea:focus-visible {
   }
 
   .review-toolbar button {
-    font-size: 0;
+    font-size: 9px;
+    gap: 5px;
     justify-content: center;
-    min-width: 42px;
+    min-width: 0;
+    padding: 0 8px;
   }
 
   .review-toolbar button span {
-    font-size: 13px;
+    font-size: 11px;
+  }
+
+  .brief-panel,
+  .review-feedback-panel {
+    padding: 18px 18px 86px;
+  }
+
+  .brief-intro p,
+  .client-feedback-detail > p {
+    font-size: 12px;
+  }
+
+  .brief-intro > div > span,
+  .demo-warning p,
+  .known-limits ul,
+  .client-feedback-list small,
+  .client-detail-meta small,
+  .client-status-note p {
+    font-size: 10px;
+  }
+
+  .test-points button strong,
+  .feedback-panel-heading strong,
+  .client-feedback-list strong {
+    font-size: 11px;
+  }
+
+  .test-points button small,
+  .feedback-panel-heading span,
+  .client-detail-meta strong {
+    font-size: 10px;
   }
 
   .review-toast {
@@ -3848,6 +4066,15 @@ textarea:focus-visible {
     max-height: calc(100vh - 80px);
     top: auto !important;
     width: calc(100% - 20px);
+  }
+
+  .review-unavailable {
+    gap: 48px;
+    padding: 26px 18px;
+  }
+
+  .review-unavailable > section {
+    padding: 32px 22px;
   }
 }
 

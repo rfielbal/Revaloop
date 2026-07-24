@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Brand } from "../components/brand";
 import {
   formatRelativeDate,
@@ -25,7 +31,7 @@ const statusAction: Record<
 > = {
   open: { label: "Prendre en charge", next: "in_progress" },
   in_progress: { label: "Prêt à revalider", next: "to_review" },
-  to_review: { label: "Marquer comme validé", next: "resolved" },
+  to_review: { label: "En attente de Claire", next: null },
   resolved: { label: "Retour validé", next: null },
 };
 
@@ -38,6 +44,32 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
+  if (event.key !== "Tab") {
+    return;
+  }
+
+  const focusable = Array.from(
+    event.currentTarget.querySelectorAll<HTMLElement>(
+      "button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])",
+    ),
+  );
+  const first = focusable[0];
+  const last = focusable.at(-1);
+
+  if (!first || !last) {
+    return;
+  }
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 export function DashboardClient({
   initialWorkspace,
 }: {
@@ -48,10 +80,12 @@ export function DashboardClient({
   const [activeStatus, setActiveStatus] = useState<FeedbackStatus | "all">("all");
   const [copied, setCopied] = useState(false);
   const [showReleaseDialog, setShowReleaseDialog] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [notice, setNotice] = useState(
     "Données de démonstration chargées localement.",
   );
+  const releaseButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +114,27 @@ export function DashboardClient({
     };
   }, []);
 
+  useEffect(() => {
+    if (!showReleaseDialog) {
+      return;
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setShowReleaseDialog(false);
+        window.requestAnimationFrame(() => releaseButtonRef.current?.focus());
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [showReleaseDialog]);
+
+  function closeReleaseDialog() {
+    setShowReleaseDialog(false);
+    window.requestAnimationFrame(() => releaseButtonRef.current?.focus());
+  }
+
   const filteredFeedback = useMemo(
     () =>
       activeStatus === "all"
@@ -89,7 +144,7 @@ export function DashboardClient({
   );
 
   const selected =
-    workspace.feedback.find((item) => item.id === selectedId) ??
+    filteredFeedback.find((item) => item.id === selectedId) ??
     filteredFeedback[0] ??
     null;
 
@@ -149,7 +204,10 @@ export function DashboardClient({
       const response = await fetch(`/api/feedback/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({
+          status: nextStatus,
+          reviewToken: workspace.release.shareToken,
+        }),
       });
 
       if (!response.ok) {
@@ -174,7 +232,7 @@ export function DashboardClient({
 
   return (
     <div className="workspace-page">
-      <aside className="workspace-sidebar">
+      <aside className={`workspace-sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}>
         <Link href="/" aria-label="Retour à l’accueil Revaloop">
           <Brand />
         </Link>
@@ -185,12 +243,22 @@ export function DashboardClient({
             <span className="nav-glyph">⌂</span>
             Vue d’ensemble
           </button>
-          <button className="workspace-nav-item" type="button">
+          <button
+            className="workspace-nav-item"
+            type="button"
+            disabled
+            title="Disponible dans une prochaine version"
+          >
             <span className="nav-glyph">◎</span>
             Tous les retours
             <span className="nav-count">{counts.open + counts.to_review}</span>
           </button>
-          <button className="workspace-nav-item" type="button">
+          <button
+            className="workspace-nav-item"
+            type="button"
+            disabled
+            title="Disponible dans une prochaine version"
+          >
             <span className="nav-glyph">⌁</span>
             Activité
           </button>
@@ -210,7 +278,12 @@ export function DashboardClient({
               </small>
             </span>
           </button>
-          <button className="add-project-button" type="button">
+          <button
+            className="add-project-button"
+            type="button"
+            disabled
+            title="La création de projet arrive dans le prochain jalon"
+          >
             <span>＋</span>
             Nouveau projet
           </button>
@@ -232,7 +305,9 @@ export function DashboardClient({
             <button
               className="mobile-menu-button"
               type="button"
-              aria-label="Ouvrir le menu"
+              aria-label={mobileMenuOpen ? "Fermer le menu" : "Ouvrir le menu"}
+              aria-expanded={mobileMenuOpen}
+              onClick={() => setMobileMenuOpen((value) => !value)}
             >
               ☰
             </button>
@@ -254,9 +329,10 @@ export function DashboardClient({
               onClick={copyShareLink}
             >
               <span aria-hidden="true">⌁</span>
-              {copied ? "Lien copié" : "Copier le lien"}
+              {copied ? "Lien copié" : "Copier le lien démo"}
             </button>
             <button
+              ref={releaseButtonRef}
               className="button button-primary button-dashboard"
               type="button"
               onClick={() => setShowReleaseDialog(true)}
@@ -287,7 +363,13 @@ export function DashboardClient({
             </span>
             <span>
               <small>Expiration</small>
-              <strong>6 août</strong>
+            <strong>
+              {new Intl.DateTimeFormat("fr-FR", {
+                day: "numeric",
+                month: "short",
+                timeZone: "Europe/Paris",
+              }).format(new Date(workspace.release.expiresAt))}
+            </strong>
             </span>
             <Link
               className="open-review-link"
@@ -345,6 +427,7 @@ export function DashboardClient({
                 <button
                   className={activeStatus === "all" ? "active" : ""}
                   type="button"
+                  aria-pressed={activeStatus === "all"}
                   onClick={() => setActiveStatus("all")}
                 >
                   Tous <span>{workspace.feedback.length}</span>
@@ -354,6 +437,7 @@ export function DashboardClient({
                     className={activeStatus === status ? "active" : ""}
                     key={status}
                     type="button"
+                    aria-pressed={activeStatus === status}
                     onClick={() => setActiveStatus(status)}
                   >
                     {statusLabels[status]} <span>{counts[status]}</span>
@@ -362,7 +446,7 @@ export function DashboardClient({
               </div>
             </div>
 
-            <div className="feedback-table" role="list">
+            <div className="feedback-table">
               <div className="feedback-table-head" aria-hidden="true">
                 <span>Retour</span>
                 <span>Type</span>
@@ -378,7 +462,6 @@ export function DashboardClient({
                     key={item.id}
                     type="button"
                     onClick={() => setSelectedId(item.id)}
-                    role="listitem"
                   >
                     <span className="feedback-main-cell">
                       <i className={`priority-marker priority-${item.priority}`} />
@@ -416,7 +499,12 @@ export function DashboardClient({
                       {statusLabels[selected.status]}
                     </span>
                   </div>
-                  <button type="button" aria-label="Plus d’options">
+                  <button
+                    type="button"
+                    aria-label="Plus d’options"
+                    disabled
+                    title="Les actions avancées arrivent dans un prochain jalon"
+                  >
                     •••
                   </button>
                 </div>
@@ -481,7 +569,12 @@ export function DashboardClient({
                       ? "Enregistrement…"
                       : statusAction[selected.status].label}
                   </button>
-                  <button className="button button-ghost" type="button">
+                  <button
+                    className="button button-ghost"
+                    type="button"
+                    disabled
+                    title="Les fils de discussion arrivent dans un prochain jalon"
+                  >
                     Répondre à Claire
                   </button>
                 </div>
@@ -507,7 +600,7 @@ export function DashboardClient({
           role="presentation"
           onMouseDown={(event) => {
             if (event.currentTarget === event.target) {
-              setShowReleaseDialog(false);
+              closeReleaseDialog();
             }
           }}
         >
@@ -516,11 +609,13 @@ export function DashboardClient({
             role="dialog"
             aria-modal="true"
             aria-labelledby="release-dialog-title"
+            onKeyDown={trapDialogFocus}
           >
             <button
               className="dialog-close"
               type="button"
-              onClick={() => setShowReleaseDialog(false)}
+              autoFocus
+              onClick={closeReleaseDialog}
               aria-label="Fermer"
             >
               ×
@@ -529,8 +624,9 @@ export function DashboardClient({
             <p className="eyebrow">Nouvelle version</p>
             <h2 id="release-dialog-title">Publiez depuis votre terminal.</h2>
             <p>
-              Le futur agent Revaloop identifiera votre application locale,
-              créera une version isolée et conservera le même lien client.
+              Cette commande décrit le parcours cible. L’agent réseau et le
+              relais ne sont pas encore livrés dans cette pré-alpha ; le portail
+              de revue, lui, est déjà fonctionnel.
             </p>
             <div className="command-block">
               <span>$</span>
@@ -557,12 +653,20 @@ export function DashboardClient({
             <button
               className="button button-ink button-full"
               type="button"
-              onClick={() => setShowReleaseDialog(false)}
+              onClick={closeReleaseDialog}
             >
               J’ai compris
             </button>
           </section>
         </div>
+      )}
+      {mobileMenuOpen && (
+        <button
+          className="mobile-sidebar-backdrop"
+          type="button"
+          aria-label="Fermer le menu"
+          onClick={() => setMobileMenuOpen(false)}
+        />
       )}
     </div>
   );

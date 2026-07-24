@@ -23,7 +23,12 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = /^[a-z0-9.-]+(?::\d+)?$/i.test(candidateHost)
     ? candidateHost
     : "revaloop.dev";
-  const rawProtocol = requestHeaders.get("x-forwarded-proto") ?? "https";
+  const localHost =
+    host.startsWith("localhost") ||
+    host.startsWith("127.0.0.1") ||
+    host.startsWith("[::1]");
+  const rawProtocol =
+    requestHeaders.get("x-forwarded-proto") ?? (localHost ? "http" : "https");
   const protocol = rawProtocol === "http" || rawProtocol === "https"
     ? rawProtocol
     : "https";
@@ -37,7 +42,7 @@ export async function generateMetadata(): Promise<Metadata> {
       template: "%s · Revaloop",
     },
     description:
-      "La plateforme open source de recette client : partagez une version privée, recueillez des retours contextualisés et faites-la valider.",
+      "La plateforme open source de recette client : partagez une version dédiée, recueillez des retours contextualisés et faites-la valider.",
     icons: {
       icon: "/favicon.png",
       shortcut: "/favicon.png",
@@ -45,7 +50,7 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       title: "Revaloop — Du lien de test à la validation",
       description:
-        "Une version privée, des retours contextualisés, une validation claire.",
+        "Une version dédiée, des retours contextualisés, une validation claire.",
       type: "website",
       locale: "fr_FR",
       images: [
@@ -61,7 +66,7 @@ export async function generateMetadata(): Promise<Metadata> {
       card: "summary_large_image",
       title: "Revaloop — Du lien de test à la validation",
       description:
-        "Une version privée, des retours contextualisés, une validation claire.",
+        "Une version dédiée, des retours contextualisés, une validation claire.",
       images: [socialImage],
     },
   };

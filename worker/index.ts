@@ -46,6 +46,8 @@ const worker = {
     securedResponse.headers.set("X-Content-Type-Options", "nosniff");
     securedResponse.headers.set("Referrer-Policy", "no-referrer");
     securedResponse.headers.set("X-Frame-Options", "DENY");
+    securedResponse.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+    securedResponse.headers.set("Cross-Origin-Resource-Policy", "same-origin");
     securedResponse.headers.set(
       "Permissions-Policy",
       "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
@@ -54,6 +56,31 @@ const worker = {
       "Content-Security-Policy",
       "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:",
     );
+
+    if (
+      url.pathname.startsWith("/review/") ||
+      url.pathname.startsWith("/api/review/") ||
+      url.pathname.startsWith("/api/feedback/")
+    ) {
+      securedResponse.headers.set(
+        "Cache-Control",
+        "private, no-store, max-age=0",
+      );
+    }
+
+    if (url.pathname.startsWith("/review/")) {
+      securedResponse.headers.set(
+        "X-Robots-Tag",
+        "noindex, nofollow, noarchive, nosnippet",
+      );
+    }
+
+    if (url.protocol === "https:") {
+      securedResponse.headers.set(
+        "Strict-Transport-Security",
+        "max-age=31536000; includeSubDomains",
+      );
+    }
 
     return securedResponse;
   },

@@ -88,7 +88,7 @@ export const demoRelease: Release = {
   status: "changes_requested",
   shareToken: DEMO_TOKEN,
   createdAt: "2026-07-23T14:20:00.000Z",
-  expiresAt: "2026-08-06T22:00:00.000Z",
+  expiresAt: "2027-08-06T22:00:00.000Z",
 };
 
 export const demoFeedback: FeedbackItem[] = [
@@ -182,5 +182,6 @@ export function formatRelativeDate(value: string) {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Europe/Paris",
   }).format(date);
 }

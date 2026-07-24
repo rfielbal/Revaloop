@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   useEffect,
   useMemo,
@@ -19,15 +20,17 @@ import {
   type ReviewPayload,
   typeLabels,
 } from "../../../lib/revaloop";
+import { ReviewUnavailable } from "./review-unavailable";
 
 type Viewport = "desktop" | "tablet" | "mobile";
 type ReviewMode = "browse" | "comment";
 
 type ComposerPosition = {
-  x: number;
-  y: number;
+  x: number | null;
+  y: number | null;
   clientX: number;
   clientY: number;
+  general: boolean;
 };
 
 const testPoints = [
@@ -51,6 +54,32 @@ const viewportLabels: Record<Viewport, string> = {
   mobile: "Mobile · 390 × 844",
 };
 
+function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
+  if (event.key !== "Tab") {
+    return;
+  }
+
+  const focusable = Array.from(
+    event.currentTarget.querySelectorAll<HTMLElement>(
+      "button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])",
+    ),
+  );
+  const first = focusable[0];
+  const last = focusable.at(-1);
+
+  if (!first || !last) {
+    return;
+  }
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 export function ReviewClient({
   token,
   initialReview,
@@ -63,7 +92,8 @@ export function ReviewClient({
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
   const [panelTab, setPanelTab] = useState<"brief" | "feedback">("brief");
-  const [completedPoints, setCompletedPoints] = useState<number[]>([0]);
+  const [completedPoints, setCompletedPoints] = useState<number[]>([]);
+  const [sessionFeedbackCount, setSessionFeedbackCount] = useState(0);
   const [composer, setComposer] = useState<ComposerPosition | null>(null);
   const [selectedFeedback, setSelectedFeedback] = useState<FeedbackItem | null>(
     null,
@@ -74,6 +104,10 @@ export function ReviewClient({
     "Vous testez une démonstration avec des données fictives.",
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [accessError, setAccessError] = useState<{
+    title: string;
+    message: string;
+  } | null>(null);
   const [form, setForm] = useState<{
     type: FeedbackType;
     priority: FeedbackPriority;
@@ -86,6 +120,7 @@ export function ReviewClient({
     body: "",
   });
   const previewRef = useRef<HTMLDivElement>(null);
+  const finishButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +128,14 @@ export function ReviewClient({
     fetch(`/api/review/${encodeURIComponent(token)}`, { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) {
-          throw new Error("review unavailable");
+          const payload = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          const error = new Error(
+            payload?.error ?? "Cette recette est indisponible.",
+          );
+          error.name = response.status === 410 ? "ExpiredReview" : "MissingReview";
+          throw error;
         }
         return (await response.json()) as ReviewPayload;
       })
@@ -102,11 +144,15 @@ export function ReviewClient({
           setReview(payload);
         }
       })
-      .catch(() => {
+      .catch((error: Error) => {
         if (!cancelled) {
-          setToast(
-            "Mode démonstration : la version reste testable, mais les nouveaux retours peuvent ne pas être conservés.",
-          );
+          setAccessError({
+            title:
+              error.name === "ExpiredReview"
+                ? "Ce lien a expiré"
+                : "Cette version n’est pas disponible",
+            message: error.message,
+          });
         }
       });
 
@@ -115,14 +161,73 @@ export function ReviewClient({
     };
   }, [token]);
 
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (window.matchMedia("(max-width: 720px)").matches) {
+        setSidePanelOpen(false);
+      }
+
+      const focus = new URLSearchParams(window.location.search).get("focus");
+      if (!focus) {
+        return;
+      }
+
+      const focusedFeedback = initialReview.feedback.find(
+        (item) => String(item.sequence) === focus,
+      );
+      if (focusedFeedback) {
+        setSelectedFeedback(focusedFeedback);
+        setPanelTab("feedback");
+        setSidePanelOpen(true);
+        setViewport(
+          focusedFeedback.viewport.toLowerCase().startsWith("mobile")
+            ? "mobile"
+            : focusedFeedback.viewport.toLowerCase().startsWith("tablette")
+              ? "tablet"
+              : "desktop",
+        );
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [initialReview.feedback]);
+
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      if (showFinishDialog) {
+        setShowFinishDialog(false);
+        finishButtonRef.current?.focus();
+      } else if (composer) {
+        setComposer(null);
+      } else if (showReservation) {
+        setShowReservation(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [composer, showFinishDialog, showReservation]);
+
   const visiblePins = useMemo(
     () =>
       review.feedback.filter(
         (item) =>
           item.positionX !== null &&
           item.positionY !== null &&
-          item.status !== "resolved",
+          item.status !== "resolved" &&
+          item.viewport.toLowerCase().startsWith(
+            viewport === "tablet" ? "tablette" : viewport,
+          ),
       ),
+    [review.feedback, viewport],
+  );
+
+  const unresolvedFeedback = useMemo(
+    () => review.feedback.filter((item) => item.status !== "resolved"),
     [review.feedback],
   );
 
@@ -133,13 +238,12 @@ export function ReviewClient({
 
     const target = event.target as HTMLElement;
 
-    if (
-      target.closest("button") ||
-      target.closest("a") ||
-      target.closest(".review-pin")
-    ) {
+    if (target.closest(".review-pin")) {
       return;
     }
+
+    event.preventDefault();
+    event.stopPropagation();
 
     const bounds = previewRef.current.getBoundingClientRect();
     const x = ((event.clientX - bounds.left) / bounds.width) * 100;
@@ -150,6 +254,7 @@ export function ReviewClient({
       y: Math.min(96, Math.max(4, y)),
       clientX: event.clientX,
       clientY: event.clientY,
+      general: false,
     });
     setSelectedFeedback(null);
   }
@@ -165,10 +270,11 @@ export function ReviewClient({
   function openGeneralFeedback() {
     setMode("comment");
     setComposer({
-      x: 50,
-      y: 38,
+      x: null,
+      y: null,
       clientX: window.innerWidth / 2,
       clientY: window.innerHeight / 2,
+      general: true,
     });
   }
 
@@ -190,7 +296,7 @@ export function ReviewClient({
           ...form,
           authorName: "Claire Dubois",
           pagePath: "/",
-          viewport: viewportLabels[viewport],
+          viewport: `${viewportLabels[viewport]} simulé · navigateur ${window.innerWidth} × ${window.innerHeight}`,
           positionX: composer.x,
           positionY: composer.y,
         }),
@@ -207,13 +313,14 @@ export function ReviewClient({
         feedback: [...current.feedback, item],
       }));
       setComposer(null);
+      setSessionFeedbackCount((count) => count + 1);
       setForm({
         type: "visual",
         priority: "normal",
         title: "",
         body: "",
       });
-      setToast("Votre retour a bien été transmis à Raphaël.");
+      setToast("Votre retour est enregistré dans cette recette.");
       setPanelTab("feedback");
       setSidePanelOpen(true);
     } catch {
@@ -247,7 +354,10 @@ export function ReviewClient({
       });
 
       if (!response.ok) {
-        throw new Error("decision failed");
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(payload?.error ?? "La décision n’a pas été enregistrée.");
       }
 
       const decision = (await response.json()) as ReviewDecision;
@@ -257,16 +367,73 @@ export function ReviewClient({
         decisions: [decision, ...current.decisions],
       }));
       setShowFinishDialog(false);
+      setToast("Votre décision est enregistrée dans cette recette.");
+    } catch (error) {
       setToast(
-        status === "approved"
-          ? "La version est validée. Raphaël vient d’être informé."
-          : "Votre récapitulatif et vos retours ont été envoyés à Raphaël.",
+        error instanceof Error
+          ? error.message
+          : "La décision n’a pas pu être enregistrée. Réessayez.",
       );
-    } catch {
-      setToast("La décision n’a pas pu être enregistrée. Réessayez.");
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function updateClientFeedbackStatus(
+    item: FeedbackItem,
+    status: "resolved" | "open",
+  ) {
+    if (isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`/api/feedback/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, reviewToken: token }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Le statut n’a pas pu être enregistré.");
+      }
+
+      const updated = (await response.json()) as FeedbackItem;
+      setReview((current) => ({
+        ...current,
+        release:
+          status === "open"
+            ? { ...current.release, status: "changes_requested" }
+            : current.release,
+        feedback: current.feedback.map((feedback) =>
+          feedback.id === updated.id ? updated : feedback,
+        ),
+      }));
+      setSelectedFeedback(updated);
+      setToast(
+        status === "resolved"
+          ? "Vous avez confirmé que ce point est corrigé."
+          : "Le point est rouvert pour le développeur.",
+      );
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "La mise à jour a échoué. Réessayez.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (accessError) {
+    return (
+      <ReviewUnavailable
+        title={accessError.title}
+        message={accessError.message}
+      />
+    );
   }
 
   return (
@@ -290,6 +457,7 @@ export function ReviewClient({
           <button
             className={viewport === "desktop" ? "active" : ""}
             type="button"
+            aria-pressed={viewport === "desktop"}
             onClick={() => setViewport("desktop")}
             aria-label="Afficher en mode ordinateur"
           >
@@ -298,6 +466,7 @@ export function ReviewClient({
           <button
             className={viewport === "tablet" ? "active" : ""}
             type="button"
+            aria-pressed={viewport === "tablet"}
             onClick={() => setViewport("tablet")}
             aria-label="Afficher en mode tablette"
           >
@@ -306,6 +475,7 @@ export function ReviewClient({
           <button
             className={viewport === "mobile" ? "active" : ""}
             type="button"
+            aria-pressed={viewport === "mobile"}
             onClick={() => setViewport("mobile")}
             aria-label="Afficher en mode mobile"
           >
@@ -320,6 +490,7 @@ export function ReviewClient({
             <strong>Claire</strong>
           </span>
           <button
+            ref={finishButtonRef}
             className="button button-primary button-dashboard"
             type="button"
             onClick={() => setShowFinishDialog(true)}
@@ -336,15 +507,33 @@ export function ReviewClient({
             <div
               className={`client-preview ${mode === "comment" ? "is-commenting" : ""}`}
               ref={previewRef}
-              onClick={handlePreviewClick}
+              onClickCapture={handlePreviewClick}
             >
               <div className="restaurant-page">
                 <header className="restaurant-header">
                   <span className="restaurant-logo">MAISON MATISSE</span>
                   <nav aria-label="Navigation de la démonstration">
-                    <button type="button">La maison</button>
-                    <button type="button">La carte</button>
-                    <button type="button">Journal</button>
+                    <button
+                      type="button"
+                      disabled
+                      title="Une seule page est simulée dans cette pré-alpha"
+                    >
+                      La maison
+                    </button>
+                    <button
+                      type="button"
+                      disabled
+                      title="Une seule page est simulée dans cette pré-alpha"
+                    >
+                      La carte
+                    </button>
+                    <button
+                      type="button"
+                      disabled
+                      title="Une seule page est simulée dans cette pré-alpha"
+                    >
+                      Journal
+                    </button>
                   </nav>
                   <button
                     className="restaurant-book"
@@ -462,7 +651,7 @@ export function ReviewClient({
                 </button>
               ))}
 
-              {composer && (
+              {composer && composer.x !== null && composer.y !== null && (
                 <span
                   className="review-pin review-pin-draft"
                   style={{ left: `${composer.x}%`, top: `${composer.y}%` }}
@@ -487,13 +676,16 @@ export function ReviewClient({
             type="button"
             onClick={() => setSidePanelOpen((value) => !value)}
             aria-label={sidePanelOpen ? "Fermer le panneau" : "Ouvrir le panneau"}
+            aria-expanded={sidePanelOpen}
           >
             {sidePanelOpen ? "→" : "←"}
           </button>
-          <div className="review-panel-tabs">
+          <div className="review-panel-tabs" role="tablist">
             <button
               className={panelTab === "brief" ? "active" : ""}
               type="button"
+              role="tab"
+              aria-selected={panelTab === "brief"}
               onClick={() => setPanelTab("brief")}
             >
               À vérifier
@@ -504,6 +696,8 @@ export function ReviewClient({
             <button
               className={panelTab === "feedback" ? "active" : ""}
               type="button"
+              role="tab"
+              aria-selected={panelTab === "feedback"}
               onClick={() => setPanelTab("feedback")}
             >
               Retours
@@ -545,6 +739,7 @@ export function ReviewClient({
                       className={completed ? "completed" : ""}
                       key={point.title}
                       type="button"
+                      aria-pressed={completed}
                       onClick={() => togglePoint(index)}
                     >
                       <span className="point-check">
@@ -602,6 +797,33 @@ export function ReviewClient({
                         : "Raphaël a reçu ce retour avec le contexte de cette version."}
                     </p>
                   </div>
+                  {selectedFeedback.status === "to_review" && (
+                    <div className="client-review-actions">
+                      <button
+                        className="button button-primary"
+                        type="button"
+                        disabled={isSubmitting}
+                        onClick={() =>
+                          updateClientFeedbackStatus(
+                            selectedFeedback,
+                            "resolved",
+                          )
+                        }
+                      >
+                        C’est corrigé
+                      </button>
+                      <button
+                        className="button button-ghost"
+                        type="button"
+                        disabled={isSubmitting}
+                        onClick={() =>
+                          updateClientFeedbackStatus(selectedFeedback, "open")
+                        }
+                      >
+                        Le problème persiste
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -643,6 +865,7 @@ export function ReviewClient({
         <button
           className={mode === "browse" ? "active" : ""}
           type="button"
+          aria-pressed={mode === "browse"}
           onClick={() => {
             setMode("browse");
             setComposer(null);
@@ -654,6 +877,7 @@ export function ReviewClient({
         <button
           className={mode === "comment" ? "active" : ""}
           type="button"
+          aria-pressed={mode === "comment"}
           onClick={() => setMode("comment")}
         >
           <span aria-hidden="true">＋</span>
@@ -678,8 +902,8 @@ export function ReviewClient({
           >
             <div className="composer-heading">
               <div>
-                <span className="composer-pin">
-                  {review.feedback.length + 1}
+                <span className={`composer-pin ${composer.general ? "general" : ""}`}>
+                  {composer.general ? "◎" : review.feedback.length + 1}
                 </span>
                 <strong>Nouveau retour</strong>
               </div>
@@ -695,8 +919,8 @@ export function ReviewClient({
             <div className="feedback-type-grid">
               {(
                 [
-                  ["visual", "Visuel"],
-                  ["functional", "Fonctionnel"],
+                  ["visual", "Affichage"],
+                  ["functional", "Fonctionnement"],
                   ["copy", "Texte"],
                 ] as [FeedbackType, string][]
               ).map(([value, label]) => (
@@ -704,6 +928,7 @@ export function ReviewClient({
                   className={form.type === value ? "active" : ""}
                   key={value}
                   type="button"
+                  aria-pressed={form.type === value}
                   onClick={() =>
                     setForm((current) => ({ ...current, type: value }))
                   }
@@ -714,7 +939,7 @@ export function ReviewClient({
             </div>
 
             <label>
-              <span>Que souhaitez-vous changer ?</span>
+              <span>Quel est votre retour ?</span>
               <input
                 type="text"
                 value={form.title}
@@ -755,7 +980,8 @@ export function ReviewClient({
               <span>◈ Version {review.release.version}</span>
             </div>
             <p className="composer-privacy">
-              Aucun mot de passe, contenu saisi ou cookie n’est enregistré.
+              Revaloop n’ajoute ni le contenu des champs ni les cookies
+              applicatifs à ce retour.
             </p>
             <button
               className="button button-primary button-full"
@@ -770,17 +996,30 @@ export function ReviewClient({
       )}
 
       {showFinishDialog && (
-        <div className="dialog-backdrop">
+        <div
+          className="dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) {
+              setShowFinishDialog(false);
+              finishButtonRef.current?.focus();
+            }
+          }}
+        >
           <section
             className="finish-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="finish-title"
+            onKeyDown={trapDialogFocus}
           >
             <button
               className="dialog-close"
               type="button"
-              onClick={() => setShowFinishDialog(false)}
+              autoFocus
+              onClick={() => {
+                setShowFinishDialog(false);
+                finishButtonRef.current?.focus();
+              }}
               aria-label="Fermer"
             >
               ×
@@ -791,13 +1030,21 @@ export function ReviewClient({
             <p>
               Vous avez vérifié {completedPoints.length} point
               {completedPoints.length > 1 ? "s" : ""} sur {testPoints.length} et
-              envoyé {review.feedback.length} retours.
+              envoyé {sessionFeedbackCount} retour
+              {sessionFeedbackCount > 1 ? "s" : ""} pendant cette visite.
             </p>
+            {unresolvedFeedback.length > 0 && (
+              <p className="finish-blocker">
+                {unresolvedFeedback.length} retour
+                {unresolvedFeedback.length > 1 ? "s restent" : " reste"} à
+                traiter ou à revalider avant l’approbation finale.
+              </p>
+            )}
             <div className="finish-actions">
               <button
                 className="finish-choice finish-choice-approve"
                 type="button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || unresolvedFeedback.length > 0}
                 onClick={() => submitDecision("approved")}
               >
                 <span>✓</span>
