@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import {
-  Activity,
   ArrowUpRight,
   Check,
   CircleCheck,
@@ -10,14 +9,10 @@ import {
   Copy,
   Ellipsis,
   ExternalLink,
-  Gauge,
   LayoutDashboard,
   Link2,
   ListChecks,
   Menu,
-  MessageSquareText,
-  Plus,
-  ScanLine,
   X,
 } from "lucide-react";
 import {
@@ -31,7 +26,6 @@ import {
 import { Brand } from "../components/brand";
 import {
   formatRelativeDate,
-  formatShortDate,
   statusLabels,
   type FeedbackItem,
   type FeedbackStatus,
@@ -45,6 +39,8 @@ const columns: FeedbackStatus[] = [
   "to_review",
   "resolved",
 ];
+
+type FeedbackFilter = "all" | "todo" | "to_review" | "resolved";
 
 const statusAction: Record<
   FeedbackStatus,
@@ -98,15 +94,13 @@ export function DashboardClient({
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [selectedId, setSelectedId] = useState(initialWorkspace.feedback[0]?.id);
-  const [activeStatus, setActiveStatus] = useState<FeedbackStatus | "all">("all");
+  const [activeStatus, setActiveStatus] = useState<FeedbackFilter>("all");
   const [copied, setCopied] = useState(false);
   const [showReleaseDialog, setShowReleaseDialog] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [notice, setNotice] = useState(
-    "Données de démonstration chargées localement.",
-  );
+  const [notice, setNotice] = useState("");
   const releaseButtonRef = useRef<HTMLButtonElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
@@ -129,7 +123,6 @@ export function DashboardClient({
       .then((payload) => {
         if (!cancelled) {
           setWorkspace(payload);
-          setNotice("Synchronisé avec l’espace de recette.");
         }
       })
       .catch(() => {
@@ -142,6 +135,15 @@ export function DashboardClient({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setNotice(""), 4800);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
 
   useEffect(() => {
     if (!showReleaseDialog) {
@@ -206,10 +208,19 @@ export function DashboardClient({
   }
 
   const filteredFeedback = useMemo(
-    () =>
-      activeStatus === "all"
-        ? workspace.feedback
-        : workspace.feedback.filter((item) => item.status === activeStatus),
+    () => {
+      if (activeStatus === "all") {
+        return workspace.feedback;
+      }
+
+      if (activeStatus === "todo") {
+        return workspace.feedback.filter(
+          (item) => item.status === "open" || item.status === "in_progress",
+        );
+      }
+
+      return workspace.feedback.filter((item) => item.status === activeStatus);
+    },
     [activeStatus, workspace.feedback],
   );
 
@@ -231,10 +242,6 @@ export function DashboardClient({
       ),
     [workspace.feedback],
   );
-
-  const completion = workspace.feedback.length
-    ? Math.round((counts.resolved / workspace.feedback.length) * 100)
-    : 0;
 
   async function copyShareLink() {
     const link = `${window.location.origin}/review/${workspace.release.shareToken}`;
@@ -335,87 +342,18 @@ export function DashboardClient({
             <LayoutDashboard className="nav-glyph" aria-hidden="true" />
             Vue d’ensemble
           </button>
-          <button
-            className="workspace-nav-item"
-            type="button"
-            disabled
-            title="Disponible dans une prochaine version"
-          >
-            <MessageSquareText className="nav-glyph" aria-hidden="true" />
-            Tous les retours
-            <span className="nav-count">{counts.open + counts.to_review}</span>
-          </button>
-          <button
-            className="workspace-nav-item"
-            type="button"
-            disabled
-            title="Disponible dans une prochaine version"
-          >
-            <Activity className="nav-glyph" aria-hidden="true" />
-            Activité
-          </button>
 
           <span className="nav-section-label nav-projects-label">Projets</span>
           <button className="project-nav-item active" type="button">
-            <span
-              className="project-avatar"
-              style={{ background: workspace.project.accent }}
-            >
-              MM
-            </span>
+            <span className="project-avatar">MM</span>
             <span>
               <strong>{workspace.project.name}</strong>
               <small>
-                <i className="online-dot" /> En recette
+                Version {workspace.release.version} en recette
               </small>
             </span>
           </button>
-          <button
-            className="add-project-button"
-            type="button"
-            disabled
-            title="La création de projet arrive dans le prochain jalon"
-          >
-            <Plus aria-hidden="true" />
-            Nouveau projet
-          </button>
         </nav>
-
-        <div
-          className="loop-rail"
-          role="group"
-          aria-label="Cycle de validation"
-        >
-          <span className="nav-section-label">Flux des retours</span>
-          {[
-            {
-              index: String(counts.open).padStart(2, "0"),
-              label: "Signalés",
-              active: counts.open > 0,
-            },
-            {
-              index: String(counts.in_progress).padStart(2, "0"),
-              label: "En cours",
-              active: counts.in_progress > 0,
-            },
-            {
-              index: String(counts.to_review).padStart(2, "0"),
-              label: "À revalider",
-              active: counts.to_review > 0,
-            },
-            {
-              index: String(counts.resolved).padStart(2, "0"),
-              label: "Validés",
-              active: counts.resolved > 0,
-            },
-          ].map(({ index, label, active }) => (
-            <span className={`loop-step ${active ? "is-active" : ""}`} key={label}>
-              <i aria-hidden="true" />
-              <small>{index}</small>
-              <strong>{label}</strong>
-            </span>
-          ))}
-        </div>
 
         <div className="sidebar-profile">
           <span className="avatar avatar-ink">RM</span>
@@ -450,24 +388,16 @@ export function DashboardClient({
             >
               <Menu aria-hidden="true" />
             </button>
-            <span
-              className="project-avatar project-avatar-large"
-              style={{ background: workspace.project.accent }}
-            >
-              MM
-            </span>
+            <span className="project-avatar project-avatar-large">MM</span>
             <div>
-              <span className="studio-kicker">
-                <ScanLine aria-hidden="true" />
-                Revue en cours · Version {workspace.release.version}
-              </span>
+              <span className="studio-kicker">Espace de recette</span>
               <h1>{workspace.project.name}</h1>
               <p>{workspace.project.description}</p>
             </div>
           </div>
           <div className="workspace-actions">
             <button
-              className="button button-ghost button-dashboard"
+              className="button button-primary button-dashboard"
               type="button"
               onClick={copyShareLink}
             >
@@ -476,7 +406,7 @@ export function DashboardClient({
             </button>
             <button
               ref={releaseButtonRef}
-              className="button button-primary button-dashboard"
+              className="button button-ghost button-dashboard"
               type="button"
               onClick={() => setShowReleaseDialog(true)}
             >
@@ -486,69 +416,44 @@ export function DashboardClient({
           </div>
         </header>
 
-        <div className="release-strip">
-          <div className="docket-index" aria-hidden="true">
-            <span>Version</span>
-            <strong>{workspace.release.version}</strong>
-          </div>
+        <section className="release-strip release-summary">
           <div className="release-state">
-            <span className="pulse-ring">
-              <i />
-            </span>
             <div>
-              <strong>Version {workspace.release.version} en recette</strong>
+              <span className="release-label">
+                Version {workspace.release.version}
+              </span>
+              <strong>{workspace.release.title}</strong>
               <span>
-                {workspace.release.title} · publiée le{" "}
-                {formatRelativeDate(workspace.release.createdAt)}
+                Publiée {formatRelativeDate(workspace.release.createdAt)} · commit{" "}
+                <code>{workspace.release.commitSha}</code>
               </span>
             </div>
           </div>
-          <div
-            className="docket-progress"
-            role="group"
-            aria-label="Répartition des retours de la version"
+          <div className="release-focus">
+            <strong>
+              {counts.open + counts.in_progress} retour
+              {counts.open + counts.in_progress > 1 ? "s" : ""} à traiter
+            </strong>
+            <span>
+              {counts.to_review
+                ? `${counts.to_review} prêt${counts.to_review > 1 ? "s" : ""} à revalider`
+                : "Aucune correction en attente de validation"}
+            </span>
+          </div>
+          <Link
+            className="open-review-link"
+            href={`/review/${workspace.release.shareToken}`}
           >
-            <span className="is-done">
-              <i aria-hidden="true" />
-              <b>{counts.open}</b> Signalés
-            </span>
-            <span className={counts.in_progress > 0 ? "is-current" : "is-done"}>
-              <i aria-hidden="true" />
-              <b>{counts.in_progress}</b> En cours
-            </span>
-            <span className={counts.to_review > 0 ? "is-current" : ""}>
-              <i aria-hidden="true" />
-              <b>{counts.to_review}</b> À revalider
-            </span>
-            <span className={completion === 100 ? "is-done" : ""}>
-              <i aria-hidden="true" />
-              <b>{counts.resolved}</b> Validés
-            </span>
-          </div>
-          <div className="release-meta">
-            <span>
-              <small>Commit</small>
-              <code>{workspace.release.commitSha}</code>
-            </span>
-            <span>
-              <small>Expiration</small>
-              <strong>{formatShortDate(workspace.release.expiresAt)}</strong>
-            </span>
-            <Link
-              className="open-review-link"
-              href={`/review/${workspace.release.shareToken}`}
-            >
-              Prévisualiser comme Claire
-              <ArrowUpRight aria-hidden="true" />
-            </Link>
-          </div>
-        </div>
+            Voir l’espace client
+            <ArrowUpRight aria-hidden="true" />
+          </Link>
+        </section>
 
         <section className="feedback-workspace">
           <div className="feedback-panel">
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">Retours à traiter</p>
+                <p className="eyebrow">File de travail</p>
                 <h2>Retours de cette version</h2>
               </div>
               <div
@@ -562,17 +467,21 @@ export function DashboardClient({
                   aria-pressed={activeStatus === "all"}
                   onClick={() => setActiveStatus("all")}
                 >
-                  Tous <span>{workspace.feedback.length}</span>
+                  Tous
                 </button>
-                {columns.map((status) => (
+                {[
+                  { value: "todo" as const, label: "À traiter" },
+                  { value: "to_review" as const, label: "À revalider" },
+                  { value: "resolved" as const, label: "Validés" },
+                ].map(({ value, label }) => (
                   <button
-                    className={activeStatus === status ? "active" : ""}
-                    key={status}
+                    className={activeStatus === value ? "active" : ""}
+                    key={value}
                     type="button"
-                    aria-pressed={activeStatus === status}
-                    onClick={() => setActiveStatus(status)}
+                    aria-pressed={activeStatus === value}
+                    onClick={() => setActiveStatus(value)}
                   >
-                    {statusLabels[status]} <span>{counts[status]}</span>
+                    {label}
                   </button>
                 ))}
               </div>
@@ -597,8 +506,6 @@ export function DashboardClient({
                     onClick={() => setSelectedId(item.id)}
                   >
                     <span className="feedback-main-cell">
-                      <i className={`priority-marker priority-${item.priority}`} />
-                      <span className="feedback-number">#{item.sequence}</span>
                       <strong>{item.title}</strong>
                     </span>
                     <span className="feedback-type">
@@ -631,25 +538,11 @@ export function DashboardClient({
             {selected ? (
               <>
                 <div className="detail-heading">
-                  <div>
-                    <span className="feedback-number">#{selected.sequence}</span>
-                    <span className={`status-badge status-${selected.status}`}>
-                      {statusLabels[selected.status]}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="Plus d’options"
-                    disabled
-                    title="Les actions avancées arrivent dans un prochain jalon"
-                  >
-                    <Ellipsis aria-hidden="true" />
-                  </button>
+                  <span className={`status-badge status-${selected.status}`}>
+                    {statusLabels[selected.status]}
+                  </span>
                 </div>
-                <span className="detail-kicker">
-                  <Gauge aria-hidden="true" />
-                  Contexte du retour
-                </span>
+                <span className="detail-kicker">Retour de Claire</span>
                 <h2>{selected.title}</h2>
                 <div className="detail-author">
                   <span className="avatar avatar-coral">
@@ -693,7 +586,9 @@ export function DashboardClient({
                           top: `${selected.positionY}%`,
                         }}
                       >
-                        {selected.sequence}
+                        <span className="sr-only">
+                          Emplacement du retour
+                        </span>
                       </span>
                     </div>
                     <span>
@@ -732,60 +627,11 @@ export function DashboardClient({
           </aside>
         </section>
 
-        <section className="dashboard-overview">
-          <div className="overview-heading">
-            <span className="docket-label">Santé de la version</span>
-            <strong>Le rythme de cette revue</strong>
-            <small>Synchronisé · {workspace.release.commitSha}</small>
-          </div>
-          <article className="metric-card">
-            <span className="metric-label">Retours reçus</span>
-            <strong>{workspace.feedback.length}</strong>
-            <small>
-              <i className="trend-dot trend-coral" />{" "}
-              {counts.open + counts.in_progress} à traiter
-            </small>
-          </article>
-          <article className="metric-card">
-            <span className="metric-label">À revalider</span>
-            <strong>{counts.to_review}</strong>
-            <small>
-              <i className="trend-dot trend-lime" />{" "}
-              {counts.to_review > 0
-                ? `${counts.to_review} correction${counts.to_review > 1 ? "s" : ""} prête${counts.to_review > 1 ? "s" : ""} pour Claire`
-                : "Aucune correction à vérifier"}
-            </small>
-          </article>
-          <article className="metric-card metric-card-progress">
-            <div>
-              <span className="metric-label">Retours clôturés</span>
-              <strong>
-                {counts.resolved}/{workspace.feedback.length}
-              </strong>
-            </div>
-            <div
-              className="radial-progress"
-              style={
-                { "--progress": completion } as React.CSSProperties
-              }
-            >
-              <span>{completion}%</span>
-            </div>
-          </article>
-          <article className="metric-card metric-card-client">
-            <span className="avatar avatar-coral">CD</span>
-            <div>
-              <span className="metric-label">Dernière activité</span>
-              <strong>Claire Dubois</strong>
-              <small>Retour ajouté hier à 15:28</small>
-            </div>
-          </article>
-        </section>
-
-        <p className="sync-notice" role="status">
-          <span className="online-dot" />
-          {notice}
-        </p>
+        {notice ? (
+          <p className="sync-notice" role="status">
+            {notice}
+          </p>
+        ) : null}
       </main>
 
       {showReleaseDialog && (

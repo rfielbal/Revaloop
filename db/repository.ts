@@ -124,7 +124,7 @@ async function bootstrapDatabase() {
         slug TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         description TEXT NOT NULL,
-        accent TEXT DEFAULT '#ded8e8' NOT NULL,
+        accent TEXT DEFAULT '#ddebec' NOT NULL,
         created_at TEXT NOT NULL
       )
     `),

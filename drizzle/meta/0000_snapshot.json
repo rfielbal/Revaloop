@@ -264,7 +264,7 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": "'#ded8e8'"
+          "default": "'#ddebec'"
         },
         "created_at": {
           "name": "created_at",

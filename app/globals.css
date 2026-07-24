@@ -1,26 +1,26 @@
 @import "tailwindcss";
 
 :root {
-  --paper: #f7f3ed;
+  --paper: #f7f5f0;
   --paper-deep: #eee8df;
   --surface: #fffdf9;
-  --surface-soft: #f8f4ef;
-  --ink: #342a38;
-  --ink-soft: #665b69;
-  --ink-faint: #706672;
-  --line: rgba(52, 42, 56, 0.14);
-  --line-dark: rgba(52, 42, 56, 0.25);
-  --lime: #ded8e8;
-  --lime-soft: #eeeaf4;
-  --coral: #df755d;
-  --coral-soft: #f1c9bf;
-  --violet: #7d435c;
-  --violet-soft: #ded8e8;
-  --sky: #e5eef1;
-  --success: #3f765a;
-  --danger: #a65343;
-  --shadow-sm: 0 8px 24px rgba(67, 52, 72, 0.08);
-  --shadow-lg: 0 30px 80px rgba(67, 52, 72, 0.14);
+  --surface-soft: #f7f5f0;
+  --ink: #24343a;
+  --ink-soft: #46565d;
+  --ink-faint: #586970;
+  --line: rgba(36, 52, 58, 0.16);
+  --line-dark: rgba(36, 52, 58, 0.28);
+  --lime: #ddebec;
+  --lime-soft: #edf2f1;
+  --coral: #c86b57;
+  --coral-soft: #f3ded8;
+  --violet: #245f62;
+  --violet-soft: #ddebec;
+  --sky: #edf2f1;
+  --success: #2f694f;
+  --danger: #9b413c;
+  --shadow-sm: 0 8px 24px rgba(36, 52, 58, 0.08);
+  --shadow-lg: 0 30px 80px rgba(36, 52, 58, 0.14);
   --radius-sm: 10px;
   --radius-md: 18px;
   --radius-lg: 28px;
@@ -204,8 +204,8 @@ textarea:focus-visible {
 }
 
 .button-primary:hover {
-  background: #613246;
-  border-color: #613246;
+  background: #18494c;
+  border-color: #18494c;
   box-shadow: 0 11px 26px rgba(97, 50, 70, 0.2);
 }
 
@@ -501,7 +501,7 @@ textarea:focus-visible {
 
 .version-badge {
   background: var(--lime-soft);
-  border: 1px solid #d6ef69;
+  border: 1px solid rgba(36, 95, 98, 0.24);
   border-radius: 999px;
   font-size: 9px;
   font-weight: 700;
@@ -1493,7 +1493,7 @@ textarea:focus-visible {
 }
 
 .trend-lime {
-  background: #79a514;
+  background: var(--success);
 }
 
 .metric-card-progress {
@@ -2059,7 +2059,8 @@ textarea:focus-visible {
 
 .dialog-safety > span {
   align-items: center;
-  background: #f5c85a;
+  background: #785817;
+  color: #fff;
   border-radius: 50%;
   display: flex;
   flex: 0 0 auto;
@@ -2777,7 +2778,8 @@ textarea:focus-visible {
 
 .demo-warning > span {
   align-items: center;
-  background: #f3c85d;
+  background: #785817;
+  color: #fff;
   border-radius: 50%;
   display: flex;
   flex: 0 0 auto;
@@ -2841,9 +2843,9 @@ textarea:focus-visible {
 }
 
 .test-points > button.completed .point-check {
-  background: var(--lime);
-  border-color: #c4e331;
-  color: var(--ink);
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
 }
 
 .test-points > button > span:last-child {

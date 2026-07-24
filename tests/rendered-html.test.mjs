@@ -211,9 +211,9 @@ test("server-renders the developer dashboard", async () => {
   assertAccessibleStructure(html);
   assert.match(text, /Maison Matisse/);
   assert.match(text, /Version v1\.2 en recette/);
-  assert.match(text, /Retours à traiter/);
+  assert.match(text, /File de travail/);
   assert.match(text, /Retours de cette version/);
-  assert.match(text, /Données de démonstration chargées localement\./);
+  assert.doesNotMatch(text, /Données de démonstration chargées localement\./);
   assertNamedRole(html, "group", "Filtrer les retours");
   assertNoStarterContent(html);
 });
@@ -244,20 +244,21 @@ test("server-renders the private review with noindex metadata", async () => {
   assertAccessibleStructure(html);
   assert.match(text, /Maison Matisse/);
   assert.match(text, /Version v1\.2/);
-  assert.match(text, /Votre revue · version v1\.2/);
-  assert.match(text, /Voici ce qu’il reste à regarder/);
+  assert.match(text, /Guide de test/);
+  assert.match(text, /Suivez les étapes à votre rythme\./);
   assert.match(text, /Envoyer mon bilan/);
-  assert.match(
+  assert.doesNotMatch(
     text,
     /Vous testez une démonstration avec des données fictives\./,
   );
-  assert.match(text, /3 points à vérifier/);
+  assert.match(text, /Parcours suggéré/);
   assert.match(
     text,
     /Environnement de test : utilisez uniquement des informations fictives\./,
   );
-  assert.match(text, /Tester la page/);
-  assert.match(text, /Signaler ici/);
+  assert.match(text, /Ajouter un retour/);
+  assert.doesNotMatch(text, /Tester la page/);
+  assert.doesNotMatch(text, /Signaler ici/);
   assertNamedRole(html, "group", "Taille de l’écran");
   assertNamedRole(html, "toolbar", "Outils de recette");
   assertNoStarterContent(html);

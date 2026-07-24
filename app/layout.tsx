@@ -45,7 +45,7 @@ export async function generateMetadata(): Promise<Metadata> {
     ? rawProtocol
     : "https";
   const metadataBase = new URL(`${protocol}://${host}`);
-  const socialImage = new URL("/og.png", metadataBase).toString();
+  const socialImage = new URL("/og-petrol.png", metadataBase).toString();
 
   return {
     metadataBase,

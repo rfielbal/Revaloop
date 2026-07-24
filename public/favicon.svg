@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
   <title id="title">Revaloop</title>
-  <rect width="64" height="64" rx="19" fill="#f7f3ed"/>
-  <ellipse cx="25" cy="31" rx="17" ry="13" fill="none" stroke="#342a38" stroke-width="4.5" transform="rotate(-12 25 31)"/>
-  <ellipse cx="39" cy="31" rx="17" ry="13" fill="none" stroke="#342a38" stroke-width="4.5" transform="rotate(12 39 31)"/>
-  <circle cx="49" cy="45" r="6" fill="#ad5442" stroke="#fffdf9" stroke-width="3"/>
+  <rect width="64" height="64" rx="19" fill="#f7f5f0"/>
+  <ellipse cx="25" cy="31" rx="17" ry="13" fill="none" stroke="#245f62" stroke-width="4.5" transform="rotate(-12 25 31)"/>
+  <ellipse cx="39" cy="31" rx="17" ry="13" fill="none" stroke="#245f62" stroke-width="4.5" transform="rotate(12 39 31)"/>
+  <circle cx="49" cy="45" r="6" fill="#aa503e" stroke="#fffdf9" stroke-width="3"/>
 </svg>

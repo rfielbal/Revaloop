@@ -11,7 +11,7 @@ permanentes.
 Les trois surfaces partagent les mêmes fondations, avec des densités distinctes :
 
 - le site général est éditorial et explique le parcours ;
-- l’espace développeur est dense, opératoire et centré sur le prochain retour ;
+- l’espace développeur est opératoire et centré sur la prochaine décision ;
 - l’espace client est guidé, tactile et rassurant.
 
 ## Architecture des tokens
@@ -24,22 +24,26 @@ Les alias `--flow-*` assurent la migration progressive des composants existants.
 
 | Rôle | Token | Valeur | Usage |
 | --- | --- | --- | --- |
-| Toile | `--rv-color-canvas` | `#f7f3ed` | Fond général |
+| Toile | `--rv-color-canvas` | `#f7f5f0` | Fond général |
 | Surface | `--rv-color-surface` | `#fffdf9` | Cartes, panneaux, formulaires |
-| Contenu | `--rv-color-content` | `#342a38` | Texte principal |
-| Secondaire | `--rv-color-content-secondary` | `#5a4f5e` | Paragraphes secondaires |
-| Atténué | `--rv-color-content-muted` | `#625766` | Métadonnées et aides |
-| Action | `--rv-color-action` | `#7d435c` | CTA, sélection, focus |
-| Action survolée | `--rv-color-action-hover` | `#613246` | Hover et active |
-| Retour humain | `--rv-color-feedback` | `#df755d` | Décoration et signal faible |
-| Retour fonctionnel | `--rv-color-feedback-strong` | `#ad5442` | Pins portant du texte |
-| Information | `--rv-color-info` | `#596895` | Revalidation et information |
-| Succès | `--rv-color-success` | `#3f765a` | Validation confirmée |
+| Contenu | `--rv-color-content` | `#24343a` | Texte principal |
+| Secondaire | `--rv-color-content-secondary` | `#46565d` | Paragraphes secondaires |
+| Atténué | `--rv-color-content-muted` | `#586970` | Métadonnées et aides |
+| Action | `--rv-color-action` | `#245f62` | CTA, sélection, focus |
+| Action survolée | `--rv-color-action-hover` | `#18494c` | Hover et active |
+| Retour humain | `--rv-color-feedback` | `#c86b57` | Annotation et signal humain |
+| Retour fonctionnel | `--rv-color-feedback-strong` | `#aa503e` | Pins et contexte du retour |
+| Information | `--rv-color-info` | `#3d6378` | Revalidation et information |
+| Succès | `--rv-color-success` | `#2f694f` | Validation confirmée |
+| Avertissement | `--rv-color-warning` | `#785817` | Sécurité et environnement de test |
+| Danger | `--rv-color-danger` | `#9b413c` | Erreur et action destructive |
 
 Le texte courant atteint au minimum 4,5:1 sur les surfaces où il est utilisé.
-Le terracotta clair reste décoratif ; les marqueurs numérotés utilisent sa
-variante foncée. Le focus est bicolore — papier puis vin — pour rester visible
-sur une surface claire comme sur un bouton d’action.
+Le bleu pétrole porte la confiance, l’accès et l’action. La terre cuite est
+réservée à la parole humaine : annotation, retour et contexte associé. Le focus
+est bicolore — papier puis pétrole — pour rester visible sur une surface claire
+comme sur un bouton d’action. Les couleurs du site testé restent isolées de
+celles de l’interface Revaloop.
 
 ### Typographie
 
@@ -81,10 +85,10 @@ groupe adapté. La cible tactile mesure au moins 44 px, 48 px par défaut.
 
 ### Statut
 
-Le statut associe toujours couleur, libellé et point :
+Le statut associe toujours couleur et libellé explicite :
 
 - signalé : rouge terre foncé ;
-- en cours : vin ;
+- en cours : bleu pétrole ;
 - à revalider : bleu ardoise ;
 - validé : vert sauge foncé.
 
@@ -112,11 +116,11 @@ accessible sur mobile. Une erreur conserve le texte saisi.
 
 | Seuil | Comportement |
 | --- | --- |
-| `> 1240 px` | Composition complète et panneaux côte à côte |
-| `1020–1240 px` | Grilles resserrées, métriques en deux colonnes |
+| `> 1240 px` | Composition complète ; le guide client se superpose à l’aperçu |
+| `1020–1240 px` | Résumé resserré sans comprimer le site testé |
 | `820–1020 px` | Aperçu tablette, détail développeur sous la liste |
 | `560–820 px` | Navigation en drawer, retours en cartes, guide en bottom sheet |
-| `< 560 px` | Une colonne, actions empilées, métriques sans carrousel |
+| `< 560 px` | Une colonne et actions empilées |
 
 Les cibles de QA sont `1440`, `1200`, `960`, `390 × 844` et `360 × 800`.
 

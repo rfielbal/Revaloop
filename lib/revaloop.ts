@@ -75,7 +75,7 @@ export const demoProject: Project = {
   slug: "maison-matisse",
   name: "Maison Matisse",
   description: "Refonte du site de réservation et de la carte du restaurant.",
-  accent: "#ded8e8",
+  accent: "#ddebec",
   createdAt: "2026-07-18T09:30:00.000Z",
 };
 

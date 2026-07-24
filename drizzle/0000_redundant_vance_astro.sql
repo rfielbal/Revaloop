@@ -35,7 +35,7 @@ CREATE TABLE `projects` (
 	`slug` text NOT NULL,
 	`name` text NOT NULL,
 	`description` text NOT NULL,
-	`accent` text DEFAULT '#ded8e8' NOT NULL,
+	`accent` text DEFAULT '#ddebec' NOT NULL,
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
