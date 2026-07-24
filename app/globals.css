@@ -24,7 +24,9 @@
   --radius-sm: 10px;
   --radius-md: 18px;
   --radius-lg: 28px;
-  --font-sans: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  --font-sans: var(--font-manrope), Arial, Helvetica, sans-serif;
+  --font-display: var(--font-instrument-serif), "Iowan Old Style", Georgia,
+    serif;
   --font-mono: var(--font-geist-mono), "SFMono-Regular", Consolas, monospace;
 }
 

@@ -2,7 +2,27 @@
 
 import Link from "next/link";
 import {
+  Activity,
+  ArrowUpRight,
+  Check,
+  CircleCheck,
+  ClipboardCheck,
+  Copy,
+  Ellipsis,
+  ExternalLink,
+  Gauge,
+  LayoutDashboard,
+  Link2,
+  ListChecks,
+  Menu,
+  MessageSquareText,
+  Plus,
+  ScanLine,
+  X,
+} from "lucide-react";
+import {
   type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -11,6 +31,7 @@ import {
 import { Brand } from "../components/brand";
 import {
   formatRelativeDate,
+  formatShortDate,
   statusLabels,
   type FeedbackItem,
   type FeedbackStatus,
@@ -81,11 +102,19 @@ export function DashboardClient({
   const [copied, setCopied] = useState(false);
   const [showReleaseDialog, setShowReleaseDialog] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMobileLayout, setIsMobileLayout] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [notice, setNotice] = useState(
     "Données de démonstration chargées localement.",
   );
   const releaseButtonRef = useRef<HTMLButtonElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+
+  const closeMobileMenu = useCallback(() => {
+    setMobileMenuOpen(false);
+    window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +158,47 @@ export function DashboardClient({
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
   }, [showReleaseDialog]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 820px)");
+
+    function syncLayout(event: MediaQueryList | MediaQueryListEvent) {
+      setIsMobileLayout(event.matches);
+      if (!event.matches) {
+        setMobileMenuOpen(false);
+      }
+    }
+
+    syncLayout(mediaQuery);
+    mediaQuery.addEventListener("change", syncLayout);
+    return () => mediaQuery.removeEventListener("change", syncLayout);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen || !isMobileLayout) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => {
+      sidebarRef.current
+        ?.querySelector<HTMLElement>(".workspace-nav-item.active")
+        ?.focus();
+    });
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeMobileMenu();
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [closeMobileMenu, isMobileLayout, mobileMenuOpen]);
 
   function closeReleaseDialog() {
     setShowReleaseDialog(false);
@@ -231,16 +301,24 @@ export function DashboardClient({
   }
 
   return (
-    <div className="workspace-page">
-      <aside className={`workspace-sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}>
-        <Link href="/" aria-label="Retour à l’accueil Revaloop">
-          <Brand />
-        </Link>
+    <div className="workspace-page workspace-studio">
+      <aside
+        ref={sidebarRef}
+        className={`workspace-sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}
+        inert={isMobileLayout && !mobileMenuOpen ? true : undefined}
+        aria-hidden={isMobileLayout && !mobileMenuOpen ? true : undefined}
+      >
+        <div className="sidebar-brand-block">
+          <Link href="/" aria-label="Retour à l’accueil Revaloop">
+            <Brand />
+          </Link>
+          <span className="sidebar-edition">Proofing studio · 01</span>
+        </div>
 
         <nav className="workspace-nav" aria-label="Navigation de l’espace">
           <span className="nav-section-label">Espace</span>
           <button className="workspace-nav-item active" type="button">
-            <span className="nav-glyph">⌂</span>
+            <LayoutDashboard className="nav-glyph" aria-hidden="true" />
             Vue d’ensemble
           </button>
           <button
@@ -249,7 +327,7 @@ export function DashboardClient({
             disabled
             title="Disponible dans une prochaine version"
           >
-            <span className="nav-glyph">◎</span>
+            <MessageSquareText className="nav-glyph" aria-hidden="true" />
             Tous les retours
             <span className="nav-count">{counts.open + counts.to_review}</span>
           </button>
@@ -259,7 +337,7 @@ export function DashboardClient({
             disabled
             title="Disponible dans une prochaine version"
           >
-            <span className="nav-glyph">⌁</span>
+            <Activity className="nav-glyph" aria-hidden="true" />
             Activité
           </button>
 
@@ -284,10 +362,42 @@ export function DashboardClient({
             disabled
             title="La création de projet arrive dans le prochain jalon"
           >
-            <span>＋</span>
+            <Plus aria-hidden="true" />
             Nouveau projet
           </button>
         </nav>
+
+        <div className="loop-rail" aria-label="Cycle de validation">
+          <span className="nav-section-label">Flux des retours</span>
+          {[
+            {
+              index: String(counts.open).padStart(2, "0"),
+              label: "Signalés",
+              active: counts.open > 0,
+            },
+            {
+              index: String(counts.in_progress).padStart(2, "0"),
+              label: "En cours",
+              active: counts.in_progress > 0,
+            },
+            {
+              index: String(counts.to_review).padStart(2, "0"),
+              label: "À revalider",
+              active: counts.to_review > 0,
+            },
+            {
+              index: String(counts.resolved).padStart(2, "0"),
+              label: "Validés",
+              active: counts.resolved > 0,
+            },
+          ].map(({ index, label, active }) => (
+            <span className={`loop-step ${active ? "is-active" : ""}`} key={label}>
+              <i aria-hidden="true" />
+              <small>{index}</small>
+              <strong>{label}</strong>
+            </span>
+          ))}
+        </div>
 
         <div className="sidebar-profile">
           <span className="avatar avatar-ink">RM</span>
@@ -295,7 +405,7 @@ export function DashboardClient({
             <strong>Raphaël Martin</strong>
             <small>Développeur</small>
           </span>
-          <span aria-hidden="true">•••</span>
+          <Ellipsis aria-hidden="true" />
         </div>
       </aside>
 
@@ -303,13 +413,20 @@ export function DashboardClient({
         <header className="workspace-header">
           <div className="workspace-title">
             <button
+              ref={menuButtonRef}
               className="mobile-menu-button"
               type="button"
               aria-label={mobileMenuOpen ? "Fermer le menu" : "Ouvrir le menu"}
               aria-expanded={mobileMenuOpen}
-              onClick={() => setMobileMenuOpen((value) => !value)}
+              onClick={() => {
+                if (mobileMenuOpen) {
+                  closeMobileMenu();
+                } else {
+                  setMobileMenuOpen(true);
+                }
+              }}
             >
-              ☰
+              <Menu aria-hidden="true" />
             </button>
             <span
               className="project-avatar project-avatar-large"
@@ -318,6 +435,10 @@ export function DashboardClient({
               MM
             </span>
             <div>
+              <span className="studio-kicker">
+                <ScanLine aria-hidden="true" />
+                Projet actif · Version {workspace.release.version}
+              </span>
               <h1>{workspace.project.name}</h1>
               <p>{workspace.project.description}</p>
             </div>
@@ -328,8 +449,8 @@ export function DashboardClient({
               type="button"
               onClick={copyShareLink}
             >
-              <span aria-hidden="true">⌁</span>
-              {copied ? "Lien copié" : "Copier le lien démo"}
+              {copied ? <Check aria-hidden="true" /> : <Link2 aria-hidden="true" />}
+              {copied ? "Lien copié" : "Copier le lien client"}
             </button>
             <button
               ref={releaseButtonRef}
@@ -337,13 +458,17 @@ export function DashboardClient({
               type="button"
               onClick={() => setShowReleaseDialog(true)}
             >
-              Nouvelle version
-              <span aria-hidden="true">＋</span>
+              Comment publier&nbsp;?
+              <ArrowUpRight aria-hidden="true" />
             </button>
           </div>
         </header>
 
         <div className="release-strip">
+          <div className="docket-index" aria-hidden="true">
+            <span>LIVE</span>
+            <strong>RL/{workspace.release.version.replace(".", "")}</strong>
+          </div>
           <div className="release-state">
             <span className="pulse-ring">
               <i />
@@ -356,6 +481,27 @@ export function DashboardClient({
               </span>
             </div>
           </div>
+          <div
+            className="docket-progress"
+            aria-label="Répartition des retours de la version"
+          >
+            <span className="is-done">
+              <i aria-hidden="true" />
+              <b>{counts.open}</b> Signalés
+            </span>
+            <span className={counts.in_progress > 0 ? "is-current" : "is-done"}>
+              <i aria-hidden="true" />
+              <b>{counts.in_progress}</b> En cours
+            </span>
+            <span className={counts.to_review > 0 ? "is-current" : ""}>
+              <i aria-hidden="true" />
+              <b>{counts.to_review}</b> À revalider
+            </span>
+            <span className={completion === 100 ? "is-done" : ""}>
+              <i aria-hidden="true" />
+              <b>{counts.resolved}</b> Validés
+            </span>
+          </div>
           <div className="release-meta">
             <span>
               <small>Commit</small>
@@ -363,26 +509,26 @@ export function DashboardClient({
             </span>
             <span>
               <small>Expiration</small>
-            <strong>
-              {new Intl.DateTimeFormat("fr-FR", {
-                day: "numeric",
-                month: "short",
-                timeZone: "Europe/Paris",
-              }).format(new Date(workspace.release.expiresAt))}
-            </strong>
+              <strong>{formatShortDate(workspace.release.expiresAt)}</strong>
             </span>
             <Link
               className="open-review-link"
               href={`/review/${workspace.release.shareToken}`}
             >
-              Ouvrir la recette
-              <span aria-hidden="true">↗</span>
+              Prévisualiser comme Claire
+              <ArrowUpRight aria-hidden="true" />
             </Link>
           </div>
         </div>
 
         <section className="dashboard-overview">
+          <div className="overview-heading">
+            <span className="docket-label">Console de recette</span>
+            <strong>État de la boucle</strong>
+            <small>Mise à jour en direct · {workspace.release.commitSha}</small>
+          </div>
           <article className="metric-card">
+            <span className="metric-index">01</span>
             <span className="metric-label">Retours reçus</span>
             <strong>{workspace.feedback.length}</strong>
             <small>
@@ -391,22 +537,30 @@ export function DashboardClient({
             </small>
           </article>
           <article className="metric-card">
+            <span className="metric-index">02</span>
             <span className="metric-label">À revalider</span>
             <strong>{counts.to_review}</strong>
             <small>
-              <i className="trend-dot trend-lime" /> Prêt pour Claire
+              <i className="trend-dot trend-lime" />{" "}
+              {counts.to_review > 0
+                ? `${counts.to_review} correction${counts.to_review > 1 ? "s" : ""} prête${counts.to_review > 1 ? "s" : ""} pour Claire`
+                : "Aucune correction à vérifier"}
             </small>
           </article>
           <article className="metric-card metric-card-progress">
+            <span className="metric-index">03</span>
             <div>
-              <span className="metric-label">Avancement</span>
-              <strong>{completion}%</strong>
+              <span className="metric-label">Retours clôturés</span>
+              <strong>
+                {counts.resolved}/{workspace.feedback.length}
+              </strong>
             </div>
             <div className="radial-progress" style={{ "--progress": completion } as React.CSSProperties}>
               <span>{completion}%</span>
             </div>
           </article>
           <article className="metric-card metric-card-client">
+            <span className="metric-index">04</span>
             <span className="avatar avatar-coral">CD</span>
             <div>
               <span className="metric-label">Dernière activité</span>
@@ -461,6 +615,7 @@ export function DashboardClient({
                     }`}
                     key={item.id}
                     type="button"
+                    aria-pressed={selected?.id === item.id}
                     onClick={() => setSelectedId(item.id)}
                   >
                     <span className="feedback-main-cell">
@@ -481,7 +636,7 @@ export function DashboardClient({
                 ))
               ) : (
                 <div className="empty-feedback">
-                  <span>✓</span>
+                  <Check aria-hidden="true" />
                   <strong>Aucun retour dans cet état</strong>
                   <p>Choisissez un autre filtre pour poursuivre la recette.</p>
                 </div>
@@ -505,9 +660,13 @@ export function DashboardClient({
                     disabled
                     title="Les actions avancées arrivent dans un prochain jalon"
                   >
-                    •••
+                    <Ellipsis aria-hidden="true" />
                   </button>
                 </div>
+                <span className="detail-kicker">
+                  <Gauge aria-hidden="true" />
+                  Contexte du retour
+                </span>
                 <h2>{selected.title}</h2>
                 <div className="detail-author">
                   <span className="avatar avatar-coral">
@@ -537,7 +696,8 @@ export function DashboardClient({
                     <strong>{typeLabels[selected.type]}</strong>
                   </div>
                 </div>
-                {selected.positionX !== null && (
+                {selected.positionX !== null &&
+                  selected.positionY !== null && (
                   <Link
                     className="context-preview"
                     href={`/review/${workspace.release.shareToken}?focus=${selected.sequence}`}
@@ -554,7 +714,7 @@ export function DashboardClient({
                       </span>
                     </div>
                     <span>
-                      Voir dans la page <i aria-hidden="true">↗</i>
+                      Voir dans la page <ExternalLink aria-hidden="true" />
                     </span>
                   </Link>
                 )}
@@ -581,7 +741,7 @@ export function DashboardClient({
               </>
             ) : (
               <div className="detail-empty">
-                <span>◎</span>
+                <CircleCheck aria-hidden="true" />
                 <strong>Sélectionnez un retour</strong>
               </div>
             )}
@@ -618,9 +778,11 @@ export function DashboardClient({
               onClick={closeReleaseDialog}
               aria-label="Fermer"
             >
-              ×
+              <X aria-hidden="true" />
             </button>
-            <span className="dialog-icon">↗</span>
+            <span className="dialog-icon">
+              <ClipboardCheck aria-hidden="true" />
+            </span>
             <p className="eyebrow">Nouvelle version</p>
             <h2 id="release-dialog-title">Publiez depuis votre terminal.</h2>
             <p>
@@ -640,6 +802,7 @@ export function DashboardClient({
                   setNotice("Commande Revaloop copiée.");
                 }}
               >
+                <Copy aria-hidden="true" />
                 Copier
               </button>
             </div>
@@ -655,7 +818,8 @@ export function DashboardClient({
               type="button"
               onClick={closeReleaseDialog}
             >
-              J’ai compris
+              <ListChecks aria-hidden="true" />
+              Fermer
             </button>
           </section>
         </div>
@@ -665,7 +829,7 @@ export function DashboardClient({
           className="mobile-sidebar-backdrop"
           type="button"
           aria-label="Fermer le menu"
-          onClick={() => setMobileMenuOpen(false)}
+          onClick={closeMobileMenu}
         />
       )}
     </div>

@@ -175,13 +175,46 @@ export const typeLabels: Record<FeedbackType, string> = {
   copy: "Texte",
 };
 
-export function formatRelativeDate(value: string) {
-  const date = new Date(value);
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "short",
+const frenchMonths = [
+  "janv.",
+  "févr.",
+  "mars",
+  "avr.",
+  "mai",
+  "juin",
+  "juil.",
+  "août",
+  "sept.",
+  "oct.",
+  "nov.",
+  "déc.",
+];
+
+function getParisDateParts(value: string) {
+  const parts = new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
     timeZone: "Europe/Paris",
-  }).format(date);
+  }).formatToParts(new Date(value));
+
+  return Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+}
+
+export function formatRelativeDate(value: string) {
+  const parts = getParisDateParts(value);
+  const month = frenchMonths[Math.max(0, Number(parts.month) - 1)];
+  return `${Number(parts.day)} ${month} · ${parts.hour}:${parts.minute}`;
+}
+
+export function formatShortDate(value: string) {
+  const parts = getParisDateParts(value);
+  const month = frenchMonths[Math.max(0, Number(parts.month) - 1)];
+  return `${Number(parts.day)} ${month}`;
 }

@@ -197,7 +197,7 @@ test("server-renders the private review with noindex metadata", async () => {
   );
   assert.match(text, /Maison Matisse/);
   assert.match(text, /Version v1\.2/);
-  assert.match(text, /Terminer le test/);
+  assert.match(text, /Envoyer mon bilan/);
   assert.match(
     text,
     /Vous testez une démonstration avec des données fictives\./,
@@ -207,8 +207,8 @@ test("server-renders the private review with noindex metadata", async () => {
     text,
     /Environnement de test : utilisez uniquement des informations fictives\./,
   );
-  assert.match(text, /\bParcourir\b/);
-  assert.match(text, /\bAnnoter\b/);
+  assert.match(text, /Tester la page/);
+  assert.match(text, /Signaler ici/);
   assertNoStarterContent(html);
 });
 

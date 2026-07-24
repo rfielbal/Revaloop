@@ -2,6 +2,26 @@
 
 import Link from "next/link";
 import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  CircleDotDashed,
+  ClipboardCheck,
+  Link2,
+  MessageCirclePlus,
+  Monitor,
+  MousePointer2,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+  ScanLine,
+  Send,
+  Smartphone,
+  Tablet,
+  X,
+} from "lucide-react";
+import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
@@ -12,7 +32,6 @@ import {
 } from "react";
 import { Brand } from "../../components/brand";
 import {
-  statusLabels,
   type FeedbackItem,
   type FeedbackPriority,
   type FeedbackType,
@@ -52,6 +71,26 @@ const viewportLabels: Record<Viewport, string> = {
   desktop: "Desktop · 1440 × 900",
   tablet: "Tablette · 820 × 1180",
   mobile: "Mobile · 390 × 844",
+};
+
+const viewportDisplayLabels: Record<Viewport, string> = {
+  desktop: "Ordinateur · 1440 × 900",
+  tablet: "Tablette · 820 × 1180",
+  mobile: "Téléphone · 390 × 844",
+};
+
+const clientStatusLabels: Record<FeedbackItem["status"], string> = {
+  open: "Envoyé",
+  in_progress: "En cours de correction",
+  to_review: "Correction à vérifier",
+  resolved: "Correction confirmée",
+};
+
+const clientStatusMessages: Record<FeedbackItem["status"], string> = {
+  open: "Votre retour a bien été transmis à Raphaël avec le contexte de cette version.",
+  in_progress: "Raphaël travaille actuellement sur ce point.",
+  to_review: "Raphaël indique que ce point est corrigé. Vérifiez-le dans la page, puis confirmez le résultat.",
+  resolved: "Vous avez confirmé que cette correction répond à votre retour.",
 };
 
 function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
@@ -267,7 +306,17 @@ export function ReviewClient({
     );
   }
 
+  function openReservation() {
+    setComposer(null);
+    setMode("browse");
+    setShowFinishDialog(false);
+    setShowReservation(true);
+    setToast("Le parcours de réservation est ouvert.");
+  }
+
   function openGeneralFeedback() {
+    setShowReservation(false);
+    setShowFinishDialog(false);
     setMode("comment");
     setComposer({
       x: null,
@@ -367,7 +416,9 @@ export function ReviewClient({
         decisions: [decision, ...current.decisions],
       }));
       setShowFinishDialog(false);
-      setToast("Votre décision est enregistrée dans cette recette.");
+      setToast(
+        `Bilan transmis · Version ${review.release.version} · Raphaël a reçu votre décision.`,
+      );
     } catch (error) {
       setToast(
         error instanceof Error
@@ -437,7 +488,7 @@ export function ReviewClient({
   }
 
   return (
-    <div className="review-page">
+    <div className="review-page review-studio">
       <header className="review-topbar">
         <div className="review-brand">
           <Link href="/" aria-label="Accueil Revaloop">
@@ -445,43 +496,52 @@ export function ReviewClient({
           </Link>
           <span className="topbar-divider" />
           <div>
+            <span className="review-session">
+              Revue client · version {review.release.version}
+            </span>
             <strong>{review.project.name}</strong>
             <span>
               Version {review.release.version} ·{" "}
-              <i className="online-dot" /> Disponible
+              <i className="online-dot" /> Prête à tester
             </span>
           </div>
         </div>
 
-        <div className="review-device-switcher" aria-label="Taille de l’écran">
-          <button
-            className={viewport === "desktop" ? "active" : ""}
-            type="button"
-            aria-pressed={viewport === "desktop"}
-            onClick={() => setViewport("desktop")}
-            aria-label="Afficher en mode ordinateur"
-          >
-            ▰
-          </button>
-          <button
-            className={viewport === "tablet" ? "active" : ""}
-            type="button"
-            aria-pressed={viewport === "tablet"}
-            onClick={() => setViewport("tablet")}
-            aria-label="Afficher en mode tablette"
-          >
-            ▯
-          </button>
-          <button
-            className={viewport === "mobile" ? "active" : ""}
-            type="button"
-            aria-pressed={viewport === "mobile"}
-            onClick={() => setViewport("mobile")}
-            aria-label="Afficher en mode mobile"
-          >
-            ▯
-          </button>
-          <span>{viewportLabels[viewport]}</span>
+        <div className="review-measure">
+          <span className="review-measure-label">
+            <ScanLine aria-hidden="true" />
+            Aperçu sur
+          </span>
+          <div className="review-device-switcher" aria-label="Taille de l’écran">
+            <button
+              className={viewport === "desktop" ? "active" : ""}
+              type="button"
+              aria-pressed={viewport === "desktop"}
+              onClick={() => setViewport("desktop")}
+              aria-label="Afficher en mode ordinateur"
+            >
+              <Monitor aria-hidden="true" />
+            </button>
+            <button
+              className={viewport === "tablet" ? "active" : ""}
+              type="button"
+              aria-pressed={viewport === "tablet"}
+              onClick={() => setViewport("tablet")}
+              aria-label="Afficher en mode tablette"
+            >
+              <Tablet aria-hidden="true" />
+            </button>
+            <button
+              className={viewport === "mobile" ? "active" : ""}
+              type="button"
+              aria-pressed={viewport === "mobile"}
+              onClick={() => setViewport("mobile")}
+              aria-label="Afficher en mode mobile"
+            >
+              <Smartphone aria-hidden="true" />
+            </button>
+            <span>{viewportDisplayLabels[viewport]}</span>
+          </div>
         </div>
 
         <div className="review-top-actions">
@@ -493,17 +553,32 @@ export function ReviewClient({
             ref={finishButtonRef}
             className="button button-primary button-dashboard"
             type="button"
-            onClick={() => setShowFinishDialog(true)}
+            onClick={() => {
+              setComposer(null);
+              setShowReservation(false);
+              setShowFinishDialog(true);
+            }}
           >
-            Terminer le test
-            <span aria-hidden="true">✓</span>
+            Envoyer mon bilan
+            <Check aria-hidden="true" />
           </button>
         </div>
       </header>
 
       <div className="review-stage">
         <div className="preview-area">
+          <div className="canvas-meta" aria-hidden="true">
+            <span>
+              <i className="online-dot" /> Prête à tester · {review.release.version}
+            </span>
+            <span className="canvas-coordinate">X 000 · Y 000</span>
+            <span>{viewportDisplayLabels[viewport]}</span>
+          </div>
           <div className={`preview-frame preview-${viewport}`}>
+            <span className="preview-crop crop-top-left" aria-hidden="true" />
+            <span className="preview-crop crop-top-right" aria-hidden="true" />
+            <span className="preview-crop crop-bottom-left" aria-hidden="true" />
+            <span className="preview-crop crop-bottom-right" aria-hidden="true" />
             <div
               className={`client-preview ${mode === "comment" ? "is-commenting" : ""}`}
               ref={previewRef}
@@ -538,10 +613,7 @@ export function ReviewClient({
                   <button
                     className="restaurant-book"
                     type="button"
-                    onClick={() => {
-                      setShowReservation(true);
-                      setToast("Le parcours de réservation est ouvert.");
-                    }}
+                    onClick={openReservation}
                   >
                     Réserver
                   </button>
@@ -560,10 +632,10 @@ export function ReviewClient({
                     </p>
                     <button
                       type="button"
-                      onClick={() => setShowReservation(true)}
+                      onClick={openReservation}
                     >
                       Réserver une table
-                      <span aria-hidden="true">↗</span>
+                      <ArrowUpRight aria-hidden="true" />
                     </button>
                   </div>
                   <div className="restaurant-visual" aria-label="Assiette végétale">
@@ -594,17 +666,21 @@ export function ReviewClient({
                 </section>
 
                 {showReservation && (
-                  <section className="reservation-sheet" aria-label="Réservation">
+                  <section
+                    className="reservation-sheet"
+                    role="region"
+                    aria-labelledby="reservation-title"
+                  >
                     <button
                       className="reservation-close"
                       type="button"
                       onClick={() => setShowReservation(false)}
                       aria-label="Fermer la réservation"
                     >
-                      ×
+                      <X aria-hidden="true" />
                     </button>
                     <span className="story-index">RÉSERVATION FICTIVE</span>
-                    <h2>Votre table</h2>
+                    <h2 id="reservation-title">Votre table</h2>
                     <div className="reservation-options">
                       <button type="button">2 personnes</button>
                       <button type="button">Vendredi 31 juillet</button>
@@ -656,8 +732,8 @@ export function ReviewClient({
                   className="review-pin review-pin-draft"
                   style={{ left: `${composer.x}%`, top: `${composer.y}%` }}
                   aria-hidden="true"
-                >
-                  +
+              >
+                  <Plus aria-hidden="true" />
                 </span>
               )}
 
@@ -671,6 +747,11 @@ export function ReviewClient({
         </div>
 
         <aside className={`review-sidepanel ${sidePanelOpen ? "open" : ""}`}>
+          <div className="review-notebook-header">
+            <span>Votre guide de test</span>
+            <strong>MM / {review.release.version}</strong>
+            <small>{review.feedback.length} retours transmis</small>
+          </div>
           <button
             className="sidepanel-toggle"
             type="button"
@@ -678,14 +759,22 @@ export function ReviewClient({
             aria-label={sidePanelOpen ? "Fermer le panneau" : "Ouvrir le panneau"}
             aria-expanded={sidePanelOpen}
           >
-            {sidePanelOpen ? "→" : "←"}
+            {sidePanelOpen ? (
+              <PanelRightClose aria-hidden="true" />
+            ) : (
+              <PanelRightOpen aria-hidden="true" />
+            )}
+            <span className="sidepanel-toggle-label">
+              {sidePanelOpen
+                ? "Masquer le guide"
+                : `Voir les ${testPoints.length} points à vérifier · ${completedPoints.length}/${testPoints.length}`}
+            </span>
           </button>
-          <div className="review-panel-tabs" role="tablist">
+          <div className="review-panel-tabs">
             <button
               className={panelTab === "brief" ? "active" : ""}
               type="button"
-              role="tab"
-              aria-selected={panelTab === "brief"}
+              aria-pressed={panelTab === "brief"}
               onClick={() => setPanelTab("brief")}
             >
               À vérifier
@@ -696,25 +785,26 @@ export function ReviewClient({
             <button
               className={panelTab === "feedback" ? "active" : ""}
               type="button"
-              role="tab"
-              aria-selected={panelTab === "feedback"}
+              aria-pressed={panelTab === "feedback"}
               onClick={() => setPanelTab("feedback")}
             >
-              Retours
+              Mes retours
               <span>{review.feedback.length}</span>
             </button>
           </div>
 
           {panelTab === "brief" ? (
-            <div className="brief-panel">
+            <div
+              className="brief-panel"
+            >
               <div className="brief-intro">
                 <span className="avatar avatar-ink">RM</span>
                 <div>
                   <span>Message de Raphaël</span>
                   <p>
-                    Bonjour Claire, cette version présente le nouveau parcours
-                    de réservation. Merci de vous concentrer sur la clarté des
-                    textes et l’utilisation sur téléphone.
+                    Bonjour Claire, la version {review.release.version} est
+                    prête pour vous. Raphaël vous propose trois vérifications.
+                    Comptez environ cinq minutes.
                   </p>
                 </div>
               </div>
@@ -743,7 +833,7 @@ export function ReviewClient({
                       onClick={() => togglePoint(index)}
                     >
                       <span className="point-check">
-                        {completed ? "✓" : index + 1}
+                        {completed ? <Check aria-hidden="true" /> : index + 1}
                       </span>
                       <span>
                         <strong>{point.title}</strong>
@@ -764,7 +854,9 @@ export function ReviewClient({
               </div>
             </div>
           ) : (
-            <div className="review-feedback-panel">
+            <div
+              className="review-feedback-panel"
+            >
               {selectedFeedback ? (
                 <div className="client-feedback-detail">
                   <button
@@ -772,10 +864,11 @@ export function ReviewClient({
                     onClick={() => setSelectedFeedback(null)}
                     className="back-to-feedback"
                   >
-                    ← Tous les retours
+                    <ArrowLeft aria-hidden="true" />
+                    Tous les retours
                   </button>
                   <span className={`status-badge status-${selectedFeedback.status}`}>
-                    {statusLabels[selectedFeedback.status]}
+                    {clientStatusLabels[selectedFeedback.status]}
                   </span>
                   <h2>{selectedFeedback.title}</h2>
                   <p>{selectedFeedback.body}</p>
@@ -790,12 +883,8 @@ export function ReviewClient({
                     </span>
                   </div>
                   <div className="client-status-note">
-                    <span>◎</span>
-                    <p>
-                      {selectedFeedback.status === "to_review"
-                        ? "Raphaël indique que ce point est corrigé. Vous pouvez le vérifier dans la page."
-                        : "Raphaël a reçu ce retour avec le contexte de cette version."}
-                    </p>
+                    <CircleDotDashed aria-hidden="true" />
+                    <p>{clientStatusMessages[selectedFeedback.status]}</p>
                   </div>
                   {selectedFeedback.status === "to_review" && (
                     <div className="client-review-actions">
@@ -810,7 +899,7 @@ export function ReviewClient({
                           )
                         }
                       >
-                        C’est corrigé
+                        Oui, c’est corrigé
                       </button>
                       <button
                         className="button button-ghost"
@@ -832,8 +921,12 @@ export function ReviewClient({
                       <strong>Vos retours</strong>
                       <span>Liés à la version {review.release.version}</span>
                     </div>
-                    <button type="button" onClick={openGeneralFeedback}>
-                      ＋
+                    <button
+                      type="button"
+                      onClick={openGeneralFeedback}
+                      aria-label="Ajouter un retour général"
+                    >
+                      <Plus aria-hidden="true" />
                     </button>
                   </div>
                   <div className="client-feedback-list">
@@ -847,10 +940,11 @@ export function ReviewClient({
                         <span>
                           <strong>{item.title}</strong>
                           <small>
-                            {typeLabels[item.type]} · {statusLabels[item.status]}
+                            {typeLabels[item.type]} ·{" "}
+                            {clientStatusLabels[item.status]}
                           </small>
                         </span>
-                        <span aria-hidden="true">→</span>
+                        <ArrowRight aria-hidden="true" />
                       </button>
                     ))}
                   </div>
@@ -871,22 +965,25 @@ export function ReviewClient({
             setComposer(null);
           }}
         >
-          <span aria-hidden="true">↖</span>
-          Parcourir
+          <MousePointer2 aria-hidden="true" />
+          Tester la page
         </button>
         <button
           className={mode === "comment" ? "active" : ""}
           type="button"
           aria-pressed={mode === "comment"}
-          onClick={() => setMode("comment")}
+          onClick={() => {
+            setShowReservation(false);
+            setMode("comment");
+          }}
         >
-          <span aria-hidden="true">＋</span>
-          Annoter
+          <MessageCirclePlus aria-hidden="true" />
+          Signaler ici
         </button>
         <span className="toolbar-divider" />
         <button type="button" onClick={openGeneralFeedback}>
-          <span aria-hidden="true">◎</span>
-          Retour général
+          <CircleDotDashed aria-hidden="true" />
+          Commentaire général
         </button>
       </div>
 
@@ -894,6 +991,9 @@ export function ReviewClient({
         <div className="composer-layer" role="presentation">
           <form
             className="feedback-composer"
+            role="dialog"
+            aria-labelledby="composer-title"
+            onKeyDown={trapDialogFocus}
             onSubmit={submitFeedback}
             style={{
               left: `${Math.min(window.innerWidth - 390, Math.max(18, composer.clientX + 22))}px`,
@@ -903,16 +1003,23 @@ export function ReviewClient({
             <div className="composer-heading">
               <div>
                 <span className={`composer-pin ${composer.general ? "general" : ""}`}>
-                  {composer.general ? "◎" : review.feedback.length + 1}
+                  {composer.general ? (
+                    <CircleDotDashed aria-hidden="true" />
+                  ) : (
+                    review.feedback.length + 1
+                  )}
                 </span>
-                <strong>Nouveau retour</strong>
+                <span>
+                  <small className="composer-kicker">Nouveau retour</small>
+                  <strong id="composer-title">Nouveau retour</strong>
+                </span>
               </div>
               <button
                 type="button"
                 onClick={() => setComposer(null)}
                 aria-label="Fermer le formulaire"
               >
-                ×
+                <X aria-hidden="true" />
               </button>
             </div>
 
@@ -975,9 +1082,15 @@ export function ReviewClient({
             </label>
 
             <div className="composer-context">
-              <span>⌁ Page d’accueil</span>
-              <span>▰ {viewportLabels[viewport]}</span>
-              <span>◈ Version {review.release.version}</span>
+              <span>
+                <Link2 aria-hidden="true" /> Page d’accueil
+              </span>
+              <span>
+                <Monitor aria-hidden="true" /> {viewportDisplayLabels[viewport]}
+              </span>
+              <span>
+                <ScanLine aria-hidden="true" /> Version {review.release.version}
+              </span>
             </div>
             <p className="composer-privacy">
               Revaloop n’ajoute ni le contenu des champs ni les cookies
@@ -989,7 +1102,7 @@ export function ReviewClient({
               disabled={isSubmitting}
             >
               {isSubmitting ? "Envoi…" : "Envoyer à Raphaël"}
-              <span aria-hidden="true">→</span>
+              <Send aria-hidden="true" />
             </button>
           </form>
         </div>
@@ -1022,11 +1135,16 @@ export function ReviewClient({
               }}
               aria-label="Fermer"
             >
-              ×
+              <X aria-hidden="true" />
             </button>
-            <span className="finish-check">✓</span>
+            <span className="finish-check">
+              <ClipboardCheck aria-hidden="true" />
+            </span>
             <p className="eyebrow">Fin du parcours</p>
-            <h2 id="finish-title">Quel est votre ressenti général ?</h2>
+            <h2 id="finish-title">
+              Quelle décision souhaitez-vous transmettre pour la version{" "}
+              {review.release.version} ?
+            </h2>
             <p>
               Vous avez vérifié {completedPoints.length} point
               {completedPoints.length > 1 ? "s" : ""} sur {testPoints.length} et
@@ -1047,10 +1165,12 @@ export function ReviewClient({
                 disabled={isSubmitting || unresolvedFeedback.length > 0}
                 onClick={() => submitDecision("approved")}
               >
-                <span>✓</span>
+                <span>
+                  <Check aria-hidden="true" />
+                </span>
                 <div>
-                  <strong>Tout me semble bon</strong>
-                  <small>Valider cette version</small>
+                  <strong>J’approuve cette version</strong>
+                  <small>Transmettre mon accord à Raphaël</small>
                 </div>
               </button>
               <button
@@ -1064,10 +1184,12 @@ export function ReviewClient({
                   )
                 }
               >
-                <span>◎</span>
+                <span>
+                  <MessageCirclePlus aria-hidden="true" />
+                </span>
                 <div>
-                  <strong>J’ai envoyé des retours</strong>
-                  <small>Demander des ajustements</small>
+                  <strong>Je demande des ajustements</strong>
+                  <small>Transmettre mes remarques à Raphaël</small>
                 </div>
               </button>
             </div>
