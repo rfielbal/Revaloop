@@ -160,6 +160,7 @@ export function ReviewClient({
   });
   const previewRef = useRef<HTMLDivElement>(null);
   const finishButtonRef = useRef<HTMLButtonElement>(null);
+  const composerTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -204,6 +205,9 @@ export function ReviewClient({
     const frame = window.requestAnimationFrame(() => {
       if (window.matchMedia("(max-width: 720px)").matches) {
         setSidePanelOpen(false);
+        setViewport("mobile");
+      } else if (window.matchMedia("(max-width: 1020px)").matches) {
+        setViewport("tablet");
       }
 
       const focus = new URLSearchParams(window.location.search).get("focus");
@@ -242,6 +246,7 @@ export function ReviewClient({
         finishButtonRef.current?.focus();
       } else if (composer) {
         setComposer(null);
+        window.requestAnimationFrame(() => composerTriggerRef.current?.focus());
       } else if (showReservation) {
         setShowReservation(false);
       }
@@ -288,6 +293,10 @@ export function ReviewClient({
     const x = ((event.clientX - bounds.left) / bounds.width) * 100;
     const y = ((event.clientY - bounds.top) / bounds.height) * 100;
 
+    composerTriggerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setComposer({
       x: Math.min(96, Math.max(4, x)),
       y: Math.min(96, Math.max(4, y)),
@@ -315,6 +324,10 @@ export function ReviewClient({
   }
 
   function openGeneralFeedback() {
+    composerTriggerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setShowReservation(false);
     setShowFinishDialog(false);
     setMode("comment");
@@ -362,6 +375,7 @@ export function ReviewClient({
         feedback: [...current.feedback, item],
       }));
       setComposer(null);
+      window.requestAnimationFrame(() => composerTriggerRef.current?.focus());
       setSessionFeedbackCount((count) => count + 1);
       setForm({
         type: "visual",
@@ -416,6 +430,7 @@ export function ReviewClient({
         decisions: [decision, ...current.decisions],
       }));
       setShowFinishDialog(false);
+      window.requestAnimationFrame(() => finishButtonRef.current?.focus());
       setToast(
         `Bilan transmis · Version ${review.release.version} · Raphaël a reçu votre décision.`,
       );
@@ -488,8 +503,12 @@ export function ReviewClient({
   }
 
   return (
-    <div className="review-page review-studio">
-      <header className="review-topbar">
+    <main className="review-page review-flow">
+      <header
+        className="review-topbar"
+        inert={composer || showFinishDialog ? true : undefined}
+        aria-hidden={composer || showFinishDialog ? true : undefined}
+      >
         <div className="review-brand">
           <Link href="/" aria-label="Accueil Revaloop">
             <Brand />
@@ -497,7 +516,7 @@ export function ReviewClient({
           <span className="topbar-divider" />
           <div>
             <span className="review-session">
-              Revue client · version {review.release.version}
+              Votre revue · version {review.release.version}
             </span>
             <strong>{review.project.name}</strong>
             <span>
@@ -510,9 +529,13 @@ export function ReviewClient({
         <div className="review-measure">
           <span className="review-measure-label">
             <ScanLine aria-hidden="true" />
-            Aperçu sur
+            Format de l’aperçu
           </span>
-          <div className="review-device-switcher" aria-label="Taille de l’écran">
+          <div
+            className="review-device-switcher"
+            role="group"
+            aria-label="Taille de l’écran"
+          >
             <button
               className={viewport === "desktop" ? "active" : ""}
               type="button"
@@ -565,20 +588,19 @@ export function ReviewClient({
         </div>
       </header>
 
-      <div className="review-stage">
+      <div
+        className="review-stage"
+        inert={composer || showFinishDialog ? true : undefined}
+        aria-hidden={composer || showFinishDialog ? true : undefined}
+      >
         <div className="preview-area">
           <div className="canvas-meta" aria-hidden="true">
             <span>
               <i className="online-dot" /> Prête à tester · {review.release.version}
             </span>
-            <span className="canvas-coordinate">X 000 · Y 000</span>
             <span>{viewportDisplayLabels[viewport]}</span>
           </div>
           <div className={`preview-frame preview-${viewport}`}>
-            <span className="preview-crop crop-top-left" aria-hidden="true" />
-            <span className="preview-crop crop-top-right" aria-hidden="true" />
-            <span className="preview-crop crop-bottom-left" aria-hidden="true" />
-            <span className="preview-crop crop-bottom-right" aria-hidden="true" />
             <div
               className={`client-preview ${mode === "comment" ? "is-commenting" : ""}`}
               ref={previewRef}
@@ -748,9 +770,12 @@ export function ReviewClient({
 
         <aside className={`review-sidepanel ${sidePanelOpen ? "open" : ""}`}>
           <div className="review-notebook-header">
-            <span>Votre guide de test</span>
-            <strong>MM / {review.release.version}</strong>
-            <small>{review.feedback.length} retours transmis</small>
+            <span>Bonjour Claire</span>
+            <strong>Voici ce qu’il reste à regarder</strong>
+            <small>
+              {completedPoints.length}/{testPoints.length} vérifications ·{" "}
+              {review.feedback.length} retours
+            </small>
           </div>
           <button
             className="sidepanel-toggle"
@@ -770,11 +795,33 @@ export function ReviewClient({
                 : `Voir les ${testPoints.length} points à vérifier · ${completedPoints.length}/${testPoints.length}`}
             </span>
           </button>
-          <div className="review-panel-tabs">
+          <div
+            className="review-panel-tabs"
+            role="tablist"
+            aria-label="Contenu de la revue"
+            inert={!sidePanelOpen ? true : undefined}
+            aria-hidden={!sidePanelOpen ? true : undefined}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+                return;
+              }
+
+              event.preventDefault();
+              const nextTab = panelTab === "brief" ? "feedback" : "brief";
+              setPanelTab(nextTab);
+              window.requestAnimationFrame(() =>
+                document.getElementById(`review-tab-${nextTab}`)?.focus(),
+              );
+            }}
+          >
             <button
+              id="review-tab-brief"
               className={panelTab === "brief" ? "active" : ""}
               type="button"
-              aria-pressed={panelTab === "brief"}
+              role="tab"
+              aria-selected={panelTab === "brief"}
+              aria-controls="review-panel-brief"
+              tabIndex={panelTab === "brief" ? 0 : -1}
               onClick={() => setPanelTab("brief")}
             >
               À vérifier
@@ -783,9 +830,13 @@ export function ReviewClient({
               </span>
             </button>
             <button
+              id="review-tab-feedback"
               className={panelTab === "feedback" ? "active" : ""}
               type="button"
-              aria-pressed={panelTab === "feedback"}
+              role="tab"
+              aria-selected={panelTab === "feedback"}
+              aria-controls="review-panel-feedback"
+              tabIndex={panelTab === "feedback" ? 0 : -1}
               onClick={() => setPanelTab("feedback")}
             >
               Mes retours
@@ -795,7 +846,12 @@ export function ReviewClient({
 
           {panelTab === "brief" ? (
             <div
+              id="review-panel-brief"
               className="brief-panel"
+              role="tabpanel"
+              aria-labelledby="review-tab-brief"
+              inert={!sidePanelOpen ? true : undefined}
+              aria-hidden={!sidePanelOpen ? true : undefined}
             >
               <div className="brief-intro">
                 <span className="avatar avatar-ink">RM</span>
@@ -855,7 +911,12 @@ export function ReviewClient({
             </div>
           ) : (
             <div
+              id="review-panel-feedback"
               className="review-feedback-panel"
+              role="tabpanel"
+              aria-labelledby="review-tab-feedback"
+              inert={!sidePanelOpen ? true : undefined}
+              aria-hidden={!sidePanelOpen ? true : undefined}
             >
               {selectedFeedback ? (
                 <div className="client-feedback-detail">
@@ -892,6 +953,7 @@ export function ReviewClient({
                         className="button button-primary"
                         type="button"
                         disabled={isSubmitting}
+                        aria-busy={isSubmitting}
                         onClick={() =>
                           updateClientFeedbackStatus(
                             selectedFeedback,
@@ -905,6 +967,7 @@ export function ReviewClient({
                         className="button button-ghost"
                         type="button"
                         disabled={isSubmitting}
+                        aria-busy={isSubmitting}
                         onClick={() =>
                           updateClientFeedbackStatus(selectedFeedback, "open")
                         }
@@ -955,7 +1018,13 @@ export function ReviewClient({
         </aside>
       </div>
 
-      <div className="review-toolbar" aria-label="Outils de recette">
+      <div
+        className="review-toolbar"
+        role="toolbar"
+        aria-label="Outils de recette"
+        inert={composer || showFinishDialog ? true : undefined}
+        aria-hidden={composer || showFinishDialog ? true : undefined}
+      >
         <button
           className={mode === "browse" ? "active" : ""}
           type="button"
@@ -988,10 +1057,22 @@ export function ReviewClient({
       </div>
 
       {composer && (
-        <div className="composer-layer" role="presentation">
+        <div
+          className="composer-layer"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) {
+              setComposer(null);
+              window.requestAnimationFrame(() =>
+                composerTriggerRef.current?.focus(),
+              );
+            }
+          }}
+        >
           <form
             className="feedback-composer"
             role="dialog"
+            aria-modal="true"
             aria-labelledby="composer-title"
             onKeyDown={trapDialogFocus}
             onSubmit={submitFeedback}
@@ -1016,7 +1097,12 @@ export function ReviewClient({
               </div>
               <button
                 type="button"
-                onClick={() => setComposer(null)}
+                onClick={() => {
+                  setComposer(null);
+                  window.requestAnimationFrame(() =>
+                    composerTriggerRef.current?.focus(),
+                  );
+                }}
                 aria-label="Fermer le formulaire"
               >
                 <X aria-hidden="true" />
@@ -1100,6 +1186,7 @@ export function ReviewClient({
               className="button button-primary button-full"
               type="submit"
               disabled={isSubmitting}
+              aria-busy={isSubmitting}
             >
               {isSubmitting ? "Envoi…" : "Envoyer à Raphaël"}
               <Send aria-hidden="true" />
@@ -1163,6 +1250,7 @@ export function ReviewClient({
                 className="finish-choice finish-choice-approve"
                 type="button"
                 disabled={isSubmitting || unresolvedFeedback.length > 0}
+                aria-busy={isSubmitting}
                 onClick={() => submitDecision("approved")}
               >
                 <span>
@@ -1177,6 +1265,7 @@ export function ReviewClient({
                 className="finish-choice"
                 type="button"
                 disabled={isSubmitting}
+                aria-busy={isSubmitting}
                 onClick={() =>
                   submitDecision(
                     "changes_requested",
@@ -1205,6 +1294,6 @@ export function ReviewClient({
         <span className="online-dot" />
         {toast}
       </div>
-    </div>
+    </main>
   );
 }

@@ -9,7 +9,7 @@ export function ReviewUnavailable({
   message: string;
 }) {
   return (
-    <main className="review-unavailable">
+    <main className="review-unavailable revaloop-unavailable">
       <Link href="/" aria-label="Accueil Revaloop">
         <Brand />
       </Link>

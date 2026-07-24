@@ -92,6 +92,46 @@ function assertNoStarterContent(html) {
   assert.doesNotMatch(html, forbiddenStarterContent);
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertAccessibleStructure(html) {
+  assert.match(html, /<html\b[^>]*\blang=["']fr["']/i);
+  assert.equal((html.match(/<main\b/gi) ?? []).length, 1);
+  assert.equal((html.match(/<h1\b/gi) ?? []).length, 1);
+}
+
+function assertInternalLink(html, href) {
+  const links = html.match(/<a\b[^>]*>/gi) ?? [];
+  const pattern = new RegExp(
+    `\\bhref=["']${escapeRegExp(href)}["']`,
+    "i",
+  );
+
+  assert.ok(
+    links.some((link) => pattern.test(link)),
+    `Lien absent : ${href}`,
+  );
+}
+
+function assertNamedRole(html, role, label) {
+  const tags = html.match(/<[^>]+>/g) ?? [];
+  const rolePattern = new RegExp(
+    `\\brole=["']${escapeRegExp(role)}["']`,
+    "i",
+  );
+  const labelPattern = new RegExp(
+    `\\baria-label=["']${escapeRegExp(label)}["']`,
+    "i",
+  );
+
+  assert.ok(
+    tags.some((tag) => rolePattern.test(tag) && labelPattern.test(tag)),
+    `Rôle ${role} nommé « ${label} » absent`,
+  );
+}
+
 function visibleText(html) {
   return html
     .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
@@ -142,13 +182,17 @@ test("server-renders the Revaloop landing page", async () => {
     html,
     /<meta(?=[^>]*\bname=["']robots["'])(?=[^>]*\bcontent=["'][^"']*noindex)/i,
   );
-  assert.match(text, /Votre client ne veut pas/);
-  assert.match(text, /Revaloop rassemble tout cela dans un lien de revue dédié\./);
-  assert.match(text, /Du lien de test à une validation exploitable\./);
+  assertAccessibleStructure(html);
+  assert.match(text, /Le lien ouvre le projet\. Revaloop garde le fil\./);
+  assert.match(text, /Le même retour, des deux côtés/);
+  assert.match(text, /Du premier clic à la validation finale\./);
   assert.match(
     text,
     /Un outil que les développeurs peuvent vraiment inspecter\./,
   );
+  assertInternalLink(html, "/dashboard");
+  assertInternalLink(html, "/review/maison-matisse-v12");
+  assertNamedRole(html, "group", "Changer de point de vue");
   assertNoStarterContent(html);
 });
 
@@ -164,11 +208,13 @@ test("server-renders the developer dashboard", async () => {
     "description",
     "Suivez une version en recette, traitez les retours et préparez sa validation.",
   );
+  assertAccessibleStructure(html);
   assert.match(text, /Maison Matisse/);
   assert.match(text, /Version v1\.2 en recette/);
-  assert.match(text, /Boucle de validation/);
+  assert.match(text, /Retours à traiter/);
   assert.match(text, /Retours de cette version/);
   assert.match(text, /Données de démonstration chargées localement\./);
+  assertNamedRole(html, "group", "Filtrer les retours");
   assertNoStarterContent(html);
 });
 
@@ -195,8 +241,11 @@ test("server-renders the private review with noindex metadata", async () => {
     response.headers.get("cache-control"),
     "private, no-store, max-age=0",
   );
+  assertAccessibleStructure(html);
   assert.match(text, /Maison Matisse/);
   assert.match(text, /Version v1\.2/);
+  assert.match(text, /Votre revue · version v1\.2/);
+  assert.match(text, /Voici ce qu’il reste à regarder/);
   assert.match(text, /Envoyer mon bilan/);
   assert.match(
     text,
@@ -209,6 +258,8 @@ test("server-renders the private review with noindex metadata", async () => {
   );
   assert.match(text, /Tester la page/);
   assert.match(text, /Signaler ici/);
+  assertNamedRole(html, "group", "Taille de l’écran");
+  assertNamedRole(html, "toolbar", "Outils de recette");
   assertNoStarterContent(html);
 });
 
@@ -219,6 +270,7 @@ test("does not disclose the demo project for an invalid review token", async () 
   assertHtmlResponse(response);
   assertSecurityHeaders(response);
   assertNamedMeta(html, "robots", "noindex, nofollow, noarchive, nosnippet");
+  assertAccessibleStructure(html);
   assert.match(text, /Ce lien n’est pas valide/);
   assert.match(text, /Revaloop ne révèle aucune information sur le projet/);
   assert.doesNotMatch(text, /Maison Matisse/);

@@ -301,19 +301,33 @@ export function DashboardClient({
   }
 
   return (
-    <div className="workspace-page workspace-studio">
+    <div className="workspace-page workspace-flow">
       <aside
         ref={sidebarRef}
         className={`workspace-sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}
         inert={isMobileLayout && !mobileMenuOpen ? true : undefined}
         aria-hidden={isMobileLayout && !mobileMenuOpen ? true : undefined}
+        role={isMobileLayout ? "dialog" : undefined}
+        aria-modal={isMobileLayout && mobileMenuOpen ? true : undefined}
+        aria-label={isMobileLayout ? "Navigation de l’espace développeur" : undefined}
+        onKeyDown={
+          isMobileLayout && mobileMenuOpen ? trapDialogFocus : undefined
+        }
       >
         <div className="sidebar-brand-block">
           <Link href="/" aria-label="Retour à l’accueil Revaloop">
             <Brand />
           </Link>
-          <span className="sidebar-edition">Proofing studio · 01</span>
+          <span className="sidebar-edition">Espace développeur</span>
         </div>
+        <button
+          className="mobile-sidebar-close"
+          type="button"
+          onClick={closeMobileMenu}
+          aria-label="Fermer la navigation"
+        >
+          <X aria-hidden="true" />
+        </button>
 
         <nav className="workspace-nav" aria-label="Navigation de l’espace">
           <span className="nav-section-label">Espace</span>
@@ -367,7 +381,11 @@ export function DashboardClient({
           </button>
         </nav>
 
-        <div className="loop-rail" aria-label="Cycle de validation">
+        <div
+          className="loop-rail"
+          role="group"
+          aria-label="Cycle de validation"
+        >
           <span className="nav-section-label">Flux des retours</span>
           {[
             {
@@ -409,7 +427,11 @@ export function DashboardClient({
         </div>
       </aside>
 
-      <main className="workspace-main">
+      <main
+        className="workspace-main"
+        inert={isMobileLayout && mobileMenuOpen ? true : undefined}
+        aria-hidden={isMobileLayout && mobileMenuOpen ? true : undefined}
+      >
         <header className="workspace-header">
           <div className="workspace-title">
             <button
@@ -437,7 +459,7 @@ export function DashboardClient({
             <div>
               <span className="studio-kicker">
                 <ScanLine aria-hidden="true" />
-                Projet actif · Version {workspace.release.version}
+                Revue en cours · Version {workspace.release.version}
               </span>
               <h1>{workspace.project.name}</h1>
               <p>{workspace.project.description}</p>
@@ -466,8 +488,8 @@ export function DashboardClient({
 
         <div className="release-strip">
           <div className="docket-index" aria-hidden="true">
-            <span>LIVE</span>
-            <strong>RL/{workspace.release.version.replace(".", "")}</strong>
+            <span>Version</span>
+            <strong>{workspace.release.version}</strong>
           </div>
           <div className="release-state">
             <span className="pulse-ring">
@@ -483,6 +505,7 @@ export function DashboardClient({
           </div>
           <div
             className="docket-progress"
+            role="group"
             aria-label="Répartition des retours de la version"
           >
             <span className="is-done">
@@ -521,63 +544,18 @@ export function DashboardClient({
           </div>
         </div>
 
-        <section className="dashboard-overview">
-          <div className="overview-heading">
-            <span className="docket-label">Console de recette</span>
-            <strong>État de la boucle</strong>
-            <small>Mise à jour en direct · {workspace.release.commitSha}</small>
-          </div>
-          <article className="metric-card">
-            <span className="metric-index">01</span>
-            <span className="metric-label">Retours reçus</span>
-            <strong>{workspace.feedback.length}</strong>
-            <small>
-              <i className="trend-dot trend-coral" />{" "}
-              {counts.open + counts.in_progress} à traiter
-            </small>
-          </article>
-          <article className="metric-card">
-            <span className="metric-index">02</span>
-            <span className="metric-label">À revalider</span>
-            <strong>{counts.to_review}</strong>
-            <small>
-              <i className="trend-dot trend-lime" />{" "}
-              {counts.to_review > 0
-                ? `${counts.to_review} correction${counts.to_review > 1 ? "s" : ""} prête${counts.to_review > 1 ? "s" : ""} pour Claire`
-                : "Aucune correction à vérifier"}
-            </small>
-          </article>
-          <article className="metric-card metric-card-progress">
-            <span className="metric-index">03</span>
-            <div>
-              <span className="metric-label">Retours clôturés</span>
-              <strong>
-                {counts.resolved}/{workspace.feedback.length}
-              </strong>
-            </div>
-            <div className="radial-progress" style={{ "--progress": completion } as React.CSSProperties}>
-              <span>{completion}%</span>
-            </div>
-          </article>
-          <article className="metric-card metric-card-client">
-            <span className="metric-index">04</span>
-            <span className="avatar avatar-coral">CD</span>
-            <div>
-              <span className="metric-label">Dernière activité</span>
-              <strong>Claire Dubois</strong>
-              <small>Retour ajouté hier à 15:28</small>
-            </div>
-          </article>
-        </section>
-
         <section className="feedback-workspace">
           <div className="feedback-panel">
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">Boucle de validation</p>
+                <p className="eyebrow">Retours à traiter</p>
                 <h2>Retours de cette version</h2>
               </div>
-              <div className="filter-row" aria-label="Filtrer les retours">
+              <div
+                className="filter-row"
+                role="group"
+                aria-label="Filtrer les retours"
+              >
                 <button
                   className={activeStatus === "all" ? "active" : ""}
                   type="button"
@@ -624,12 +602,17 @@ export function DashboardClient({
                       <strong>{item.title}</strong>
                     </span>
                     <span className="feedback-type">
+                      <small className="feedback-mobile-label">Type</small>
                       {typeLabels[item.type]}
                     </span>
                     <span className={`status-badge status-${item.status}`}>
+                      <small className="feedback-mobile-label">État</small>
                       {statusLabels[item.status]}
                     </span>
                     <span className="feedback-date">
+                      <small className="feedback-mobile-label">
+                        Mise à jour
+                      </small>
                       {formatRelativeDate(item.updatedAt)}
                     </span>
                   </button>
@@ -723,6 +706,7 @@ export function DashboardClient({
                     className="button button-primary"
                     type="button"
                     disabled={!statusAction[selected.status].next || isUpdating}
+                    aria-busy={isUpdating}
                     onClick={() => advanceFeedback(selected)}
                   >
                     {isUpdating
@@ -746,6 +730,56 @@ export function DashboardClient({
               </div>
             )}
           </aside>
+        </section>
+
+        <section className="dashboard-overview">
+          <div className="overview-heading">
+            <span className="docket-label">Santé de la version</span>
+            <strong>Le rythme de cette revue</strong>
+            <small>Synchronisé · {workspace.release.commitSha}</small>
+          </div>
+          <article className="metric-card">
+            <span className="metric-label">Retours reçus</span>
+            <strong>{workspace.feedback.length}</strong>
+            <small>
+              <i className="trend-dot trend-coral" />{" "}
+              {counts.open + counts.in_progress} à traiter
+            </small>
+          </article>
+          <article className="metric-card">
+            <span className="metric-label">À revalider</span>
+            <strong>{counts.to_review}</strong>
+            <small>
+              <i className="trend-dot trend-lime" />{" "}
+              {counts.to_review > 0
+                ? `${counts.to_review} correction${counts.to_review > 1 ? "s" : ""} prête${counts.to_review > 1 ? "s" : ""} pour Claire`
+                : "Aucune correction à vérifier"}
+            </small>
+          </article>
+          <article className="metric-card metric-card-progress">
+            <div>
+              <span className="metric-label">Retours clôturés</span>
+              <strong>
+                {counts.resolved}/{workspace.feedback.length}
+              </strong>
+            </div>
+            <div
+              className="radial-progress"
+              style={
+                { "--progress": completion } as React.CSSProperties
+              }
+            >
+              <span>{completion}%</span>
+            </div>
+          </article>
+          <article className="metric-card metric-card-client">
+            <span className="avatar avatar-coral">CD</span>
+            <div>
+              <span className="metric-label">Dernière activité</span>
+              <strong>Claire Dubois</strong>
+              <small>Retour ajouté hier à 15:28</small>
+            </div>
+          </article>
         </section>
 
         <p className="sync-notice" role="status">

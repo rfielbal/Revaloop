@@ -264,7 +264,7 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": "'#dfff4f'"
+          "default": "'#ded8e8'"
         },
         "created_at": {
           "name": "created_at",

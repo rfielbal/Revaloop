@@ -5,7 +5,7 @@ export const projects = sqliteTable("projects", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   description: text("description").notNull(),
-  accent: text("accent").notNull().default("#dfff4f"),
+  accent: text("accent").notNull().default("#ded8e8"),
   createdAt: text("created_at").notNull(),
 });
 

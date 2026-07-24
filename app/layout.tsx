@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Instrument_Serif, Manrope } from "next/font/google";
+import {
+  Geist_Mono,
+  Hanken_Grotesk,
+  Instrument_Serif,
+} from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 import "./product-ui.css";
 
-const manrope = Manrope({
-  variable: "--font-manrope",
+const hankenGrotesk = Hanken_Grotesk({
+  variable: "--font-hanken-grotesk",
   subsets: ["latin"],
 });
 
@@ -52,8 +56,8 @@ export async function generateMetadata(): Promise<Metadata> {
     description:
       "La plateforme open source de recette client : partagez une version dédiée, recueillez des retours contextualisés et faites-la valider.",
     icons: {
-      icon: "/favicon.png",
-      shortcut: "/favicon.png",
+      icon: "/favicon.svg",
+      shortcut: "/favicon.svg",
     },
     openGraph: {
       title: "Revaloop — Du lien de test à la validation",
@@ -88,7 +92,7 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <body
-        className={`${manrope.variable} ${instrumentSerif.variable} ${geistMono.variable} antialiased`}
+        className={`${hankenGrotesk.variable} ${instrumentSerif.variable} ${geistMono.variable} antialiased`}
       >
         {children}
       </body>

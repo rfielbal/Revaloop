@@ -4,6 +4,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
       <span className="brand-mark" aria-hidden="true">
         <i />
         <i />
+        <b />
       </span>
       {!compact && <strong>revaloop</strong>}
     </span>

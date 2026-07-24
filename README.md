@@ -139,6 +139,7 @@ Consultez :
 - [Modèle de menace](docs/THREAT_MODEL.md)
 - [Cycle de vie des données](docs/DATA_LIFECYCLE.md)
 - [Feuille de route](docs/ROADMAP.md)
+- [Système de design](docs/DESIGN_SYSTEM.md)
 - [ADRs](docs/adr/)
 
 ## Prérequis

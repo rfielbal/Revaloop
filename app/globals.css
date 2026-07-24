@@ -1,30 +1,30 @@
 @import "tailwindcss";
 
 :root {
-  --paper: #f4f2eb;
-  --paper-deep: #ebe8df;
-  --surface: #fffef9;
-  --surface-soft: #f8f7f2;
-  --ink: #171814;
-  --ink-soft: #57594f;
-  --ink-faint: #8c8d83;
-  --line: #dcd9cf;
-  --line-dark: #c4c0b5;
-  --lime: #dfff4f;
-  --lime-soft: #efffb0;
-  --coral: #ff7258;
-  --coral-soft: #ffe0d8;
-  --violet: #6d5dfc;
-  --violet-soft: #e6e2ff;
-  --sky: #ccecff;
-  --success: #147a51;
-  --danger: #c63f2c;
-  --shadow-sm: 0 8px 24px rgba(30, 30, 24, 0.08);
-  --shadow-lg: 0 30px 80px rgba(23, 24, 20, 0.14);
+  --paper: #f7f3ed;
+  --paper-deep: #eee8df;
+  --surface: #fffdf9;
+  --surface-soft: #f8f4ef;
+  --ink: #342a38;
+  --ink-soft: #665b69;
+  --ink-faint: #706672;
+  --line: rgba(52, 42, 56, 0.14);
+  --line-dark: rgba(52, 42, 56, 0.25);
+  --lime: #ded8e8;
+  --lime-soft: #eeeaf4;
+  --coral: #df755d;
+  --coral-soft: #f1c9bf;
+  --violet: #7d435c;
+  --violet-soft: #ded8e8;
+  --sky: #e5eef1;
+  --success: #3f765a;
+  --danger: #a65343;
+  --shadow-sm: 0 8px 24px rgba(67, 52, 72, 0.08);
+  --shadow-lg: 0 30px 80px rgba(67, 52, 72, 0.14);
   --radius-sm: 10px;
   --radius-md: 18px;
   --radius-lg: 28px;
-  --font-sans: var(--font-manrope), Arial, Helvetica, sans-serif;
+  --font-sans: var(--font-hanken-grotesk), Arial, Helvetica, sans-serif;
   --font-display: var(--font-instrument-serif), "Iowan Old Style", Georgia,
     serif;
   --font-mono: var(--font-geist-mono), "SFMono-Regular", Consolas, monospace;
@@ -76,7 +76,7 @@ textarea:focus-visible {
 }
 
 ::selection {
-  background: var(--lime);
+  background: var(--coral-soft);
   color: var(--ink);
 }
 
@@ -197,15 +197,16 @@ textarea:focus-visible {
 }
 
 .button-primary {
-  background: var(--lime);
-  border-color: #c9e83f;
-  color: var(--ink);
-  box-shadow: 0 8px 20px rgba(134, 158, 30, 0.16);
+  background: var(--violet);
+  border-color: var(--violet);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(97, 50, 70, 0.15);
 }
 
 .button-primary:hover {
-  background: #e6ff72;
-  box-shadow: 0 11px 26px rgba(134, 158, 30, 0.22);
+  background: #613246;
+  border-color: #613246;
+  box-shadow: 0 11px 26px rgba(97, 50, 70, 0.2);
 }
 
 .button-ink {

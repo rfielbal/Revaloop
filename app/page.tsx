@@ -1,301 +1,429 @@
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  Code2,
+  GitFork,
+  Link2,
+  LockKeyhole,
+  MapPin,
+  Menu,
+  MessageCircleMore,
+  MonitorSmartphone,
+  ShieldCheck,
+  UserRound,
+} from "lucide-react";
 import Link from "next/link";
-import { Brand } from "./components/brand";
 import { DEMO_TOKEN } from "../lib/revaloop";
+import { Brand } from "./components/brand";
+import { PerspectiveToggle } from "./components/perspective-toggle";
 
-const workflow = [
+const journey = [
   {
     number: "01",
-    title: "Publiez une version",
-    text: "Revaloop associe les consignes et les retours à une version précise.",
+    title: "Partagez une version",
+    text: "Le client reçoit un lien dédié, des consignes claires et un environnement de démonstration.",
+    icon: Link2,
   },
   {
     number: "02",
-    title: "Laissez-le tester",
-    text: "Le client parcourt le produit avec ses consignes, sans compte ni jargon.",
+    title: "Laissez-le parcourir",
+    text: "Il teste librement sur ordinateur ou téléphone, sans compte et sans vocabulaire technique.",
+    icon: UserRound,
   },
   {
     number: "03",
-    title: "Recevez du contexte",
-    text: "Chaque retour garde sa page, sa version, son écran et sa position.",
+    title: "Gardez le contexte",
+    text: "Chaque remarque reste liée à sa page, sa position, son écran et sa version.",
+    icon: MapPin,
   },
   {
     number: "04",
-    title: "Faites revalider",
-    text: "Une correction revient au client jusqu’à une décision claire et tracée.",
+    title: "Refermez la boucle",
+    text: "La correction revient au client jusqu’à une décision explicite et traçable.",
+    icon: Check,
   },
 ];
 
-const feedbackPreview = [
-  {
-    id: "#01",
-    title: "Le bouton de réservation manque de contraste",
-    state: "À revalider",
-    tone: "lime",
-  },
-  {
-    id: "#02",
-    title: "Remplacer « Notre table »",
-    state: "En cours",
-    tone: "violet",
-  },
-  {
-    id: "#03",
-    title: "Proposer un horaire alternatif",
-    state: "Signalé",
-    tone: "coral",
-  },
+const currentCapabilities = [
+  "Portail développeur et revue client",
+  "Annotations positionnées dans la page",
+  "Statuts, revalidation et décision finale",
+  "Données de démonstration persistées",
+];
+
+const upcomingCapabilities = [
+  "Agent local et tunnel privé",
+  "Révocation et rotation des liens",
+  "Isolation renforcée des environnements",
+  "Parcours d’auto-hébergement documenté",
 ];
 
 export default function Home() {
   return (
-    <main className="landing-page">
-      <header className="site-header">
-        <Link href="/" aria-label="Accueil Revaloop">
-          <Brand />
-        </Link>
-        <nav className="site-nav" aria-label="Navigation principale">
-          <a href="#produit">Produit</a>
-          <a href="#confiance">Confiance</a>
-          <a href="#opensource">Open source</a>
-        </nav>
-        <Link className="button button-small button-ink" href="/dashboard">
-          Ouvrir la démo
-          <span aria-hidden="true">↗</span>
-        </Link>
+    <main className="landing-page revaloop-home">
+      <a className="flow-skip-link" href="#contenu">
+        Aller au contenu
+      </a>
+      <header className="flow-site-header">
+        <div className="flow-header-shell">
+          <Link href="/" aria-label="Accueil Revaloop">
+            <Brand />
+          </Link>
+
+          <nav className="flow-site-nav" aria-label="Navigation principale">
+            <a href="#produit">Le produit</a>
+            <a href="#confiance">Confiance</a>
+            <a href="#opensource">Open source</a>
+          </nav>
+
+          <Link className="flow-header-cta" href="/dashboard">
+            Ouvrir la démo
+            <ArrowUpRight aria-hidden="true" />
+          </Link>
+
+          <details className="flow-mobile-nav">
+            <summary>
+              <Menu aria-hidden="true" />
+              <span>Menu</span>
+            </summary>
+            <div>
+              <a href="#produit">Le produit</a>
+              <a href="#confiance">Confiance</a>
+              <a href="#opensource">Open source</a>
+              <Link href="/dashboard">Ouvrir la démo</Link>
+            </div>
+          </details>
+        </div>
       </header>
 
-      <section className="hero-section">
-        <div className="hero-copy">
-          <p className="eyebrow">
-            <span className="live-dot" aria-hidden="true" />
-            Prototype interactif open source
+      <section className="flow-hero" id="contenu">
+        <div className="flow-hero-copy">
+          <p className="flow-kicker">
+            <span aria-hidden="true" />
+            Pré-alpha open source · portail interactif
           </p>
           <h1>
-            Votre client ne veut pas
-            <span> un tunnel.</span>
+            Le lien ouvre le projet.
+            <em> Revaloop garde le fil.</em>
           </h1>
-          <p className="hero-lead">
-            Il veut savoir quoi tester, vous montrer précisément ce qui bloque
-            et valider la bonne version. Revaloop rassemble tout cela dans un
-            lien de revue dédié.
+          <p className="flow-hero-lead">
+            Un espace de revue où votre client sait quoi tester, peut montrer
+            exactement ce qui bloque et vous transmettre une décision claire.
           </p>
-          <div className="hero-actions">
-            <Link className="button button-primary" href="/dashboard">
-              Explorer l’espace développeur
-              <span aria-hidden="true">→</span>
+          <div className="flow-hero-actions">
+            <Link className="flow-button flow-button-primary" href="/dashboard">
+              Explorer côté développeur
+              <span>
+                <ArrowRight aria-hidden="true" />
+              </span>
             </Link>
             <Link
-              className="button button-ghost"
+              className="flow-button flow-button-secondary"
               href={`/review/${DEMO_TOKEN}`}
             >
               Voir comme le client
+              <span>
+                <UserRound aria-hidden="true" />
+              </span>
             </Link>
           </div>
-          <div className="hero-proof">
-            <span>Portail de revue fonctionnel</span>
-            <span>Données synthétiques</span>
-            <span>Tunnel sur la feuille de route</span>
-          </div>
+          <p className="flow-truth-line">
+            Aujourd’hui : portail fonctionnel et données fictives.
+            <span> Ensuite : agent local et tunnel privé.</span>
+          </p>
         </div>
 
-        <div className="hero-product" aria-label="Aperçu de Revaloop">
-          <div className="browser-chrome">
-            <div className="browser-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
+        <div className="flow-hero-scene" aria-label="Un retour relié au projet">
+          <span className="scene-orbit scene-orbit-one" aria-hidden="true" />
+          <span className="scene-orbit scene-orbit-two" aria-hidden="true" />
+          <div className="scene-product">
+            <div className="scene-product-heading">
+              <span>
+                <small>Maison Matisse</small>
+                <strong>Version v1.2</strong>
+              </span>
+              <span className="scene-ready">Prête à tester</span>
             </div>
-            <div className="browser-address">
-              <span aria-hidden="true">⌁</span>
-              review.revaloop.dev/maison-matisse
-            </div>
-            <span className="browser-secure">Démo</span>
-          </div>
-          <div className="product-shell">
-            <aside className="product-sidebar">
-              <Brand compact />
-              <div className="mini-nav">
-                <span className="active" />
-                <span />
-                <span />
+            <div className="scene-page">
+              <div className="scene-page-copy">
+                <small>Paris · Rive gauche</small>
+                <strong>Une cuisine vivante, au rythme des saisons.</strong>
+                <span>Réserver une table</span>
               </div>
-              <span className="mini-avatar">RM</span>
-            </aside>
-            <div className="product-main">
-              <div className="product-topline">
-                <div>
-                  <span className="overline">Maison Matisse</span>
-                  <strong>Retours de la version v1.2</strong>
-                </div>
-                <span className="version-badge">En recette</span>
+              <div className="scene-page-art" aria-hidden="true">
+                <i />
+                <i />
+                <i />
               </div>
-              <div className="mini-metrics">
-                <div>
-                  <strong>4</strong>
-                  <span>retours</span>
-                </div>
-                <div>
-                  <strong>1</strong>
-                  <span>à revalider</span>
-                </div>
-                <div>
-                  <strong>75%</strong>
-                  <span>parcouru</span>
-                </div>
-              </div>
-              <div className="feedback-preview-list">
-                {feedbackPreview.map((item) => (
-                  <div className="feedback-preview-card" key={item.id}>
-                    <span className={`mini-pin ${item.tone}`}>{item.id}</span>
-                    <strong>{item.title}</strong>
-                    <span className={`mini-state ${item.tone}`}>
-                      {item.state}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <span className="scene-pin">03</span>
             </div>
           </div>
-          <div className="floating-comment">
-            <span className="avatar avatar-coral">CD</span>
+
+          <article className="scene-feedback">
+            <span>Retour #03 · Claire</span>
+            <strong>Je ne sais pas si ma réservation est confirmée.</strong>
+            <small>Accueil · mobile · version v1.2</small>
+          </article>
+
+          <div className="scene-resolution">
+            <span>
+              <Check aria-hidden="true" />
+            </span>
             <div>
-              <strong>Claire vient d’ajouter un retour</strong>
-              <span>Page d’accueil · il y a quelques secondes</span>
+              <small>Boucle refermée</small>
+              <strong>Correction confirmée</strong>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="workflow-section" id="produit">
-        <div className="section-intro">
-          <p className="eyebrow">Une boucle, pas une boîte à commentaires</p>
-          <h2>Du lien de test à une validation exploitable.</h2>
-        </div>
-        <div className="workflow-grid">
-          {workflow.map((step) => (
-            <article className="workflow-card" key={step.number}>
-              <span>{step.number}</span>
-              <h3>{step.title}</h3>
-              <p>{step.text}</p>
-            </article>
-          ))}
+      <section className="flow-opening">
+        <p>
+          Une remarque n’est utile que si elle arrive
+          <em> au bon endroit, sur la bonne version, avec la bonne personne.</em>
+        </p>
+        <div>
+          <span>
+            <MessageCircleMore aria-hidden="true" />
+            Retour humain
+          </span>
+          <span>
+            <MonitorSmartphone aria-hidden="true" />
+            Contexte technique
+          </span>
+          <span>
+            <Check aria-hidden="true" />
+            Décision partagée
+          </span>
         </div>
       </section>
 
-      <section className="feature-section">
-        <article className="feature-card feature-card-large">
-          <div className="feature-copy">
-            <p className="eyebrow">Le contexte suit le retour</p>
-            <h2>Plus jamais « ça ne marche pas » sans savoir où regarder.</h2>
-            <p>
-              Position, page, type d’appareil, version et statut restent
-              associés au même retour.
-            </p>
-          </div>
-          <div className="annotation-demo">
-            <div className="annotation-page">
-              <span className="annotation-kicker">Maison Matisse</span>
-              <strong>Une cuisine vivante, au rythme des saisons.</strong>
-              <span className="annotation-button">Réserver une table</span>
-              <span className="annotation-pin">1</span>
-            </div>
-            <div className="annotation-note">
-              <span>Retour visuel · #01</span>
-              <strong>Le bouton manque de contraste sur cette photo.</strong>
-              <small>1440 × 900 · Chrome · v1.2</small>
-            </div>
-          </div>
-        </article>
-
-        <article className="feature-card feature-card-status">
-          <p className="eyebrow">Un vocabulaire commun</p>
-          <h3>Chaque retour avance.</h3>
-          <div className="status-flow">
-            <span>Signalé</span>
-            <i aria-hidden="true">→</i>
-            <span>En cours</span>
-            <i aria-hidden="true">→</i>
-            <span>À revalider</span>
-            <i aria-hidden="true">→</i>
-            <span className="status-done">Validé</span>
-          </div>
-        </article>
-
-        <article className="feature-card feature-card-client">
-          <div>
-            <p className="eyebrow">Pensé pour le client</p>
-            <h3>Zéro compte. Zéro jargon.</h3>
-          </div>
-          <div className="client-card">
-            <span className="avatar avatar-lime">CD</span>
-            <div>
-              <strong>Bonjour Claire</strong>
-              <span>3 points à vérifier · environ 5 minutes</span>
-            </div>
-            <span aria-hidden="true">→</span>
-          </div>
-        </article>
-      </section>
-
-      <section className="trust-section" id="confiance">
-        <div className="trust-copy">
-          <p className="eyebrow eyebrow-light">Confidentialité documentée</p>
-          <h2>Conçu pour rendre le contrôle vérifiable.</h2>
+      <section className="flow-perspective-section" id="produit">
+        <div className="flow-section-heading">
+          <span>Le même retour, des deux côtés</span>
+          <h2>
+            Claire explique simplement.
+            <em> Raphaël reçoit précisément.</em>
+          </h2>
           <p>
-            Cette pré-alpha utilise uniquement des données synthétiques. Le
-            modèle cible prévoit des liens expirants, des sessions révocables et
-            un chemin d’auto-hébergement ; ces garanties restent documentées
-            comme futures tant qu’elles ne sont pas testées de bout en bout.
+            Changez de point de vue : l’identifiant reste le même, seul le
+            niveau de contexte s’adapte à la personne qui le consulte.
+          </p>
+        </div>
+        <PerspectiveToggle />
+      </section>
+
+      <section className="flow-journey-section">
+        <div className="flow-section-heading flow-section-heading-compact">
+          <span>Une boucle qui ne perd rien en route</span>
+          <h2>Du premier clic à la validation finale.</h2>
+        </div>
+        <div className="flow-journey">
+          <span className="journey-line" aria-hidden="true" />
+          {journey.map((step) => {
+            const StepIcon = step.icon;
+            return (
+              <article className="journey-step" key={step.number}>
+                <span className="journey-node">
+                  <StepIcon aria-hidden="true" />
+                </span>
+                <small>{step.number}</small>
+                <h3>{step.title}</h3>
+                <p>{step.text}</p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="flow-context-section">
+        <div className="context-scene" aria-label="Retour contextualisé">
+          <div className="context-page">
+            <span>Maison Matisse</span>
+            <h3>Votre table vous attend.</h3>
+            <p>Choisissez un créneau pour terminer votre réservation.</p>
+            <button type="button" disabled>
+              Continuer
+            </button>
+            <i className="context-marker">01</i>
+          </div>
+          <article className="context-note">
+            <span>Retour visuel · #01</span>
+            <strong>Le bouton se confond avec le fond sur téléphone.</strong>
+            <div>
+              <small>Page</small>
+              <b>/reservation</b>
+              <small>Écran</small>
+              <b>390 × 844</b>
+              <small>Version</small>
+              <b>v1.2</b>
+            </div>
+          </article>
+        </div>
+        <div className="context-copy">
+          <span>Un retour qui sait déjà où regarder</span>
+          <h2>Le contexte voyage avec la remarque.</h2>
+          <p>
+            Plus besoin de reconstituer la scène à partir d’une capture perdue
+            ou d’un message vague. Revaloop conserve les repères nécessaires
+            pour comprendre, corriger puis faire vérifier.
+          </p>
+          <ul>
+            <li>
+              <MapPin aria-hidden="true" />
+              Page et position dans l’interface
+            </li>
+            <li>
+              <MonitorSmartphone aria-hidden="true" />
+              Appareil et dimensions observées
+            </li>
+            <li>
+              <Code2 aria-hidden="true" />
+              Version et statut du retour
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section className="flow-reality-section">
+        <div className="flow-section-heading flow-section-heading-compact">
+          <span>Une pré-alpha qui dit où elle en est</span>
+          <h2>Ce qui fonctionne. Ce qui vient ensuite.</h2>
+        </div>
+        <div className="reality-columns">
+          <article>
+            <span className="reality-state">
+              <Check aria-hidden="true" />
+              Disponible dans la démo
+            </span>
+            <ul>
+              {currentCapabilities.map((capability) => (
+                <li key={capability}>{capability}</li>
+              ))}
+            </ul>
+          </article>
+          <article>
+            <span className="reality-state reality-state-next">
+              <ArrowRight aria-hidden="true" />
+              Sur la feuille de route
+            </span>
+            <ul>
+              {upcomingCapabilities.map((capability) => (
+                <li key={capability}>{capability}</li>
+              ))}
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section className="flow-trust-section" id="confiance">
+        <div className="trust-route" aria-hidden="true">
+          <span />
+          <i />
+          <span />
+          <i />
+          <span />
+        </div>
+        <div className="trust-copy">
+          <span>Confidentialité documentée</span>
+          <h2>La confiance se construit aussi dans le parcours de test.</h2>
+          <p>
+            Cette démo emploie uniquement des données synthétiques. Le modèle
+            cible prévoit des liens expirants, des sessions révocables et un
+            chemin d’auto-hébergement ; ces garanties restent présentées comme
+            futures tant qu’elles ne sont pas validées de bout en bout.
           </p>
           <a
-            className="text-link text-link-light"
             href="https://github.com/rfielbal/Revaloop/blob/main/docs/THREAT_MODEL.md"
           >
-            Voir le modèle de sécurité
-            <span aria-hidden="true">↗</span>
+            Lire le modèle de sécurité
+            <ArrowUpRight aria-hidden="true" />
           </a>
         </div>
-        <div className="trust-layers" aria-label="Couches de confiance">
-          <div>
-            <span>01</span>
-            <strong>Données de démonstration</strong>
-            <small>Jamais la base de production</small>
-          </div>
-          <div>
-            <span>02</span>
-            <strong>Accès privé en conception</strong>
-            <small>Sessions, rotation et révocation prévues avant la bêta</small>
-          </div>
-          <div>
-            <span>03</span>
+        <div className="trust-points">
+          <article>
+            <MonitorSmartphone aria-hidden="true" />
+            <strong>Poste du développeur</strong>
+            <span>Une base de test, jamais la production.</span>
+          </article>
+          <article>
+            <LockKeyhole aria-hidden="true" />
+            <strong>Accès privé</strong>
+            <span>Sessions et révocation prévues avant la bêta.</span>
+          </article>
+          <article>
+            <ShieldCheck aria-hidden="true" />
             <strong>Architecture ouverte</strong>
-            <small>Portail présent, agent et relais encore à construire</small>
-          </div>
+            <span>Un modèle inspectable et documenté.</span>
+          </article>
         </div>
       </section>
 
-      <section className="opensource-section" id="opensource">
+      <section className="flow-opensource-section" id="opensource">
         <div>
-          <p className="eyebrow">Open source dès le premier commit</p>
+          <span>Open source dès le premier commit</span>
           <h2>Un outil que les développeurs peuvent vraiment inspecter.</h2>
         </div>
-        <div className="opensource-copy">
+        <div>
           <p>
-            Le portail de revue est déjà inspectable. L’agent local et le relais
-            sont spécifiés dans la feuille de route, qui distingue les fonctions
-            disponibles de celles qui exigent encore un durcissement.
+            Le portail de revue est déjà consultable. Le dépôt distingue les
+            fonctions présentes de celles qui demandent encore du durcissement,
+            sans transformer une intention en promesse.
           </p>
-          <Link className="button button-ink" href="/dashboard">
-            Découvrir le prototype
-            <span aria-hidden="true">→</span>
+          <a
+            className="flow-button flow-button-secondary"
+            href="https://github.com/rfielbal/Revaloop"
+          >
+            <GitFork aria-hidden="true" />
+            Consulter le dépôt
+            <span>
+              <ArrowUpRight aria-hidden="true" />
+            </span>
+          </a>
+        </div>
+      </section>
+
+      <section className="flow-final-section">
+        <div>
+          <span>Deux points de vue, une seule boucle</span>
+          <h2>Essayez Revaloop comme il doit être vécu.</h2>
+        </div>
+        <div className="flow-final-actions">
+          <Link className="flow-final-link flow-final-link-dev" href="/dashboard">
+            <Code2 aria-hidden="true" />
+            <span>
+              <small>Pour le développeur</small>
+              <strong>Ouvrir le tableau de bord</strong>
+            </span>
+            <ArrowUpRight aria-hidden="true" />
+          </Link>
+          <Link
+            className="flow-final-link flow-final-link-client"
+            href={`/review/${DEMO_TOKEN}`}
+          >
+            <UserRound aria-hidden="true" />
+            <span>
+              <small>Pour le client</small>
+              <strong>Commencer la revue</strong>
+            </span>
+            <ArrowUpRight aria-hidden="true" />
           </Link>
         </div>
       </section>
 
-      <footer className="site-footer">
+      <footer className="flow-site-footer">
         <Brand />
-        <p>La recette client, version par version.</p>
-        <span>Apache-2.0 · Construit en France</span>
+        <div>
+          <a href="https://github.com/rfielbal/Revaloop">GitHub</a>
+          <a href="https://github.com/rfielbal/Revaloop/blob/main/LICENSE">
+            Apache-2.0
+          </a>
+          <a href="https://github.com/rfielbal/Revaloop/blob/main/SECURITY.md">
+            Sécurité
+          </a>
+        </div>
+        <p>Pré-alpha · construit en France</p>
       </footer>
     </main>
   );
