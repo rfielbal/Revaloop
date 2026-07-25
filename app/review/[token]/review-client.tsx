@@ -9,6 +9,7 @@ import {
   CircleDotDashed,
   ClipboardCheck,
   Link2,
+  LogOut,
   MessageCirclePlus,
   Monitor,
   MousePointer2,
@@ -17,6 +18,7 @@ import {
   Plus,
   ScanLine,
   Send,
+  ShieldCheck,
   Smartphone,
   Tablet,
   X,
@@ -32,6 +34,7 @@ import {
 } from "react";
 import { Brand } from "../../components/brand";
 import {
+  formatRelativeDate,
   type FeedbackItem,
   type FeedbackPriority,
   type FeedbackType,
@@ -43,6 +46,7 @@ import { ReviewUnavailable } from "./review-unavailable";
 
 type Viewport = "desktop" | "tablet" | "mobile";
 type ReviewMode = "browse" | "comment";
+type ReviewExperienceMode = "demo" | "live";
 
 type ComposerPosition = {
   x: number | null;
@@ -52,31 +56,16 @@ type ComposerPosition = {
   general: boolean;
 };
 
-const testPoints = [
-  {
-    title: "Accroche de la page d’accueil",
-    text: "Le message et le bouton principal sont-ils immédiatement compréhensibles ?",
-  },
-  {
-    title: "Réservation d’une table",
-    text: "Essayez de réserver un dîner fictif pour deux personnes.",
-  },
-  {
-    title: "Lecture sur téléphone",
-    text: "Vérifiez la navigation et la lisibilité des informations essentielles.",
-  },
-];
-
 const viewportLabels: Record<Viewport, string> = {
-  desktop: "Desktop · 1440 × 900",
-  tablet: "Tablette · 820 × 1180",
-  mobile: "Mobile · 390 × 844",
+  desktop: "Desktop",
+  tablet: "Tablette",
+  mobile: "Mobile",
 };
 
 const viewportDisplayLabels: Record<Viewport, string> = {
-  desktop: "Ordinateur · 1440 × 900",
-  tablet: "Tablette · 820 × 1180",
-  mobile: "Téléphone · 390 × 844",
+  desktop: "Ordinateur",
+  tablet: "Tablette",
+  mobile: "Téléphone",
 };
 
 const clientStatusLabels: Record<FeedbackItem["status"], string> = {
@@ -87,11 +76,19 @@ const clientStatusLabels: Record<FeedbackItem["status"], string> = {
 };
 
 const clientStatusMessages: Record<FeedbackItem["status"], string> = {
-  open: "Votre retour a bien été transmis à Raphaël avec le contexte de cette version.",
-  in_progress: "Raphaël travaille actuellement sur ce point.",
-  to_review: "Raphaël indique que ce point est corrigé. Vérifiez-le dans la page, puis confirmez le résultat.",
+  open: "Votre retour a bien été transmis à l’équipe avec le contexte de cette version.",
+  in_progress: "L’équipe travaille actuellement sur ce point.",
+  to_review: "L’équipe indique que ce point est corrigé. Vérifiez-le dans la page, puis confirmez le résultat.",
   resolved: "Vous avez confirmé que cette correction répond à votre retour.",
 };
+
+function normalizePreviewPath(value: string) {
+  if (!value.startsWith("/") || value.startsWith("//")) {
+    return "/";
+  }
+
+  return value.split(/[?#]/, 1)[0].slice(0, 180) || "/";
+}
 
 function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
   if (event.key !== "Tab") {
@@ -122,23 +119,28 @@ function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
 export function ReviewClient({
   token,
   initialReview,
+  mode: experienceMode = "live",
 }: {
   token: string;
   initialReview: ReviewPayload;
+  mode?: ReviewExperienceMode;
 }) {
   const [review, setReview] = useState(initialReview);
   const [mode, setMode] = useState<ReviewMode>("browse");
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
   const [panelTab, setPanelTab] = useState<"brief" | "feedback">("brief");
-  const [completedPoints, setCompletedPoints] = useState<number[]>([]);
+  const [completedPoints, setCompletedPoints] = useState<string[]>(
+    initialReview.completedTestItemIds ?? [],
+  );
   const [sessionFeedbackCount, setSessionFeedbackCount] = useState(0);
   const [composer, setComposer] = useState<ComposerPosition | null>(null);
-  const [selectedFeedback, setSelectedFeedback] = useState<FeedbackItem | null>(
+  const [selectedFeedbackId, setSelectedFeedbackId] = useState<string | null>(
     null,
   );
   const [showFinishDialog, setShowFinishDialog] = useState(false);
   const [showReservation, setShowReservation] = useState(false);
+  const [previewHelpVisible, setPreviewHelpVisible] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [accessError, setAccessError] = useState<{
@@ -150,29 +152,65 @@ export function ReviewClient({
     priority: FeedbackPriority;
     title: string;
     body: string;
+    pagePath: string;
   }>({
     type: "visual",
     priority: "normal",
     title: "",
     body: "",
+    pagePath: "",
   });
   const previewRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const finishButtonRef = useRef<HTMLButtonElement>(null);
   const composerTriggerRef = useRef<HTMLElement | null>(null);
+  const testPoints = review.testItems ?? [];
+  const selectedFeedback =
+    review.feedback.find((item) => item.id === selectedFeedbackId) ?? null;
+  const currentDecision = review.decisions[0] ?? null;
+  const isReviewApproved =
+    currentDecision?.status === "approved" ||
+    review.release.status === "approved";
+  const externalPreviewUrl =
+    review.release.previewKind === "external"
+      ? review.release.previewUrl
+      : undefined;
+  const [previewContext, setPreviewContext] = useState(() => {
+    if (!externalPreviewUrl) {
+      return { path: "/", title: "Page d’accueil" };
+    }
+
+    const url = new URL(externalPreviewUrl);
+    return {
+      path: url.pathname,
+      title: url.hostname,
+    };
+  });
 
   useEffect(() => {
+    if (experienceMode === "demo") {
+      return;
+    }
+
     let cancelled = false;
 
-    fetch(`/api/review/${encodeURIComponent(token)}`, { cache: "no-store" })
+    const refresh = () =>
+      fetch(`/api/review/${encodeURIComponent(token)}`, { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) {
           const payload = (await response.json().catch(() => null)) as {
             error?: string;
           } | null;
           const error = new Error(
-            payload?.error ?? "Cette recette est indisponible.",
+            payload?.error ?? "Cet espace de test est indisponible.",
           );
-          error.name = response.status === 410 ? "ExpiredReview" : "MissingReview";
+          if (response.status === 410) {
+            error.name = "ExpiredReview";
+          } else if ([401, 403, 404].includes(response.status)) {
+            error.name = "MissingReview";
+          } else {
+            error.name = "TemporaryReview";
+          }
           throw error;
         }
         return (await response.json()) as ReviewPayload;
@@ -180,10 +218,18 @@ export function ReviewClient({
       .then((payload) => {
         if (!cancelled) {
           setReview(payload);
+          setAccessError(null);
         }
       })
       .catch((error: Error) => {
         if (!cancelled) {
+          if (error.name === "TemporaryReview") {
+            setToast(
+              "Connexion momentanément interrompue. Votre espace reste ouvert et une nouvelle tentative est en cours.",
+            );
+            return;
+          }
+
           setAccessError({
             title:
               error.name === "ExpiredReview"
@@ -194,10 +240,73 @@ export function ReviewClient({
         }
       });
 
+    refresh();
+    const interval = window.setInterval(refresh, 5_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+      }
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [token]);
+  }, [experienceMode, token]);
+
+  useEffect(() => {
+    if (!externalPreviewUrl) {
+      return;
+    }
+
+    const previewUrl = new URL(externalPreviewUrl);
+    const previewOrigin = previewUrl.origin;
+    const previewHostname = previewUrl.hostname;
+
+    function receivePreviewContext(event: MessageEvent) {
+      if (
+        event.origin !== previewOrigin ||
+        event.source !== iframeRef.current?.contentWindow ||
+        !event.data ||
+        typeof event.data !== "object" ||
+        event.data.type !== "revaloop:context"
+      ) {
+        return;
+      }
+
+      const path =
+        typeof event.data.path === "string"
+          ? normalizePreviewPath(event.data.path)
+          : "/";
+      const title =
+        typeof event.data.title === "string"
+          ? event.data.title.slice(0, 160)
+          : previewHostname;
+
+      if (!path.startsWith("/") || path.startsWith("//")) {
+        return;
+      }
+
+      setPreviewContext({ path, title });
+      setPreviewHelpVisible(false);
+    }
+
+    window.addEventListener("message", receivePreviewContext);
+    return () => window.removeEventListener("message", receivePreviewContext);
+  }, [externalPreviewUrl]);
+
+  useEffect(() => {
+    if (!externalPreviewUrl) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setPreviewHelpVisible(true), 8_000);
+    return () => window.clearTimeout(timeout);
+  }, [externalPreviewUrl]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -213,11 +322,11 @@ export function ReviewClient({
         return;
       }
 
-      const focusedFeedback = initialReview.feedback.find(
+      const focusedFeedback = review.feedback.find(
         (item) => String(item.sequence) === focus,
       );
       if (focusedFeedback) {
-        setSelectedFeedback(focusedFeedback);
+        setSelectedFeedbackId(focusedFeedback.id);
         setPanelTab("feedback");
         setSidePanelOpen(true);
         setViewport(
@@ -231,7 +340,7 @@ export function ReviewClient({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [initialReview.feedback]);
+  }, [review.feedback]);
 
   useEffect(() => {
     if (!toast) {
@@ -270,11 +379,13 @@ export function ReviewClient({
           item.positionX !== null &&
           item.positionY !== null &&
           item.status !== "resolved" &&
+          normalizePreviewPath(item.pagePath) ===
+            normalizePreviewPath(previewContext.path) &&
           item.viewport.toLowerCase().startsWith(
             viewport === "tablet" ? "tablette" : viewport,
           ),
       ),
-    [review.feedback, viewport],
+    [previewContext.path, review.feedback, viewport],
   );
 
   const unresolvedFeedback = useMemo(
@@ -282,7 +393,7 @@ export function ReviewClient({
     [review.feedback],
   );
 
-  function handlePreviewClick(event: MouseEvent<HTMLDivElement>) {
+  function handlePreviewClick(event: MouseEvent<HTMLElement>) {
     if (mode !== "comment" || !previewRef.current) {
       return;
     }
@@ -297,13 +408,31 @@ export function ReviewClient({
     event.stopPropagation();
 
     const bounds = previewRef.current.getBoundingClientRect();
-    const x = ((event.clientX - bounds.left) / bounds.width) * 100;
-    const y = ((event.clientY - bounds.top) / bounds.height) * 100;
+    const contentWidth = Math.max(
+      bounds.width,
+      previewRef.current.scrollWidth,
+    );
+    const contentHeight = Math.max(
+      bounds.height,
+      previewRef.current.scrollHeight,
+    );
+    const x =
+      ((event.clientX - bounds.left + previewRef.current.scrollLeft) /
+        contentWidth) *
+      100;
+    const y =
+      ((event.clientY - bounds.top + previewRef.current.scrollTop) /
+        contentHeight) *
+      100;
 
     composerTriggerRef.current =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
+    setForm((current) => ({
+      ...current,
+      pagePath: normalizePreviewPath(previewContext.path),
+    }));
     setComposer({
       x: Math.min(96, Math.max(4, x)),
       y: Math.min(96, Math.max(4, y)),
@@ -311,15 +440,62 @@ export function ReviewClient({
       clientY: event.clientY,
       general: false,
     });
-    setSelectedFeedback(null);
+    setSelectedFeedbackId(null);
   }
 
-  function togglePoint(index: number) {
+  function openCenteredAnnotation() {
+    composerTriggerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setForm((current) => ({
+      ...current,
+      pagePath: normalizePreviewPath(previewContext.path),
+    }));
+    setComposer({
+      x: 50,
+      y: 50,
+      clientX: window.innerWidth / 2,
+      clientY: window.innerHeight / 2,
+      general: false,
+    });
+    setSelectedFeedbackId(null);
+  }
+
+  async function togglePoint(testItemId: string) {
+    const completed = !completedPoints.includes(testItemId);
     setCompletedPoints((current) =>
-      current.includes(index)
-        ? current.filter((value) => value !== index)
-        : [...current, index],
+      completed
+        ? [...current, testItemId]
+        : current.filter((value) => value !== testItemId),
     );
+
+    if (experienceMode === "demo") {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/review/${encodeURIComponent(token)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "test_item",
+          testItemId,
+          completed,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("completion failed");
+      }
+    } catch {
+      setCompletedPoints((current) =>
+        completed
+          ? current.filter((value) => value !== testItemId)
+          : [...current, testItemId],
+      );
+      setToast("Ce point n’a pas pu être enregistré. Réessayez.");
+    }
   }
 
   function openReservation() {
@@ -338,6 +514,10 @@ export function ReviewClient({
     setShowReservation(false);
     setShowFinishDialog(false);
     setMode("comment");
+    setForm((current) => ({
+      ...current,
+      pagePath: normalizePreviewPath(previewContext.path),
+    }));
     setComposer({
       x: null,
       y: null,
@@ -357,49 +537,104 @@ export function ReviewClient({
     setIsSubmitting(true);
 
     try {
+      const frameBounds =
+        iframeRef.current?.getBoundingClientRect() ??
+        previewRef.current?.getBoundingClientRect();
+      const frameContext = frameBounds
+        ? `cadre ${Math.round(frameBounds.width)} × ${Math.round(frameBounds.height)}`
+        : "cadre adaptatif";
+      const pagePath = normalizePreviewPath(
+        form.pagePath || previewContext.path,
+      );
+
+      if (experienceMode === "demo") {
+        const now = new Date().toISOString();
+        const item: FeedbackItem = {
+          id: `demo_${crypto.randomUUID()}`,
+          releaseId: review.release.id,
+          sequence:
+            Math.max(0, ...review.feedback.map((feedback) => feedback.sequence)) +
+            1,
+          type: form.type,
+          title: form.title.trim(),
+          body: form.body.trim(),
+          status: "open",
+          priority: form.priority,
+          pagePath,
+          pageTitle: previewContext.title,
+          viewport: `${viewportDisplayLabels[viewport]} · ${frameContext}`,
+          positionX: composer.x,
+          positionY: composer.y,
+          authorName: review.reviewerName ?? "Client",
+          createdAt: now,
+          updatedAt: now,
+        };
+        setReview((current) => ({
+          ...current,
+          feedback: [...current.feedback, item],
+        }));
+        completeFeedbackSubmission();
+        return;
+      }
+
       const response = await fetch(`/api/review/${encodeURIComponent(token)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "feedback",
           ...form,
-          authorName: "Claire Dubois",
-          pagePath: "/",
-          viewport: `${viewportLabels[viewport]} simulé · navigateur ${window.innerWidth} × ${window.innerHeight}`,
+          pagePath,
+          pageTitle: previewContext.title,
+          viewport: `${viewportLabels[viewport]} · ${frameContext} · fenêtre ${window.innerWidth} × ${window.innerHeight}`,
           positionX: composer.x,
           positionY: composer.y,
         }),
       });
 
       if (!response.ok) {
-        throw new Error("feedback failed");
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(
+          payload?.error ?? "Le retour n’a pas pu être enregistré.",
+        );
       }
 
       const item = (await response.json()) as FeedbackItem;
       setReview((current) => ({
         ...current,
-        release: { ...current.release, status: "changes_requested" },
         feedback: [...current.feedback, item],
       }));
-      setComposer(null);
-      window.requestAnimationFrame(() => composerTriggerRef.current?.focus());
-      setSessionFeedbackCount((count) => count + 1);
-      setForm({
-        type: "visual",
-        priority: "normal",
-        title: "",
-        body: "",
-      });
-      setToast("Votre retour est enregistré dans cette recette.");
-      setPanelTab("feedback");
-      setSidePanelOpen(true);
-    } catch {
+      completeFeedbackSubmission();
+    } catch (error) {
       setToast(
-        "Le retour n’a pas encore pu être envoyé. Votre texte reste dans le formulaire.",
+        error instanceof Error
+          ? error.message
+          : "Le retour n’a pas encore pu être envoyé. Votre texte reste dans le formulaire.",
       );
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  function completeFeedbackSubmission() {
+    setComposer(null);
+    window.requestAnimationFrame(() => composerTriggerRef.current?.focus());
+    setSessionFeedbackCount((count) => count + 1);
+    setForm({
+      type: "visual",
+      priority: "normal",
+      title: "",
+      body: "",
+      pagePath: "",
+    });
+    setToast(
+      experienceMode === "demo"
+        ? "Retour ajouté à la démonstration. Il disparaîtra au rechargement."
+        : "Votre retour est enregistré dans cet espace de test.",
+    );
+    setPanelTab("feedback");
+    setSidePanelOpen(true);
   }
 
   async function submitDecision(
@@ -412,6 +647,25 @@ export function ReviewClient({
 
     setIsSubmitting(true);
     try {
+      if (experienceMode === "demo") {
+        const decision: ReviewDecision = {
+          id: `demo_decision_${crypto.randomUUID()}`,
+          releaseId: review.release.id,
+          status,
+          authorName: review.reviewerName ?? "Client",
+          note,
+          createdAt: new Date().toISOString(),
+        };
+        setReview((current) => ({
+          ...current,
+          release: { ...current.release, status },
+          decisions: [decision],
+        }));
+        setShowFinishDialog(false);
+        setToast("Décision simulée dans cette démonstration.");
+        return;
+      }
+
       const response = await fetch(`/api/review/${encodeURIComponent(token)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -419,7 +673,6 @@ export function ReviewClient({
           action: "decision",
           status,
           note,
-          authorName: "Claire Dubois",
         }),
       });
 
@@ -434,12 +687,12 @@ export function ReviewClient({
       setReview((current) => ({
         ...current,
         release: { ...current.release, status },
-        decisions: [decision, ...current.decisions],
+        decisions: [decision],
       }));
       setShowFinishDialog(false);
       window.requestAnimationFrame(() => finishButtonRef.current?.focus());
       setToast(
-        `Bilan transmis · Version ${review.release.version} · Raphaël a reçu votre décision.`,
+        `Bilan transmis · Version ${review.release.version} · le développeur a reçu votre décision.`,
       );
     } catch (error) {
       setToast(
@@ -462,11 +715,34 @@ export function ReviewClient({
 
     setIsSubmitting(true);
     try {
-      const response = await fetch(`/api/feedback/${item.id}`, {
+      if (experienceMode === "demo") {
+        const updated = {
+          ...item,
+          status,
+          updatedAt: new Date().toISOString(),
+        };
+        setReview((current) => ({
+          ...current,
+          feedback: current.feedback.map((feedback) =>
+            feedback.id === updated.id ? updated : feedback,
+          ),
+        }));
+        setToast(
+          status === "resolved"
+            ? "Vous avez confirmé que ce point est corrigé."
+            : "Le point est rouvert dans cette démonstration.",
+        );
+        return;
+      }
+
+      const response = await fetch(
+        `/api/review/${encodeURIComponent(token)}/feedback/${encodeURIComponent(item.id)}`,
+        {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, reviewToken: token }),
-      });
+          body: JSON.stringify({ status }),
+        },
+      );
 
       if (!response.ok) {
         throw new Error("Le statut n’a pas pu être enregistré.");
@@ -475,15 +751,10 @@ export function ReviewClient({
       const updated = (await response.json()) as FeedbackItem;
       setReview((current) => ({
         ...current,
-        release:
-          status === "open"
-            ? { ...current.release, status: "changes_requested" }
-            : current.release,
         feedback: current.feedback.map((feedback) =>
           feedback.id === updated.id ? updated : feedback,
         ),
       }));
-      setSelectedFeedback(updated);
       setToast(
         status === "resolved"
           ? "Vous avez confirmé que ce point est corrigé."
@@ -499,6 +770,71 @@ export function ReviewClient({
       setIsSubmitting(false);
     }
   }
+
+  async function closeReviewerSession() {
+    if (experienceMode !== "live" || isSubmitting) {
+      return;
+    }
+
+    if (!window.confirm("Fermer cet espace de test sur cet appareil ?")) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/reviewer/session", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ releaseId: token }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(
+          payload?.error ??
+            "La session n’a pas pu être fermée. Réessayez avant de quitter.",
+        );
+      }
+
+      window.location.replace("/");
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "La session n’a pas pu être fermée.",
+      );
+      setIsSubmitting(false);
+    }
+  }
+
+  const composerStyle = composer
+    ? (() => {
+        const margin = window.innerWidth <= 760 ? 10 : 18;
+        const targetHeight = Math.min(650, window.innerHeight - margin * 2);
+        const top = Math.max(
+          margin,
+          Math.min(
+            window.innerHeight - targetHeight - margin,
+            Math.max(82, composer.clientY - 40),
+          ),
+        );
+
+        return {
+          left: Math.max(
+            margin,
+            Math.min(
+              window.innerWidth - 420 - margin,
+              composer.clientX + 22,
+            ),
+          ),
+          top,
+          maxHeight: window.innerHeight - top - margin,
+        };
+      })()
+    : undefined;
 
   if (accessError) {
     return (
@@ -573,17 +909,53 @@ export function ReviewClient({
             ref={finishButtonRef}
             className="button button-primary button-dashboard"
             type="button"
+            disabled={isReviewApproved}
             onClick={() => {
               setComposer(null);
               setShowReservation(false);
               setShowFinishDialog(true);
             }}
           >
-            Envoyer mon bilan
+            <span className="review-finish-label">Envoyer mon bilan</span>
             <Check aria-hidden="true" />
           </button>
+          {experienceMode === "live" ? (
+            <button
+              className="review-session-close"
+              type="button"
+              disabled={isSubmitting}
+              onClick={closeReviewerSession}
+              aria-label="Fermer cet espace de test"
+              title="Fermer la session sur cet appareil"
+            >
+              <LogOut aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       </header>
+
+      {currentDecision ? (
+        <section className="review-closed-banner" role="status">
+          <span>
+            {isReviewApproved ? (
+              <Check aria-hidden="true" />
+            ) : (
+              <MessageCirclePlus aria-hidden="true" />
+            )}
+          </span>
+          <div>
+            <strong>
+              {isReviewApproved
+                ? "Version approuvée"
+                : "Ajustements transmis · test toujours ouvert"}
+            </strong>
+            <small>
+              Session invitée au nom de {currentDecision.authorName} · identité
+              non vérifiée · {formatRelativeDate(currentDecision.createdAt)}
+            </small>
+          </div>
+        </section>
+      ) : null}
 
       <div
         className="review-stage"
@@ -591,34 +963,101 @@ export function ReviewClient({
         aria-hidden={composer || showFinishDialog ? true : undefined}
       >
         <div className="preview-area">
+          {externalPreviewUrl ? (
+            <div className="external-preview-bar">
+              <span>
+                <ShieldCheck aria-hidden="true" />
+                Site de test externe · cette page peut évoluer
+              </span>
+              <a
+                href={externalPreviewUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ouvrir dans un nouvel onglet
+                <ArrowUpRight aria-hidden="true" />
+              </a>
+            </div>
+          ) : null}
           <div className={`preview-frame preview-${viewport}`}>
             <div
               className={`client-preview ${mode === "comment" ? "is-commenting" : ""}`}
               ref={previewRef}
               onClickCapture={handlePreviewClick}
             >
-              <div className="restaurant-page">
+              {externalPreviewUrl ? (
+                <>
+                  <iframe
+                    ref={iframeRef}
+                    className="external-preview-frame"
+                    src={externalPreviewUrl}
+                    title={`Preview ${review.project.name}`}
+                    sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
+                    referrerPolicy="no-referrer"
+                  />
+                  {previewHelpVisible ? (
+                    <aside className="external-preview-help" role="status">
+                      <button
+                        type="button"
+                        aria-label="Masquer cette aide"
+                        onClick={() => setPreviewHelpVisible(false)}
+                      >
+                        <X aria-hidden="true" />
+                      </button>
+                      <strong>La page n’est pas confirmée.</strong>
+                      <span>
+                        Si le cadre reste vide ou si une connexion est requise,
+                        poursuivez dans un nouvel onglet puis utilisez « Retour
+                        général ».
+                      </span>
+                      <a
+                        href={externalPreviewUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Ouvrir le site de test
+                        <ArrowUpRight aria-hidden="true" />
+                      </a>
+                    </aside>
+                  ) : null}
+                  {mode === "comment" ? (
+                    <button
+                      className="external-annotation-capture"
+                      type="button"
+                      onClick={(event) => {
+                        if (event.detail === 0) {
+                          openCenteredAnnotation();
+                        } else {
+                          handlePreviewClick(event);
+                        }
+                      }}
+                      aria-label="Placer une annotation sur le site de test. Au clavier, le repère est placé au centre."
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <div className="restaurant-page">
                 <header className="restaurant-header">
                   <span className="restaurant-logo">MAISON MATISSE</span>
                   <nav aria-label="Navigation de la démonstration">
                     <button
                       type="button"
                       disabled
-                      title="Une seule page est simulée dans cette pré-alpha"
+                      title="Une seule page est simulée dans la démonstration intégrée"
                     >
                       La maison
                     </button>
                     <button
                       type="button"
                       disabled
-                      title="Une seule page est simulée dans cette pré-alpha"
+                      title="Une seule page est simulée dans la démonstration intégrée"
                     >
                       La carte
                     </button>
                     <button
                       type="button"
                       disabled
-                      title="Une seule page est simulée dans cette pré-alpha"
+                      title="Une seule page est simulée dans la démonstration intégrée"
                     >
                       Journal
                     </button>
@@ -714,7 +1153,8 @@ export function ReviewClient({
                     <p>Aucune réservation réelle ne sera créée.</p>
                   </section>
                 )}
-              </div>
+                </div>
+              )}
 
               {visiblePins.map((item) => (
                 <button
@@ -729,7 +1169,7 @@ export function ReviewClient({
                   }}
                   onClick={(event) => {
                     event.stopPropagation();
-                    setSelectedFeedback(item);
+                    setSelectedFeedbackId(item.id);
                     setComposer(null);
                     setPanelTab("feedback");
                     setSidePanelOpen(true);
@@ -760,7 +1200,7 @@ export function ReviewClient({
         <aside className={`review-sidepanel ${sidePanelOpen ? "open" : ""}`}>
           <div className="review-notebook-header">
             <span>Guide de test</span>
-            <strong>Bonjour Claire</strong>
+            <strong>Bonjour {review.reviewerName ?? "à vous"}</strong>
             <small>Suivez les étapes à votre rythme.</small>
           </div>
           <button
@@ -820,7 +1260,7 @@ export function ReviewClient({
               tabIndex={panelTab === "feedback" ? 0 : -1}
               onClick={() => setPanelTab("feedback")}
             >
-              Mes retours
+              Retours
             </button>
           </div>
 
@@ -836,10 +1276,10 @@ export function ReviewClient({
               <div className="brief-intro">
                 <span className="avatar avatar-ink">RM</span>
                 <div>
-                  <span>Message de Raphaël</span>
+                  <span>Message du développeur</span>
                   <p>
-                    Bonjour Claire, vérifiez les éléments ci-dessous puis
-                    indiquez directement ce qui mérite un ajustement.
+                    {review.release.reviewerMessage ||
+                      `Bonjour ${review.reviewerName ?? ""}, vérifiez les éléments ci-dessous puis indiquez directement ce qui mérite un ajustement.`}
                   </p>
                 </div>
               </div>
@@ -848,7 +1288,8 @@ export function ReviewClient({
                 <span>!</span>
                 <p>
                   Environnement de test : utilisez uniquement des informations
-                  fictives. Les paiements et e-mails sont simulés.
+                  fictives. Ne saisissez aucun mot de passe ou moyen de
+                  paiement réel.
                 </p>
               </div>
 
@@ -857,22 +1298,23 @@ export function ReviewClient({
                   <strong>Parcours suggéré</strong>
                   <span>environ 5 min</span>
                 </div>
-                {testPoints.map((point, index) => {
-                  const completed = completedPoints.includes(index);
+                {testPoints.map((point) => {
+                  const completed = completedPoints.includes(point.id);
                   return (
                     <button
                       className={completed ? "completed" : ""}
-                      key={point.title}
+                      key={point.id}
                       type="button"
+                      disabled={isReviewApproved || isSubmitting}
                       aria-pressed={completed}
-                      onClick={() => togglePoint(index)}
+                      onClick={() => togglePoint(point.id)}
                     >
                       <span className="point-check">
                         {completed ? <Check aria-hidden="true" /> : null}
                       </span>
                       <span>
                         <strong>{point.title}</strong>
-                        <small>{point.text}</small>
+                        <small>{point.description}</small>
                       </span>
                     </button>
                   );
@@ -882,9 +1324,32 @@ export function ReviewClient({
               <div className="known-limits">
                 <strong>Limites connues</strong>
                 <ul>
-                  <li>Aucun e-mail réel ne sera envoyé.</li>
-                  <li>Le paiement est entièrement simulé.</li>
-                  <li>Certaines photographies sont provisoires.</li>
+                  {externalPreviewUrl ? (
+                    <>
+                      <li>Le site externe peut évoluer pendant le test.</li>
+                      <li>
+                        Certains sites refusent l’affichage dans une iframe.
+                      </li>
+                      <li>
+                        Ouvrez le site dans un nouvel onglet si nécessaire.
+                      </li>
+                      <li>
+                        Revaloop ne protège pas l’URL de staging elle-même :
+                        sécurisez-la séparément et n’y placez aucune donnée
+                        sensible.
+                      </li>
+                      <li>
+                        Connexion, téléchargement, paiement, caméra ou OAuth
+                        peuvent exiger le nouvel onglet.
+                      </li>
+                    </>
+                  ) : (
+                    <>
+                      <li>Aucun e-mail réel ne sera envoyé.</li>
+                      <li>Le paiement est entièrement simulé.</li>
+                      <li>Certaines photographies sont provisoires.</li>
+                    </>
+                  )}
                 </ul>
               </div>
             </div>
@@ -901,7 +1366,7 @@ export function ReviewClient({
                 <div className="client-feedback-detail">
                   <button
                     type="button"
-                    onClick={() => setSelectedFeedback(null)}
+                    onClick={() => setSelectedFeedbackId(null)}
                     className="back-to-feedback"
                   >
                     <ArrowLeft aria-hidden="true" />
@@ -960,11 +1425,12 @@ export function ReviewClient({
                 <>
                   <div className="feedback-panel-heading">
                     <div>
-                      <strong>Vos retours</strong>
-                      <span>Partagés avec Raphaël</span>
+                      <strong>Retours du test</strong>
+                      <span>Historique partagé avec l’équipe</span>
                     </div>
                     <button
                       type="button"
+                      disabled={isReviewApproved}
                       onClick={openGeneralFeedback}
                       aria-label="Ajouter un retour général"
                     >
@@ -976,7 +1442,7 @@ export function ReviewClient({
                       <button
                         type="button"
                         key={item.id}
-                        onClick={() => setSelectedFeedback(item)}
+                        onClick={() => setSelectedFeedbackId(item.id)}
                       >
                         <span>
                           <strong>{item.title}</strong>
@@ -999,13 +1465,14 @@ export function ReviewClient({
       <div
         className="review-toolbar"
         role="toolbar"
-        aria-label="Outils de recette"
+        aria-label="Outils de test"
         inert={composer || showFinishDialog ? true : undefined}
         aria-hidden={composer || showFinishDialog ? true : undefined}
       >
         <button
           className={mode === "comment" ? "active" : ""}
           type="button"
+          disabled={isReviewApproved}
           aria-pressed={mode === "comment"}
           onClick={() => {
             setComposer(null);
@@ -1021,6 +1488,14 @@ export function ReviewClient({
             <MessageCirclePlus aria-hidden="true" />
           )}
           {mode === "comment" ? "Quitter l’annotation" : "Ajouter un retour"}
+        </button>
+        <button
+          type="button"
+          disabled={isReviewApproved}
+          onClick={openGeneralFeedback}
+        >
+          <CircleDotDashed aria-hidden="true" />
+          Retour général
         </button>
       </div>
 
@@ -1044,10 +1519,7 @@ export function ReviewClient({
             aria-labelledby="composer-title"
             onKeyDown={trapDialogFocus}
             onSubmit={submitFeedback}
-            style={{
-              left: `${Math.min(window.innerWidth - 390, Math.max(18, composer.clientX + 22))}px`,
-              top: `${Math.min(window.innerHeight - 480, Math.max(82, composer.clientY - 40))}px`,
-            }}
+            style={composerStyle}
           >
             <div className="composer-heading">
               <div>
@@ -1099,6 +1571,39 @@ export function ReviewClient({
               ))}
             </div>
 
+            <div
+              className="feedback-priority-grid"
+              role="group"
+              aria-label="Importance du retour"
+            >
+              <button
+                className={form.priority === "normal" ? "active" : ""}
+                type="button"
+                aria-pressed={form.priority === "normal"}
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    priority: "normal",
+                  }))
+                }
+              >
+                Standard
+              </button>
+              <button
+                className={form.priority === "high" ? "active" : ""}
+                type="button"
+                aria-pressed={form.priority === "high"}
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    priority: "high",
+                  }))
+                }
+              >
+                Important
+              </button>
+            </div>
+
             <label>
               <span>Quel est votre retour ?</span>
               <input
@@ -1135,9 +1640,27 @@ export function ReviewClient({
               />
             </label>
 
+            {composer.general ? (
+              <label>
+                <span>Page concernée · sans paramètre secret</span>
+                <input
+                  type="text"
+                  value={form.pagePath}
+                  maxLength={180}
+                  placeholder="/exemple-de-page"
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      pagePath: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            ) : null}
+
             <div className="composer-context">
               <span>
-                <Link2 aria-hidden="true" /> Page d’accueil
+                <Link2 aria-hidden="true" /> {previewContext.path}
               </span>
               <span>
                 <Monitor aria-hidden="true" /> {viewportDisplayLabels[viewport]}
@@ -1147,8 +1670,10 @@ export function ReviewClient({
               </span>
             </div>
             <p className="composer-privacy">
-              Revaloop n’ajoute ni le contenu des champs ni les cookies
-              applicatifs à ce retour.
+              Revaloop n’ajoute ni le contenu des champs du site testé ni ses
+              cookies à ce retour. Le commentaire ci-dessus est enregistré et
+              partagé avec l’équipe.{" "}
+              <Link href="/privacy">Confidentialité</Link>
             </p>
             <button
               className="button button-primary button-full"
@@ -1156,7 +1681,7 @@ export function ReviewClient({
               disabled={isSubmitting}
               aria-busy={isSubmitting}
             >
-              {isSubmitting ? "Envoi…" : "Envoyer à Raphaël"}
+              {isSubmitting ? "Envoi…" : "Envoyer au développeur"}
               <Send aria-hidden="true" />
             </button>
           </form>
@@ -1226,7 +1751,7 @@ export function ReviewClient({
                 </span>
                 <div>
                   <strong>J’approuve cette version</strong>
-                  <small>Transmettre mon accord à Raphaël</small>
+                  <small>Transmettre mon accord au développeur</small>
                 </div>
               </button>
               <button
@@ -1246,13 +1771,13 @@ export function ReviewClient({
                 </span>
                 <div>
                   <strong>Je demande des ajustements</strong>
-                  <small>Transmettre mes remarques à Raphaël</small>
+                  <small>Transmettre mes remarques à l’équipe</small>
                 </div>
               </button>
             </div>
             <p className="finish-legal">
-              Ce récapitulatif ne remplace pas la recette contractuelle prévue
-              avec Raphaël.
+              Ce récapitulatif ne remplace pas une validation contractuelle si
+              votre projet en prévoit une.
             </p>
           </section>
         </div>

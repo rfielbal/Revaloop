@@ -1,9 +1,18 @@
 import {
-  ReviewConflictError,
-  ReviewExpiredError,
-  updateFeedbackStatus,
+  consumeRateLimit,
+  repositoryErrorResponse,
+  updateFeedbackAsDeveloper,
 } from "../../../../db/repository";
+import {
+  developerIdentityFromRequest,
+  unauthorizedResponse,
+} from "../../../../lib/auth";
 import type { FeedbackStatus } from "../../../../lib/revaloop";
+import {
+  assertSameOrigin,
+  readJsonObject,
+  validationErrorResponse,
+} from "../../../../lib/security";
 
 export const dynamic = "force-dynamic";
 
@@ -11,54 +20,44 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-const statuses: FeedbackStatus[] = [
-  "open",
-  "in_progress",
-  "to_review",
-  "resolved",
-];
+const developerStatuses: FeedbackStatus[] = ["in_progress", "to_review"];
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const { id } = await context.params;
+  const identity = developerIdentityFromRequest(request);
+
+  if (!identity) {
+    return unauthorizedResponse();
+  }
 
   try {
-    const body = (await request.json()) as {
-      status?: FeedbackStatus;
-      reviewToken?: unknown;
-    };
+    assertSameOrigin(request);
+    await consumeRateLimit({
+      namespace: "developer-feedback",
+      identifier: identity.email,
+      limit: 120,
+      windowSeconds: 300,
+    });
+    const { id } = await context.params;
+    const body = await readJsonObject(request);
+    const status = body.status as FeedbackStatus;
 
-    if (
-      typeof body.reviewToken !== "string" ||
-      body.reviewToken.trim().length === 0
-    ) {
+    if (!developerStatuses.includes(status)) {
       return Response.json(
-        { error: "Le token de recette est obligatoire." },
+        { error: "Transition développeur invalide." },
         { status: 400 },
       );
     }
 
-    if (!body.status || !statuses.includes(body.status)) {
-      return Response.json({ error: "Statut invalide." }, { status: 400 });
-    }
-
-    const item = await updateFeedbackStatus({
-      id,
-      status: body.status,
-      reviewToken: body.reviewToken.trim(),
+    const item = await updateFeedbackAsDeveloper(identity, id, status);
+    return Response.json(item, {
+      headers: { "Cache-Control": "private, no-store, max-age=0" },
     });
-
-    if (!item) {
-      return Response.json({ error: "Retour introuvable." }, { status: 404 });
-    }
-
-    return Response.json(item);
   } catch (error) {
-    if (error instanceof ReviewExpiredError) {
-      return Response.json({ error: error.message }, { status: error.status });
-    }
+    const response =
+      validationErrorResponse(error) ?? repositoryErrorResponse(error);
 
-    if (error instanceof ReviewConflictError) {
-      return Response.json({ error: error.message }, { status: error.status });
+    if (response) {
+      return response;
     }
 
     console.error("Impossible de mettre à jour le retour", error);

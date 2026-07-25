@@ -1,159 +1,178 @@
 # Politique de sécurité
 
-## Statut du projet
+## Statut
 
-Revaloop est actuellement un prototype de démonstration. Aucune version n’est
-considérée comme suffisamment durcie pour traiter des données client réelles
-ou être exposée comme un service de production.
-
-| Version | Support de sécurité |
+| Version | Support |
 |---|---|
-| `main` / `0.1.x` | expérimental, correction au mieux |
+| `main` / `0.2.x` | alpha, pilote contrôlé, corrections au mieux |
 | version stable | aucune publiée |
 
-Une version devient supportée uniquement lorsqu’elle est explicitement
-référencée dans ce tableau.
+L’alpha sécurise le review plane, mais elle n’est pas qualifiée pour des
+données sensibles, réglementées ou une production critique. Utilisez une
+preview et une base de test. Revaloop protège l’invitation et les retours ; il
+ne rend pas privée l’URL de staging, qui doit avoir son propre contrôle d’accès.
 
 ## Signaler une vulnérabilité
 
-Ne publiez pas de vulnérabilité exploitable, de token, de donnée personnelle ou
-de preuve de concept offensive dans une issue publique.
+Ne publiez jamais de secret, donnée personnelle, preuve de concept exploitable
+ou vulnérabilité non corrigée dans une issue publique.
 
-Le dépôt public devra activer **GitHub Private Vulnerability Reporting** avant
-sa première release. Le canal attendu sera :
+Utilisez **GitHub Private Vulnerability Reporting** dans l’onglet Security du
+dépôt. Si ce bouton n’est pas disponible, ouvrez uniquement une issue sans
+détail technique pour demander un canal confidentiel.
 
-1. ouvrir l’onglet **Security** du dépôt ;
-2. choisir **Report a vulnerability** ;
-3. fournir les informations demandées ci-dessous.
+Indiquez :
 
-Tant que ce canal privé n’est pas visible, ouvrez seulement une issue publique
-sans détail technique demandant un moyen de contact confidentiel. L’absence
-d’un canal privé opérationnel est un bloqueur de release, pas une invitation à
-divulguer publiquement.
-
-Merci d’indiquer :
-
-- la version ou le commit concerné ;
-- le composant, la route et le scénario ;
-- l’impact estimé ;
-- les préconditions nécessaires ;
-- des étapes de reproduction minimales, sans donnée tierce ;
+- le commit ou la version ;
+- la route et le scénario ;
+- l’impact et les préconditions ;
+- des étapes de reproduction minimales avec des données synthétiques ;
 - toute mesure temporaire connue ;
-- un moyen de vous recontacter.
+- un moyen de contact.
 
-## Délais visés
-
-Ces délais sont des objectifs de collaboration et non un engagement de niveau
-de service :
+Objectifs de réponse, sans engagement de niveau de service :
 
 - accusé de réception sous 3 jours ouvrés ;
 - première qualification sous 7 jours ouvrés ;
-- point d’avancement au moins tous les 14 jours pendant l’analyse ;
-- calendrier de correction et de divulgation convenu avec la personne ayant
-  signalé le problème.
+- point d’avancement au moins tous les 14 jours.
 
-Le projet ne propose actuellement aucun programme de prime.
+## Garanties implémentées
 
-## Périmètre prioritaire
+### Développeur
 
-Les signalements suivants sont particulièrement importants :
+- Sign in with ChatGPT fourni par OpenAI Sites ;
+- fallback local désactivé dans le build de production ;
+- création d’un espace isolé par identité ;
+- autorisation par organisation, projet, release et retour ;
+- aucune route développeur accessible sans identité Sites ;
+- création, révocation, export et suppression contrôlés côté serveur.
 
-- lecture ou modification non autorisée d’un projet, d’une release, d’un
-  retour ou d’une décision ;
-- contournement futur d’une authentification, d’une expiration ou d’une
-  révocation ;
-- exposition d’un token dans une URL, un log, un audit ou une télémétrie ;
-- accès croisé entre projets ou utilisateurs ;
-- injection persistante dans les retours ;
-- contournement de la CSP ou d’une frontière d’origine ;
-- modification d’une décision ou d’une version supposée immuable ;
-- fuite d’une capture ou d’une pièce jointe ;
-- plus tard : SSRF via l’agent, transformation en proxy ouvert, détournement
-  d’un lease, contournement mTLS ou confusion de routage entre tunnels.
+L’application fait confiance aux en-têtes d’identité réservés ajoutés par
+l’ingress Sites. Un déploiement hors Sites doit remplacer cet adaptateur par
+une authentification vérifiable et supprimer les headers entrants non fiables.
 
-Les vulnérabilités propres à une application tierce simplement présentée dans
-Revaloop doivent être signalées à son propriétaire. Une faille permettant à
-cette application de franchir une frontière Revaloop reste, elle, dans le
-périmètre.
+### Reviewer
 
-## Garanties actuelles
+- invitation aléatoire de 32 octets ;
+- secret placé dans le fragment de `/join`, absent de la requête initiale ;
+- uniquement le SHA-256 du secret en D1 ;
+- consommation one-shot et création de session dans un même batch D1 ;
+- cookie opaque `HttpOnly`, `Secure`, `SameSite=Strict`, sans `Domain` ;
+- durée de session maximale de 24 heures ;
+- expiration et révocation vérifiées à chaque lecture et dans la mutation
+  finale ;
+- auteur dérivé de la session, jamais fourni par le corps de la requête ;
+- fermeture explicite qui révoque aussi la session serveur.
 
-Le prototype applique actuellement :
+Le nom de session est saisi par le développeur lors de l’invitation puis recopié
+côté serveur comme auteur. Il reste déclaratif : Revaloop ne vérifie pas
+l’identité de la personne qui possède le lien. L’interface fournie ne collecte
+plus d’adresse e-mail cliente. Le schéma et l’API conservent toutefois un champ
+e-mail nullable pour compatibilité avec d’éventuels clients API personnalisés ;
+ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 
-- une Content Security Policy au niveau du Worker ;
+### Mutations et données
+
+- `Origin` exact obligatoire ;
+- JSON uniquement, corps bornés, textes limités et listes fermées ;
+- requêtes préparées ;
+- limites de débit persistées dans D1 ;
+- transition développeur et transition reviewer séparées ;
+- séquence + insertion d’un retour atomiques ;
+- une seule ligne de décision courante par release ;
+- une demande d’ajustements peut être remplacée par un bilan ultérieur et ne
+  clôt pas la release ;
+- seule l’approbation est terminale ;
+- approbation et absence de retour ouvert vérifiées dans la même transaction ;
+- audits conditionnés à l’existence de la mutation ;
+- aucune URL de preview avec credentials ou query string ;
+- aucun cookie, champ ou contenu de page collecté par le bridge.
+
+### Navigateur
+
+- CSP avec `frame-ancestors 'none'`, `base-uri 'self'` et `form-action 'self'` ;
+- `X-Frame-Options: DENY` ;
 - `X-Content-Type-Options: nosniff` ;
 - `Referrer-Policy: no-referrer` ;
-- `X-Frame-Options: DENY` et `frame-ancestors 'none'` ;
-- une `Permissions-Policy` restrictive ;
-- des limites de longueur et des listes fermées sur plusieurs champs d’API ;
-- un rendu React qui encode le texte des retours ;
-- une page client marquée `noindex`, `nofollow`, `noarchive` et `nosnippet`.
+- `Permissions-Policy` restrictive ;
+- `Cache-Control: private, no-store` sur dashboard, join, review et API ;
+- `noindex`, `nofollow`, `noarchive`, `nosnippet` sur les espaces privés.
 
-Ces mécanismes réduisent certains risques. Ils ne constituent pas une
-authentification ou une autorisation.
+## Limites connues
 
-## Limites de sécurité connues
+- l’ouverture globale du Site permet à tout utilisateur Sign in with ChatGPT
+  de créer son propre espace isolé ; une alpha fermée doit ajouter une
+  allowlist ou des invitations développeur avant publication générale ;
+- la preview est une ressource tierce, mutable et directement chargée par le
+  navigateur ; l’invitation Revaloop ne protège pas son URL, ses comptes, sa
+  base ni ses services ;
+- `frame-src https:` est nécessaire pour accepter des previews arbitraires :
+  l’URL reste choisie par le développeur authentifié, mais une allowlist
+  d’origines est préférable pour un déploiement fermé ;
+- une preview peut refuser l’iframe ; Revaloop ne contourne ni
+  `X-Frame-Options` ni `frame-ancestors` ;
+- l’authentification embarquée peut échouer à cause des cookies tiers,
+  `SameSite`, des politiques navigateur ou d’une redirection OAuth/SSO ;
+- le sandbox autorise scripts, formulaires, modales et popups, mais pas la
+  navigation du contexte supérieur ni les téléchargements ; certaines popups
+  d’authentification restent incompatibles ;
+- caméra, microphone, géolocalisation, paiement et USB sont désactivés par la
+  `Permissions-Policy` Revaloop dans le contexte embarqué ;
+- le bridge ne transmet que `pathname` et `document.title` : il ne transmet ni
+  scroll, ni sélecteur DOM, ni ancre d’élément ;
+- même avec le bridge, la position externe est approximative et ne suit pas le
+  scroll interne ; sans bridge, le chemin ne suit pas non plus les navigations
+  SPA ;
+- les anciennes releases ne sont pas encore navigables dans le dashboard ;
+  une nouvelle release est bloquée tant que la courante est active en
+  `in_review` ou `changes_requested`, puis devient possible après approbation ou
+  expiration ;
+- D1 reste une base partagée avec isolation logique, pas une base par tenant ;
+- le bootstrap runtime complète les migrations pour Sites ; une distribution
+  auto-hébergée doit exécuter les migrations de façon contrôlée ;
+- il n’existe ni pièce jointe, ni capture, ni stockage R2 ;
+- aucun agent ou tunnel local n’est implémenté ;
+- la suite automatisée vérifie les frontières HTTP et primitives, mais les
+  scénarios de forte concurrence D1 doivent encore être élargis.
 
-Dans l’état actuel :
+## Règles pour un pilote
 
-- le dashboard et les API ne vérifient pas l’identité du développeur ;
-- le token de démonstration est fixe, public, stocké en clair et présent dans
-  le chemin de l’URL ;
-- ce token n’est ni haché, ni rotatif, ni échangé contre un cookie de session ;
-- l’expiration bloque l’accès mais n’efface pas les données ;
-- aucune révocation n’existe ;
-- les mutations ne vérifient pas encore `Origin` et n’emploient pas de
-  protection CSRF dédiée ;
-- l’API de mise à jour vérifie le token de la release, mais pas l’identité de la
-  personne qui le possède ;
-- aucune limite de débit, détection d’abus ou journalisation d’audit n’existe ;
-- D1 n’est pas isolé par tenant ;
-- aucun mécanisme de suppression, d’export ou de rétention n’est disponible ;
-- R2 et les captures ne sont pas implémentés ;
-- aucun tunnel ou trafic d’application externe ne traverse Revaloop.
+- base et comptes de test uniquement ;
+- services externes en mode sandbox ;
+- aucun moyen de paiement, mot de passe ou donnée personnelle réelle ;
+- protection d’accès du staging configurée indépendamment de Revaloop ;
+- compatibilité testée pour iframe, authentification, cookies, OAuth/SSO,
+  popups, téléchargements, paiement et caméra ; nouvel onglet utilisé dès qu’un
+  parcours embarqué échoue ;
+- invitation transmise sur un canal adapté ;
+- révocation à la fin de la session ;
+- suppression du projet lorsqu’il n’est plus nécessaire ;
+- vérification contractuelle séparée si le projet exige un procès-verbal de
+  recette formel.
 
-Par conséquent :
+`noindex` n’est jamais un contrôle d’accès.
 
-- considérez toute URL de review actuelle comme publique ;
-- n’utilisez que des données fictives ;
-- ne déployez pas le prototype pour un client réel ;
-- n’utilisez jamais `noindex` comme contrôle d’accès.
+## Périmètre prioritaire des signalements
 
-Le détail et les mesures prévues sont maintenus dans
-[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+- IDOR ou accès croisé entre organisations/projets ;
+- contournement SIWC, invitation, expiration ou révocation ;
+- rejeu ou fuite d’un secret ;
+- session encore capable d’écrire après révocation ;
+- approbation possible avec retour ouvert ;
+- injection persistante dans un retour ;
+- contournement de la CSP ou de l’origine ;
+- audit contenant un secret ou décrivant une mutation inexistante ;
+- suppression incomplète ;
+- plus tard : SSRF, proxy ouvert, confusion de tunnel ou contournement mTLS.
 
-## Conditions minimales avant une release utilisable
-
-Une première release destinée à de vrais projets devra au minimum apporter :
-
-- une authentification développeur indépendante du mode de démonstration ;
-- une autorisation systématique par projet et par ressource ;
-- un token reviewer de 32 octets aléatoires, stocké uniquement sous forme
-  hachée ;
-- un échange ponctuel du secret contre un cookie opaque `Secure`, `HttpOnly`
-  et expirant ;
-- expiration, révocation et rotation effectives ;
-- vérification d’origine et protection CSRF des mutations ;
-- limites de débit et de taille ;
-- tests d’accès croisé et de transition d’état ;
-- suppression et durée de conservation ;
-- logs expurgés des cookies, secrets, corps et paramètres sensibles ;
-- un canal privé de signalement testé.
-
-Le futur agent et le futur relais auront leur propre revue de sécurité avant
-de pouvoir exposer un serveur local.
+Les failles propres à la preview tierce doivent être signalées à son
+propriétaire, sauf si elles permettent de franchir une frontière Revaloop.
 
 ## Divulgation coordonnée
 
-Nous demandons de laisser au projet un délai raisonnable pour analyser,
-corriger et publier une version sûre avant toute divulgation. En retour, les
-mainteneurs s’engagent à :
+Nous demandons un délai raisonnable avant publication. Le projet s’engage à
+traiter le signalement de bonne foi, limiter l’accès aux informations et
+créditer la personne si elle le souhaite.
 
-- traiter le signalement de bonne foi ;
-- limiter l’accès aux informations fournies ;
-- créditer la personne à l’origine du signalement si elle le souhaite ;
-- expliquer les arbitrages et le statut de la correction.
-
-Cette politique n’autorise pas l’accès à des systèmes ou données ne vous
-appartenant pas, l’interruption d’un service, l’ingénierie sociale ou
-l’exfiltration de données.
+Cette politique n’autorise pas l’accès à des systèmes tiers, l’exfiltration,
+l’interruption de service ou l’ingénierie sociale.

@@ -1,290 +1,301 @@
 # Architecture de Revaloop
 
-- **Statut du document :** description de l’existant et cible évolutive
-- **Dernière vérification :** 24 juillet 2026
-- **Portée :** prototype web, plan de revue et futur transport réseau
+- **Version décrite :** alpha 0.2
+- **Dernière mise à jour :** 25 juillet 2026
 
 ## Principe directeur
 
-Revaloop est composé de deux plans qui ne doivent pas être confondus :
+Revaloop sépare deux systèmes :
 
-- le **review plane** organise projets, releases, consignes, retours et
-  décisions ;
-- le futur **data plane** transportera les requêtes entre un navigateur distant
-  et une application locale.
+1. le **review plane**, aujourd’hui implémenté, qui gère identité, projets,
+   releases, invitations, retours et décisions ;
+2. le futur **data plane**, qui transportera le trafic entre le navigateur
+   client et une application locale.
 
-Le dépôt actuel implémente uniquement une démonstration du review plane. Il
-n’expose aucun `localhost`.
-
-## Vocabulaire
-
-- **Projet** : espace logique regroupant les versions d’un même produit.
-- **Release** : version présentée au client. Dans le prototype, une seule
-  release fictive existe.
-- **Retour** : observation liée à une release, un viewport et éventuellement
-  une position relative.
-- **Décision** : approbation ou demande de modifications sur une release.
-- **Espace client** : interface guidée sans compte visible.
-- **Cible de preview** : contenu que la personne teste. L’application de
-  restaurant actuelle est une simulation interne, pas une cible externe.
-- **Agent** : futur processus local ouvrant une connexion sortante.
-- **Relais** : futur service routant le trafic public vers un agent.
+Le Worker web ne doit jamais devenir implicitement un proxy réseau générique.
 
 ## Architecture implémentée
 
 ```mermaid
 flowchart LR
-    visitor["Visiteur"] --> landing["Landing /"]
-    developer["Développeur de démo"] --> dashboard["Dashboard /dashboard"]
-    reviewer["Client de démo"] --> review["Espace /review/[token]"]
-    dashboard --> api["Route Handlers /api"]
+    dev["Développeur"] --> siwc["Sign in with ChatGPT"]
+    siwc --> dashboard["Dashboard Revaloop"]
+    dashboard --> api["API métier"]
+
+    dev --> preview["Preview HTTPS tierce"]
+    api --> d1[("Cloudflare D1")]
+
+    client["Cliente"] --> join["/join#token"]
+    join --> session["Session reviewer HttpOnly"]
+    session --> review["/review/releaseId"]
     review --> api
-    api --> repository["db/repository.ts"]
-    repository --> d1[("Cloudflare D1")]
-    worker["Cloudflare Worker"] --> landing
-    worker --> dashboard
-    worker --> review
-    worker --> api
+    review -->|"iframe directe"| preview
+    preview -. "path + title facultatifs" .-> review
 ```
+
+La preview est chargée par le navigateur. Revaloop ne reçoit ni son trafic, ni
+ses cookies, ni ses champs de formulaire. Cette intégration ne protège pas
+l’URL de staging : son authentification, ses comptes et sa base restent gérés
+séparément par l’application tierce.
 
 ### Runtime
 
-Le projet est un monolithe vinext/React exécuté par un Cloudflare Worker :
-
-- pages et composants React dans `app/` ;
-- Route Handlers dans `app/api/` ;
-- données métier et fixtures dans `lib/revaloop.ts` ;
-- accès D1 dans `db/repository.ts` ;
+- Next App Router compilé par vinext ;
+- Cloudflare Worker dans `worker/index.ts` ;
+- routes et composants dans `app/` ;
+- logique d’identité dans `app/chatgpt-auth.ts` et `lib/auth.ts` ;
+- primitives de sécurité dans `lib/security.ts` ;
+- repository D1 dans `db/repository.ts` ;
 - schéma Drizzle dans `db/schema.ts` ;
-- en-têtes HTTP globaux dans `worker/index.ts`.
+- migrations dans `drizzle/`.
 
-Le Worker sert également l’optimisation d’images vinext. Il ne contient aucune
-fonction de relais réseau.
+Le plugin de build copie la configuration Sites et les migrations dans
+`dist/.openai`.
 
-### Interfaces visibles
+### Routes
 
-| Route | Statut | Responsabilité |
-|---|---|---|
-| `/` | implémentée | landing et accès aux deux démonstrations |
-| `/dashboard` | prototype | lecture et traitement des retours |
-| `/review/[token]` | prototype | consignes, simulation, annotation et décision |
+| Route | Frontière |
+|---|---|
+| `/` | publique |
+| `/demo` | publique, données synthétiques |
+| `/dashboard` | identité Sites obligatoire |
+| `/join` | publique, ne reçoit pas le fragment au premier GET |
+| `/review/[releaseId]` | cookie de session lié à la release |
+| `/api/projects/**` | développeur + organisation |
+| `/api/releases/**` | développeur + projet |
+| `/api/reviewer/session` | invitation ou session |
+| `/api/review/**` | session reviewer |
+| `/api/feedback/**` | développeur |
 
-Le dashboard est initialisé avec les fixtures puis tente de charger D1 par
-`GET /api/workspace`. L’espace client suit le même mécanisme avec
-`GET /api/review/[token]`. Le token de démonstration est vérifié avant le rendu ;
-un accès inconnu ou expiré affiche un écran neutre sans donnée projet.
+### Identité développeur
 
-### API actuelle
+Sur Sites, l’adaptateur lit les headers réservés de Sign in with ChatGPT. Le
+build de production n’accorde aucune identité locale. En développement, une
+identité de test n’est créée que pour `localhost`, `127.0.0.1` ou `::1`.
 
-| Route | Entrée | Sortie ou effet |
-|---|---|---|
-| `GET /api/workspace` | aucune | payload Maison Matisse complet |
-| `GET /api/review/[token]` | token en chemin | payload associé à la release |
-| `POST /api/review/[token]` | action `feedback` | crée un retour et passe la release en changements demandés |
-| `POST /api/review/[token]` | action `decision` | crée une décision et change l’état de la release |
-| `PATCH /api/feedback/[id]` | nouvel état + token de release | applique une transition autorisée au retour associé |
+La première connexion provisionne un utilisateur et une organisation
+personnelle. Les identifiants sont déterministes par e-mail afin qu’un
+provisionnement concurrent reste idempotent. Les requêtes de ressource joignent
+toujours membre, organisation et projet.
 
-Ces routes valident quelques listes fermées et longueurs. Elles ne vérifient
-pas encore une identité, une révocation, l’origine ou un quota. Elles vérifient
-cependant l’expiration, l’association du retour à la release et les transitions
-de statut permises.
+L’inscription SIWC libre est un choix d’alpha. Une instance fermée doit ajouter
+une allowlist ou un système d’invitation développeur.
 
-### Données D1
+### Invitation et session cliente
 
-Le binding actif se nomme `DB`. Quatre tables existent :
+```mermaid
+sequenceDiagram
+    participant D as Développeur
+    participant R as Revaloop
+    participant C as Navigateur client
+    participant DB as D1
 
-```text
-projects
-  └── releases
-        ├── feedback_items
-        └── decisions
+    D->>R: POST /releases/id/invitations
+    R->>R: secret aléatoire 32 octets
+    R->>DB: stocke SHA-256(secret)
+    R-->>D: /join#token=secret (une fois)
+    C->>R: GET /join (fragment absent)
+    C->>C: lit puis efface le fragment
+    C->>R: POST secret + Origin
+    R->>DB: batch conditionnel session + used_at + audit
+    R-->>C: cookie opaque HttpOnly + /review/releaseId
 ```
 
-Le repository exécute au runtime un bootstrap `CREATE TABLE IF NOT EXISTS` et
-injecte les fixtures Maison Matisse avec `INSERT OR IGNORE`. Une migration
-Drizzle correspondant au même schéma est versionnée.
+Le batch d’échange garantit qu’une invitation n’est jamais consommée sans
+session. Le cookie expire au plus tôt entre l’invitation et 24 heures.
 
-Points importants :
+Le nom de reviewer est saisi par le développeur lors de la création du lien,
+puis porté par l’invitation et la session. Il sert de libellé d’auteur, mais
+n’est pas une identité authentifiée. L’interface actuelle ne collecte aucune
+adresse e-mail cliente ; l’API et le schéma gardent seulement un champ nullable
+pour compatibilité avec un client API personnalisé.
 
-- le champ `share_token` est unique mais stocké en clair ;
-- `expires_at` est appliqué à la lecture et aux mutations ;
-- la release contient un `commit_sha` déclaratif, sans vérification Git ;
-- aucun utilisateur, membre, lien d’invitation, session ou événement d’audit
-  n’existe ;
-- le binding R2 est désactivé et aucune capture n’est stockée.
+### Écriture d’un retour
 
-### Surface de démonstration
+L’écriture finale revérifie dans la même transaction :
 
-L’espace client affiche une page de restaurant codée dans le composant React.
-Les changements de viewport ne démarrent pas un navigateur distant et les
-coordonnées de marqueur se rapportent à cette surface simulée.
+- session et hash ;
+- correspondance invitation/session/release ;
+- absence de révocation ;
+- expirations ;
+- statut actif `in_review` ou `changes_requested`.
 
-Le prototype :
+Le batch incrémente le compteur, insère le retour avec ce numéro puis ajoute
+l’audit. Une approbation concurrente ne peut donc pas clôturer une release avec
+un nouveau retour ouvert.
 
-- ne charge pas d’iframe ;
-- ne suit pas la navigation d’une application tierce ;
-- ne capture pas un écran ;
-- ne proxifie aucune requête applicative ;
-- ne voit aucun trafic provenant d’un serveur local.
+### Décision
 
-### En-têtes HTTP
+L’écriture d’une décision utilise un `INSERT ... SELECT` conditionnel avec
+`UPSERT`. Une contrainte unique conserve une seule ligne de décision courante
+par release :
 
-Le Worker ajoute actuellement :
+- `changes_requested` place la release dans un état non terminal, garde
+  `closed_at` à `NULL` et laisse actifs checklist, retours, revalidation et
+  invitations ;
+- un bilan ultérieur peut remplacer cette demande d’ajustements ;
+- `approved` exige dans le SQL qu’aucun retour non résolu n’existe, puis ferme
+  définitivement la release ;
+- une décision déjà approuvée ne peut plus être remplacée.
+
+Chaque écriture réussie produit un événement d’audit, même si la ligne de
+décision courante est remplacée.
+
+### Publication d’une nouvelle release
+
+Une seule release courante est exposée dans l’interface alpha. Le serveur refuse
+une nouvelle publication tant qu’une release non expirée est `in_review` ou
+`changes_requested`. Le développeur poursuit donc corrections et revalidations
+sur la même release jusqu’à son approbation ou son expiration.
+
+Après approbation, une nouvelle release peut être insérée et l’ancienne conserve
+son état `approved`. Après expiration, le batch de publication révoque les
+invitations et sessions encore présentes, passe l’ancienne release active à
+`superseded`, puis insère la nouvelle release et ses consignes. L’historique
+navigable viendra dans une version ultérieure.
+
+## Modèle D1
+
+Les quatre tables 0.1 restent temporairement présentes pour une migration
+expand/contract. Les parcours réels utilisent :
 
 ```text
+app_users
+organizations
+└── organization_members
+└── client_projects
+    └── review_releases
+        ├── review_test_items
+        │   └── review_test_completions
+        ├── review_invitations
+        │   └── reviewer_sessions
+        ├── review_feedback
+        └── review_decisions
+audit_events
+rate_limit_buckets
+```
+
+Principaux invariants :
+
+- slug unique dans une organisation ;
+- version unique dans un projet ;
+- hash d’invitation et de session uniques ;
+- séquence unique dans une release ;
+- une ligne de décision courante par release, remplaçable seulement tant que son
+  état est `changes_requested` ;
+- une complétion par session et consigne ;
+- suppression en cascade depuis le projet ;
+- référence de session d’une décision nullable pour permettre la purge.
+
+Les migrations `0001` et `0002` introduisent le modèle sécurisé et la
+suppression possible des sessions. Le bootstrap `CREATE IF NOT EXISTS` reste
+présent pour les environnements Sites qui démarrent sur une D1 vide ; il devra
+disparaître lorsque le déploiement exécutera explicitement les migrations.
+
+## Preview externe
+
+`normalizeExternalPreviewUrl` accepte uniquement :
+
+- HTTPS en production ;
+- aucun identifiant dans l’URL ;
+- aucune query string ;
+- localhost HTTP seulement quand Revaloop lui-même tourne en local.
+
+La CSP autorise `frame-src https:` parce que la fonction du produit consiste à
+charger l’origine choisie par le développeur. Une instance fermée peut
+resserrer cette règle par allowlist.
+
+Le sandbox iframe autorise scripts, formulaires, popups et same-origin, mais
+pas top-navigation ni téléchargement. La politique du portail désactive aussi
+caméra, microphone, géolocalisation, paiement et USB. Les cookies tiers,
+`SameSite`, les restrictions de confidentialité du navigateur, OAuth/SSO et les
+popups peuvent rendre une authentification embarquée inutilisable. Revaloop
+affiche toujours un lien vers un nouvel onglet et un retour général pour ces
+cas.
+
+L’invitation Revaloop n’est pas un contrôle d’accès de la preview. Un staging
+public reste public ; un staging privé doit appliquer sa propre
+authentification, compatible avec le navigateur choisi.
+
+### Bridge
+
+`public/revaloop-bridge.js` est facultatif. Il valide l’origine par son attribut
+`data-revaloop-origin` et ne transmet que :
+
+```json
+{
+  "type": "revaloop:context",
+  "path": "/chemin-sans-query",
+  "title": "Titre de page"
+}
+```
+
+Le parent vérifie simultanément `event.origin` et `event.source`. Le bridge ne
+transmet ni query, ni hash, ni scroll, ni sélecteur DOM, ni contenu. Les pins
+sont filtrés par chemin et viewport, mais leurs coordonnées restent des
+pourcentages du viewport visible au moment du clic. Même instrumentée, une
+annotation n’est donc pas ancrée à un élément et ne suit pas le scroll interne
+de l’iframe.
+
+## En-têtes
+
+Le Worker applique notamment :
+
+```text
+Content-Security-Policy
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
 X-Frame-Options: DENY
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Resource-Policy: same-origin
 Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
-Content-Security-Policy: ...
 ```
 
-La CSP limite les sources à Revaloop et interdit `frame-ancestors`. Elle
-autorise encore les styles et scripts inline requis par le prototype. Toute
-évolution vers une preview externe demandera une politique plus granulaire.
+`/revaloop-bridge.js` est l’unique exception à la politique de ressources :
+il reçoit `Cross-Origin-Resource-Policy: cross-origin` pour pouvoir être chargé
+par la preview tierce.
 
-## Flux actuels
+Dashboard, join, review et API reçoivent `private, no-store`. Les pages privées
+reçoivent aussi `X-Robots-Tag`.
 
-### Lecture de l’espace
+## Rétention
 
-```mermaid
-sequenceDiagram
-    participant B as Navigateur
-    participant A as API Revaloop
-    participant D as D1
-    B->>A: GET /api/review/[token]
-    A->>D: SELECT release par share_token
-    D-->>A: release, projet, retours, décisions
-    A-->>B: ReviewPayload
-```
+Au démarrage d’un isolate, une maintenance bornée supprime :
 
-### Création d’un retour
+- buckets de rate limit expirés ;
+- sessions et invitations opérationnelles anciennes non retenues par une
+  décision ;
+- audits de plus de 365 jours.
 
-```mermaid
-sequenceDiagram
-    participant B as Navigateur
-    participant A as API Revaloop
-    participant D as D1
-    B->>A: POST action=feedback
-    A->>D: calcule le prochain numéro
-    A->>D: INSERT feedback_item
-    A->>D: UPDATE release
-    A-->>B: retour créé
-```
+Le projet, ses retours et ses décisions restent jusqu’à suppression explicite.
+Voir [DATA_LIFECYCLE.md](DATA_LIFECYCLE.md).
 
-Le calcul du numéro puis l’insertion ne sont pas actuellement atomiques. Deux
-écritures concurrentes peuvent donc recevoir le même numéro de séquence.
-
-## Cible du review plane
-
-Le modèle cible conserve le monolithe pour le produit web, mais introduit des
-adaptateurs explicites :
-
-```text
-DeveloperIdentityProvider
-ReviewSessionProvider
-ProjectRepository
-ReleaseRepository
-ReviewRepository
-ObjectStore
-PreviewTargetDriver
-```
-
-Les valeurs prévues pour `PreviewTargetDriver` sont :
-
-- `external` : URL HTTPS fournie par le développeur ;
-- `snapshot` : capture figée et stockée ;
-- `tunnel` : future session locale via agent et relais ;
-- `hosted` : future preview construite dans un runner isolé.
-
-Le code métier ne devra pas dépendre directement de D1, R2 ou des headers
-propres à un hébergeur. Cette séparation permettra PostgreSQL, S3/MinIO et
-OIDC lors de l’auto-hébergement.
-
-### Release et immuabilité
-
-Une release publiée devra devenir immuable :
-
-- numéro, titre, changelog et référence source figés ;
-- nouvelle release pour tout changement ;
-- retours et décision conservés sur la version réellement testée ;
-- cible externe marquée **mutable** tant que son contenu ne peut pas être
-  vérifié ;
-- capture stockée avec empreinte de contenu.
-
-Une URL externe n’est jamais une preuve d’immuabilité.
-
-## Cible du data plane
-
-Le futur transport sera un composant séparé du Worker :
+## Futur data plane
 
 ```mermaid
 flowchart LR
-    browser["Navigateur client"] --> edge["Relais Go"]
-    control["Review plane"] -->|lease court| agent["Agent Go"]
-    agent -->|connexion sortante mTLS| edge
+    browser["Navigateur client"] --> edge["Relais dédié"]
+    control["Review plane"] -->|"lease court"| agent["Agent local"]
+    agent -->|"connexion sortante mTLS"| edge
     agent --> local["127.0.0.1:port"]
-    edge -. état .-> control
 ```
 
 Contraintes décidées :
 
 - connexion initiée depuis le poste du développeur ;
-- cible limitée à `127.0.0.1:<port>` par défaut ;
-- lease court lié à un projet et une release ;
-- authentification mutuelle de l’agent et du relais ;
-- prise en charge HTTP et WebSocket ;
-- état `online/offline` séparé des données de revue ;
-- commentaires conservés lorsque la session locale s’arrête ;
-- aucun endpoint de proxy générique dans le Worker vinext.
+- cible loopback explicite ;
+- lease court lié au projet et à la release ;
+- agent et relais authentifiés mutuellement ;
+- HTTP et WebSocket ;
+- aucun endpoint de proxy générique dans le Worker ;
+- aucun corps, cookie ou header d’autorisation dans les logs.
 
-Ces éléments sont une cible, pas une implémentation.
+### TLS
 
-## TLS
-
-Deux modes sont étudiés :
-
-### Managed review
-
-TLS termine au relais. Le relais peut appliquer le contrôle d’accès HTTP et
-éventuellement intégrer un bridge de review, mais l’opérateur peut lire le
-trafic applicatif.
-
-```text
-navigateur ──TLS──> relais ──mTLS──> agent ──HTTP──> localhost
-```
-
-Ce mode ne doit jamais être décrit comme chiffré de bout en bout.
-
-### Confidential passthrough
-
-Le relais route des octets TLS opaques et la terminaison a lieu dans l’agent.
-Ce mode protège le contenu contre le relais, mais empêche celui-ci d’appliquer
-une authentification HTTP, un WAF ou une injection de widget.
-
-La gestion des certificats navigateur, des domaines et de la révocation reste
-à résoudre. Le mode est classé **recherche**, sans engagement de livraison.
-
-Voir [ADR-0003](adr/0003-tls-termination-modes.md).
-
-## Isolation
-
-Le prototype actuel utilise une base D1 et un jeu de données uniques. Il n’a
-aucune isolation multi-tenant.
-
-La cible distingue :
-
-1. **autorisation logique** : chaque requête joint identité, projet et
-   ressource ;
-2. **origine web** : les contenus non fiables ne partagent pas les secrets du
-   portail ;
-3. **data plane** : identifiants de tunnel non réutilisables, quotas et
-   routage vérifié ;
-4. **preview hébergée** : runner rootless séparé, réseau, base et secrets
-   isolés par release.
-
-Les niveaux 3 et 4 ne doivent pas être annoncés avant des tests d’évasion et
-d’accès croisé.
+Le mode managé termine TLS au relais et permet les contrôles HTTP, mais
+l’opérateur peut lire le trafic. Le mode passthrough futur rendrait le contenu
+opaque au relais, avec une gestion plus complexe des certificats et sans
+injection de bridge. Voir [ADR-0003](adr/0003-tls-termination-modes.md).
 
 ## Décisions associées
 
@@ -292,15 +303,5 @@ d’accès croisé.
 - [ADR-0002 — Échanger une invitation opaque contre une session](adr/0002-reviewer-authentication.md)
 - [ADR-0003 — Distinguer terminaison TLS et passthrough](adr/0003-tls-termination-modes.md)
 
-## Règle de mise à jour
-
-Toute pull request qui :
-
-- ajoute un composant ;
-- change un flux de données ;
-- déplace une terminaison TLS ;
-- modifie une frontière d’identité, d’autorisation ou d’isolation ;
-- introduit un stockage ou un sous-traitant ;
-
-doit mettre à jour ce document et
-[THREAT_MODEL.md](THREAT_MODEL.md) dans la même pull request.
+Toute évolution d’identité, d’autorisation, de stockage, d’origine ou de
+transport doit mettre à jour ce document et le modèle de menace.

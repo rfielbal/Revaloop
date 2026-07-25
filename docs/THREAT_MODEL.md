@@ -1,349 +1,287 @@
 # Modèle de menace
 
 - **Système :** Revaloop
-- **Version du modèle :** 0.1
-- **Dernière vérification :** 24 juillet 2026
-- **Statut :** prototype non destiné à la production
+- **Version :** 0.2
+- **Dernière vérification :** 25 juillet 2026
+- **Statut :** alpha pour pilote contrôlé, aucune donnée sensible
 
 ## Objectif
 
-Ce document décrit :
+Ce document distingue les contrôles réellement implémentés des exigences du
+futur tunnel. Il ne remplace ni revue de code, ni pentest, ni analyse juridique.
 
-1. les menaces du prototype réellement présent dans le dépôt ;
-2. les contrôles déjà en place ;
-3. les conditions de sécurité nécessaires avant une utilisation réelle ;
-4. les menaces du futur agent et relais, sans prétendre qu’elles sont déjà
-   traitées.
+## Périmètre actuel
 
-Il ne remplace pas une revue de code, un test d’intrusion ou une analyse
-juridique.
+Inclus :
 
-## Déclaration de sécurité actuelle
+- landing et démo fictive ;
+- dashboard développeur ;
+- Sign in with ChatGPT fourni par Sites ;
+- projets, releases, invitations, sessions, retours et décisions ;
+- preview HTTPS tierce dans une iframe ;
+- bridge facultatif `postMessage` ;
+- API et D1 ;
+- Worker et en-têtes.
 
-Le prototype n’offre **aucune confidentialité d’accès**. Le token de
-démonstration est public, le dashboard n’est pas authentifié et les API de
-mutation ne contrôlent pas l’autorisation. D1 ne contient que des fixtures et
-des actions de démonstration.
+Hors périmètre :
 
-Le prototype ne doit pas recevoir :
+- proxy ou tunnel vers `localhost` ;
+- agent et relais ;
+- capture ou R2 ;
+- preview construite dans un runner ;
+- auto-hébergement qualifié ;
+- données de production ou réglementées.
 
-- donnée de production ;
-- donnée personnelle réelle ;
-- secret commercial ;
-- cookie, clé ou mot de passe ;
-- capture d’un projet client.
+## Actifs
 
-## Périmètre
+- identité et appartenance du développeur ;
+- séparation entre organisations et projets ;
+- secret d’invitation et token de session ;
+- nom déclaratif du reviewer ;
+- e-mail reviewer nullable pour clients API personnalisés, non collecté par
+  l’interface fournie ;
+- URL, commit et consignes de release ;
+- contenu et contexte des retours ;
+- bilan courant et approbation finale ;
+- audit ;
+- disponibilité et budget D1 ;
+- confiance dans les limites affichées.
 
-### Inclus aujourd’hui
-
-- landing ;
-- dashboard développeur de démonstration ;
-- espace client de démonstration ;
-- Route Handlers `/api/workspace`, `/api/review/[token]` et
-  `/api/feedback/[id]` ;
-- repository et base D1 ;
-- fixtures Maison Matisse ;
-- Worker et en-têtes HTTP.
-
-### Hors du système actuel
-
-- application tierce réelle ;
-- tunnel vers `localhost` ;
-- agent local ;
-- relais ;
-- stockage R2 ;
-- authentification ;
-- comptes et organisations ;
-- infrastructure auto-hébergée ;
-- preview construite dans un runner.
-
-Ces composants futurs sont néanmoins analysés plus bas pour fixer leurs
-conditions d’entrée.
-
-## Actifs à protéger
-
-### Prototype
-
-- intégrité des projets, releases, retours et décisions ;
-- disponibilité de l’interface de démonstration ;
-- base D1 et binding `DB` ;
-- code source et chaîne de dépendances ;
-- confiance des contributeurs dans les statuts documentaires ;
-- absence de secrets ou de données réelles dans les fixtures et logs.
-
-### Produit futur
-
-- identité et compte du développeur ;
-- secret d’invitation et session du reviewer ;
-- contenu de la preview ;
-- cookies, headers et corps transitant dans un tunnel ;
-- captures, commentaires et pièces jointes ;
-- code source, secrets et réseau du poste développeur ;
-- certificats et clés de l’agent ;
-- isolation entre projets, organisations, tunnels et runners ;
-- traces d’audit et décisions contractuelles.
+Le contenu, les cookies et la base de la preview sont des actifs de
+l’application tierce. Revaloop ne doit pas les collecter.
 
 ## Acteurs
 
-- **visiteur anonyme** : consulte la landing ;
-- **reviewer de démonstration** : utilise l’URL publique et soumet des actions ;
-- **développeur de démonstration** : utilise le dashboard public ;
-- **attaquant Internet** : envoie des requêtes arbitraires aux pages et API ;
-- **reviewer malveillant** : possède un accès légitime futur mais tente de
-  dépasser son projet ;
-- **application preview malveillante** : contenu tiers cherchant à atteindre
-  le portail ou ses secrets ;
-- **opérateur compromis** : contrôle une partie du review ou data plane ;
-- **co-tenant compromis** : cherche à accéder à un autre projet ;
-- **dépendance compromise** : exécute du code lors du build ou au runtime.
+- visiteur anonyme ;
+- développeur authentifié ;
+- reviewer possédant une invitation ou session ;
+- autre utilisateur SIWC dans son propre tenant ;
+- attaquant Internet ;
+- reviewer malveillant ;
+- preview tierce compromise ;
+- opérateur Sites/Cloudflare ;
+- dépendance ou chaîne de build compromise ;
+- futur agent ou relais compromis.
 
-## Frontières de confiance actuelles
+## Frontières
 
 ```mermaid
 flowchart LR
     internet["Internet non fiable"] --> worker["Worker Revaloop"]
-    worker --> pages["Pages React"]
-    worker --> api["API sans auth"]
-    api --> d1[("D1")]
-    source["Fixtures du dépôt"] --> d1
+    sites["Ingress Sites + SIWC"] --> worker
+    worker --> api["API métier"]
+    api --> d1[("D1 partagé")]
+    reviewer["Session reviewer"] --> api
+    worker --> browser["Navigateur"]
+    browser --> preview["Preview HTTPS non fiable"]
+    preview -. "postMessage borné" .-> browser
 ```
 
-La seule frontière de stockage est D1. Il n’existe pas de frontière entre
-développeur, reviewer et attaquant : tous sont anonymes pour le serveur.
+Hypothèses :
 
-## Contrôles actuels
+- Sites remplace/protège les headers d’identité réservés ;
+- le build de production est servi en HTTPS ;
+- D1 exécute un batch séquentiel de façon transactionnelle ;
+- le développeur contrôle ou approuve l’URL de staging ;
+- la cliente n’entre que des données fictives.
 
-| Contrôle | Effet | Limite |
-|---|---|---|
-| CSP | restreint plusieurs sources et les ancêtres de frame | autorise encore scripts et styles inline |
-| `nosniff` | réduit l’interprétation incorrecte de contenu | ne valide pas les entrées |
-| `no-referrer` | évite la propagation du chemin dans le referrer | le token reste dans la requête et les logs d’accès |
-| `X-Frame-Options: DENY` | empêche l’encapsulation de Revaloop | ne protège pas une future cible externe |
-| `Permissions-Policy` | désactive plusieurs API navigateur | liste non exhaustive |
-| robots `noindex` | réduit l’indexation volontaire | aucun contrôle d’accès |
-| listes fermées d’état/type | rejette certaines valeurs invalides | pas d’autorisation |
-| limites de longueur | réduit les entrées démesurées | pas de quota global |
-| rendu React | encode le texte affiché | ne protège pas tous les futurs exports |
-| requêtes D1 préparées | évite l’injection SQL sur ces requêtes | pas d’isolation métier |
+Un déploiement hors Sites doit remplacer la première hypothèse par un mécanisme
+d’identité vérifiable.
 
-## Risques actuels
+## Invariants implémentés
 
-Les niveaux sont qualitatifs pour prioriser le travail du prototype.
+### Développeur
 
-| ID | Menace | Impact | État actuel | Traitement requis |
-|---|---|---|---|---|
-| T01 | Lecture du projet par un tiers | élevé avec de vraies données | token public et fixe | invitation aléatoire, session et autorisation |
-| T02 | Création de faux retours ou décisions | élevé | API anonyme | authentifier la session reviewer, vérifier la release |
-| T03 | Modification arbitraire d’un retour | élevé | `PATCH` par identifiant seul | joindre identité, projet, release et retour |
-| T04 | Réutilisation d’un token | élevé | aucune rotation ou révocation | token à usage contrôlé, session expirante |
-| T05 | Token dans logs et historique | moyen | token dans le chemin | secret dans fragment puis échange ponctuel |
-| T06 | Expiration contournée | moyen | champ non vérifié | appliquer l’heure serveur à chaque accès |
-| T07 | CSRF ou requête cross-origin | moyen | pas de contrôle d’origine | cookie `SameSite`, vérification `Origin`, jeton CSRF si nécessaire |
-| T08 | Brute force et abus d’écriture | moyen | pas de rate limit | quotas par IP, session et projet |
-| T09 | Collision de numéro de retour | faible à moyen | calcul puis insertion séparés | transaction ou contrainte unique et retry |
-| T10 | Perte ou accumulation de données | moyen | aucune suppression/rétention | politique, purge, export et suppression |
-| T11 | Fuite entre tenants | critique dans un service réel | aucun modèle tenant | modèle d’autorisation et tests croisés |
-| T12 | Faux sentiment de confidentialité | élevé | copie marketing plus forte que le code | bannière, matrice de statut et revue de contenu |
-| T13 | Dépendance compromise | élevé | chaîne npm standard | lockfile, revue, scan et provenance de release |
-| T14 | Déni de service D1 | moyen | pas de quota ni backpressure | limites de débit, coût et taille |
+- aucun fallback local en production ;
+- identité obligatoire sur pages et API développeur ;
+- provisionnement idempotent ;
+- chaque ressource est résolue avec membre + organisation + projet ;
+- un identifiant seul ne donne aucun droit ;
+- suppression réservée au propriétaire.
 
-T01 à T08 et T11 bloquent toute utilisation avec un client réel.
+### Invitation et session
 
-Le rendu serveur de `/review/[token]` rejette désormais le token de
-démonstration inconnu ou expiré avant d’afficher le projet. Cela évite la fuite
-accidentelle des fixtures, sans transformer ce token public en authentification.
-Une vraie version doit valider une session liée à une invitation secrète avant
-de rendre toute donnée protégée.
+- secret aléatoire de 32 octets ;
+- uniquement son SHA-256 en D1 ;
+- fragment absent du premier GET ;
+- invitation one-shot ;
+- échange session + consommation + audit atomique ;
+- cookie opaque `Secure`, `HttpOnly`, `SameSite=Strict` ;
+- durée maximale de 24 heures ;
+- correspondance session/invitation/release vérifiée ;
+- expiration et révocation vérifiées à la lecture et dans l’écriture finale ;
+- fermeture de session côté serveur ;
+- rotation révoquant les anciens accès ;
+- nouvelle release interdite tant que la courante non expirée est
+  `in_review` ou `changes_requested`.
 
-## Invariants de sécurité du review plane cible
-
-### Identité développeur
-
-- l’identité provient d’un fournisseur explicitement configuré ;
-- les headers d’identité sont supprimés à l’entrée puis réinjectés uniquement
-  par un proxy de confiance ;
-- aucun fallback de développement ne fonctionne en production ;
-- chaque lecture ou mutation joint l’utilisateur à son projet.
-
-### Invitation reviewer
-
-- secret généré avec 32 octets aléatoires ;
-- secret stocké uniquement sous forme de hash SHA-256 ;
-- secret transporté dans le fragment d’une URL de jonction ;
-- échange ponctuel par `POST` contre un cookie de session opaque ;
-- fragment effacé par redirection avant la navigation ;
-- cookie `Secure`, `HttpOnly`, `SameSite=Lax`, à durée limitée ;
-- expiration et révocation vérifiées côté serveur ;
-- PIN éventuel utilisé seulement comme second facteur avec rate limit.
-
-Voir [ADR-0002](adr/0002-reviewer-authentication.md).
-
-### Autorisation
-
-Une ressource n’est jamais chargée uniquement par son identifiant. Les chaînes
-de contrôle minimales sont :
+### Autorisation métier
 
 ```text
-développeur → membership → projet → release → ressource
-reviewer → session → invitation → room → release → ressource
+développeur → membership → organisation → projet → release → ressource
+reviewer → token hash → session → invitation → release → ressource
 ```
 
-Les tests doivent tenter un accès croisé pour chaque route.
+- transitions développeur et reviewer distinctes ;
+- auteur reviewer issu de la session, avec nom déclaratif non authentifié ;
+- séquence et insertion du retour dans le même batch ;
+- une ligne de décision courante par release ;
+- `changes_requested` non terminal et remplaçable par un bilan ultérieur ;
+- approbation conditionnée à zéro retour ouvert dans le SQL d’insertion ;
+- release approuvée ou remplacée non mutable ;
+- checklist et retours encore actifs après une demande d’ajustements, bloqués
+  seulement après approbation, remplacement ou expiration.
 
-### Contenu non fiable
+### Entrées et navigateur
 
-- commentaires rendus comme texte par défaut ;
-- Markdown éventuel assaini avec une liste fermée ;
-- captures dans un bucket privé ;
-- vérification du type réel, de la taille et des dimensions ;
-- métadonnées d’image supprimées lorsque possible ;
-- URL signée courte ou route média autorisée ;
-- aucune donnée d’authentification du portail accessible à la preview.
+- `Origin` exact sur toutes les mutations ;
+- JSON et tailles bornés ;
+- valeurs d’état/type/priority en listes fermées ;
+- React encode les textes ;
+- URL preview HTTPS, sans credentials, query ni localhost distant ;
+- `event.origin` et `event.source` vérifiés pour le bridge ;
+- bridge limité au pathname et titre, sans scroll ni ancre DOM ;
+- CSP, `DENY`, `nosniff`, `no-referrer`, Permissions Policy ;
+- routes privées non mises en cache et non indexables.
 
-### Journaux
+### Logs et audit
 
-Les logs ne contiennent pas :
+- aucun secret, cookie, corps de retour ou query sensible dans l’audit ;
+- métadonnées en liste fermée ;
+- audit conditionné à l’existence de la mutation ;
+- hash tronqué pour les buckets de rate limit ;
+- purge des buckets et audit ancien.
 
-- cookie ;
-- token ;
-- query string sensible ;
-- corps de requête ;
-- header d’autorisation ;
-- contenu d’un commentaire ou d’une capture.
+## Registre des risques actuels
 
-Les événements d’audit utilisent des identifiants internes et un ensemble de
-métadonnées explicitement autorisé.
+| ID | Menace | Contrôle | Risque résiduel / action |
+|---|---|---|---|
+| T01 | header SIWC forgé | ingress Sites + fallback prod absent | documenter/tester l’ingress ; autre hébergeur interdit sans adaptateur |
+| T02 | accès croisé tenant | joins membre/org/projet | ajouter tests intégration à deux identités |
+| T03 | rejeu invitation | `used_at`, hash, batch atomique | bearer transférable avant premier usage |
+| T04 | vol session | HttpOnly/Secure/Strict, 24 h, révocation | possession du navigateur suffit pendant la durée |
+| T05 | CSRF | Strict + `Origin` | vérifier les futurs clients natifs séparément |
+| T06 | écriture après révocation | garde dans SQL final | étendre les tests de concurrence D1 |
+| T07 | approbation avec retour ouvert | transaction conditionnelle | maintenir tests de course |
+| T08 | faux auteur | auteur dérivé de la session | nom d’invitation saisi par le développeur, possession du lien et identité réelle non vérifiées |
+| T09 | fuite via URL preview | credentials/query refusés | hostname et path restent des métadonnées internes |
+| T10 | preview malveillante | origine séparée, iframe sandbox, aucun secret exposé | `allow-same-origin` + scripts nécessaire à la preview ; surveiller |
+| T11 | origine iframe trop large | src choisi par développeur, `frame-src https:` | instance fermée : allowlist recommandée |
+| T12 | framing ou fonction embarquée refusés | aide temporisée + nouvel onglet | pas de détection fiable de XFO ; cookies tiers, OAuth, top-navigation, téléchargements et Permissions Policy peuvent casser un parcours |
+| T13 | contenu externe mutable | libellé et commit déclaratif | aucune preuve d’immuabilité |
+| T14 | annotation trompeuse | chemin/viewport filtrés + limite affichée | bridge ou non, aucun ancrage DOM/scroll ; position approximative |
+| T15 | abus D1 | rate limits, tailles, purge | inscription SIWC libre et quotas globaux manquants |
+| T16 | rétention excessive | expiration, purge, suppression projet | pas de suppression compte/org self-service |
+| T17 | dépendance compromise | lockfile et revue | ajouter scans/provenance de release |
+| T18 | Site globalement privé | protège tout | cliente externe bloquée |
+| T19 | Site public | dashboard reste SIWC | inscription développeur libre, ajouter allowlist pour alpha fermée |
+| T20 | décision prise pour un mauvais contenu | preview mutable | procès-verbal externe si enjeu contractuel |
 
-## Preview externe et isolation d’origine
+T01, T02, T06, T07 et T19 demandent une validation d’intégration avant une
+publication générale.
 
-Une URL externe future introduit une origine non fiable.
+## Preview externe
 
-Menaces :
-
-- script malveillant dans la preview ;
-- tentative de vol de la session Revaloop ;
-- framing interdit par CSP ou `X-Frame-Options` ;
-- confusion entre URL déclarée et contenu réellement testé ;
-- navigation hors des pages autorisées ;
-- transmission du reviewer, de son IP ou de cookies à l’hébergeur tiers.
+La preview connaît l’adresse IP de la cliente et reçoit ses propres cookies
+selon sa politique. Revaloop ne peut pas rendre privée une URL déjà publique.
+L’invitation et le cookie reviewer protègent uniquement le plan de revue ; ils
+ne sont jamais transmis à la preview et ne constituent pas son contrôle
+d’accès.
 
 Règles :
 
-- URL HTTPS sans credentials intégrés ;
-- aucune récupération serveur générique de l’URL ;
-- origine enregistrée de manière explicite ;
-- portail et preview sur des origines séparées ;
-- `postMessage` avec origine et schéma de message vérifiés ;
-- fallback nouvel onglet plus capture si l’iframe est refusée ;
-- libellé « URL externe non garantie immuable » ;
-- aucune promesse que le contrôle d’accès Revaloop protège une URL déjà
-  publique.
+- staging dédié ;
+- base et services sandbox ;
+- aucune donnée réelle demandée ;
+- origine distincte du portail ;
+- pas de récupération serveur générique ;
+- sandbox iframe ;
+- `postMessage` à schéma fermé ;
+- fallback nouvel onglet ;
+- origine explicite dans `frame-ancestors` côté preview ;
+- authentification et cookies cross-site testés sur les navigateurs cibles ;
+- OAuth/SSO, popups, top-navigation et téléchargements testés ou basculés vers
+  le nouvel onglet ;
+- paiement, caméra, microphone et géolocalisation exclus du parcours embarqué
+  par la `Permissions-Policy` actuelle ;
+- aucune promesse d’immuabilité.
+
+`allow-scripts` et `allow-same-origin` sont nécessaires pour une application
+moderne. Comme la preview est cross-origin, elle ne peut pas lire le DOM ou les
+cookies Revaloop. Ne jamais servir une preview non fiable sous l’origine
+Revaloop. Le sandbox autorise aussi formulaires, modales et popups, mais pas
+top-navigation ni téléchargement. Le bridge ne transmet que le chemin et le
+titre ; il ne suit pas le scroll interne et n’ancre pas un retour à un élément.
+
+## D1 et concurrence
+
+Les invariants critiques utilisent des batches conditionnels. Un statement à
+zéro changement n’est pas une erreur SQL ; c’est pourquoi :
+
+- les inserts vérifient eux-mêmes le statut/session ;
+- les updates dépendent de l’identifiant inséré ;
+- les audits utilisent `INSERT ... SELECT WHERE EXISTS` ;
+- l’application vérifie `meta.changes`.
+
+La suite doit continuellement tester :
+
+- deux échanges simultanés ;
+- révocation pendant un retour ;
+- retour pendant une approbation ;
+- demandes d’ajustements successives puis approbation ;
+- deux tenants avec identifiants connus.
 
 ## Futur data plane
-
-### Frontières
 
 ```mermaid
 flowchart LR
     reviewer["Navigateur non fiable"] --> relay["Relais public"]
-    relay --> agent["Agent sur le poste développeur"]
-    agent --> app["Application locale non fiable"]
-    control["Control plane"] --> relay
+    relay --> agent["Agent local"]
+    agent --> app["127.0.0.1:port"]
+    control["Review plane"] --> relay
     control --> agent
 ```
 
-Le poste développeur et l’application locale ne sont pas supposés sûrs pour le
-service. Le relais et le control plane ne sont pas supposés dignes de lire le
-contenu dans un futur mode confidentiel.
-
-### Menaces et portes d’entrée
-
-| ID | Menace future | Exigence avant activation |
+| ID | Menace future | Porte d’entrée obligatoire |
 |---|---|---|
-| F01 | agent transformé en pivot réseau/SSRF | cible loopback exacte par défaut, pas d’URL arbitraire |
-| F02 | relais transformé en proxy ouvert | lease signé, hostname lié, aucune méthode `CONNECT` générique |
-| F03 | détournement d’un tunnel | mTLS, clé courte durée, rotation et révocation |
-| F04 | confusion entre deux tunnels | routage serveur vérifié et tests inter-projets |
-| F05 | fuite de cookies/corps au relais | divulgation explicite en mode managé, logs sans contenu |
-| F06 | prétendu chiffrement de bout en bout | vocabulaire lié au lieu réel de terminaison TLS |
-| F07 | DoS par requête, corps ou WebSocket | limites, timeout, backpressure et quotas |
-| F08 | Host header et DNS rebinding | upstream fixé, host normalisé, aucune résolution libre |
-| F09 | vol de credentials CLI | stockage OS sûr, permissions minimales, device flow |
-| F10 | binaire agent compromis | releases signées, checksums, provenance et mises à jour sûres |
-| F11 | sous-domaine stable repris | alias jamais réattribué à un autre compte |
-| F12 | accès persistant après arrêt | révocation du lease et fermeture effective des flux |
-
-L’agent et le relais ne sont pas « sûrs par conception » tant que ces contrôles
-ne sont pas implémentés et testés.
+| F01 | pivot réseau / SSRF | cible loopback exacte, aucune URL arbitraire |
+| F02 | proxy ouvert | lease signé et hostname lié, pas de CONNECT générique |
+| F03 | détournement | mTLS, clés courtes, rotation et révocation |
+| F04 | confusion de tunnels | routage serveur et tests inter-projets |
+| F05 | fuite de cookies/corps | logs sans contenu et divulgation du mode managé |
+| F06 | faux E2EE | vocabulaire lié à la vraie terminaison TLS |
+| F07 | DoS | limites, timeout, backpressure et quotas |
+| F08 | Host/DNS rebinding | upstream fixé et host normalisé |
+| F09 | vol credential CLI | stockage OS, device flow, scope minimal |
+| F10 | binaire compromis | signature, checksum, provenance et update sûre |
+| F11 | reprise de sous-domaine | alias jamais réattribué |
+| F12 | accès après arrêt | lease révoqué et flux fermés |
 
 ## TLS
 
-### Mode managé
+### Managé
 
-Le navigateur termine TLS au relais. Le trafic est chiffré sur le réseau, mais
-le relais voit le HTTP en clair avant de le transmettre à l’agent.
+TLS termine au relais. Le trafic est protégé sur le réseau, mais l’opérateur
+peut lire le HTTP. Il ne faut jamais l’appeler chiffrement de bout en bout.
 
-Risques résiduels :
+### Passthrough
 
-- opérateur ou relais compromis ;
-- journalisation accidentelle de contenu ;
-- accès légal ou administratif à l’infrastructure ;
-- confusion marketing avec le chiffrement de bout en bout.
-
-### Mode passthrough
-
-Le relais ne voit que des octets TLS et la terminaison se produit dans l’agent.
-Ce mode réduit la confiance accordée au relais mais retire :
-
-- authentification HTTP à l’edge ;
-- injection du widget ;
-- inspection et WAF ;
-- réécriture de headers ;
-- observation applicative.
-
-La distribution des certificats et la compatibilité navigateur ne sont pas
-résolues. Le mode reste une recherche.
+TLS termine dans l’agent et le relais voit des octets opaques. Ce mode retire
+auth edge, WAF, réécriture et injection du bridge. Certificats et compatibilité
+navigateur restent en recherche.
 
 ## Preview hébergée future
 
-Une preview construite par Revaloop exécuterait du code non fiable. Elle exige
-au minimum :
+Exécuter du code client exige runner rootless éphémère, filesystem jetable,
+secrets minimaux, réseau sortant filtré, aucune route vers D1/control plane,
+quotas CPU/mémoire/disque/temps et destruction vérifiée. Un conteneur partagé
+seul n’est pas une garantie suffisante.
 
-- runner éphémère rootless par build ;
-- système de fichiers jetable ;
-- secrets à portée minimale et non hérités ;
-- réseau sortant filtré ;
-- aucune route vers D1, le control plane ou les autres runners ;
-- limites CPU, mémoire, disque et temps ;
-- images épinglées et analysées ;
-- destruction vérifiée après la durée prévue.
+## Acceptation et maintenance
 
-La simple exécution dans un conteneur partagé n’est pas une garantie
-d’isolation suffisante.
+Un risque n’est accepté que si propriétaire, impact, durée, interface et date
+de réévaluation sont documentés.
 
-## Acceptation du risque
-
-Un risque ne peut être marqué « accepté » que si :
-
-1. son propriétaire est identifié ;
-2. l’impact et la durée sont documentés ;
-3. l’interface ne donne pas une impression contraire ;
-4. une date de réévaluation existe.
-
-Le caractère « prototype » n’autorise pas l’emploi de données réelles.
-
-## Maintenance
-
-Mettre à jour ce document à chaque :
-
-- nouvelle route ou mutation ;
-- changement d’identité ou de session ;
-- ajout de stockage ;
-- ajout d’une preview externe ;
-- changement de CSP ;
-- modification du protocole agent/relais ;
-- déplacement de la terminaison TLS ;
-- ajout d’un runner ou d’un tenant.
-
-Chaque risque fermé doit pointer vers des tests ou une preuve reproductible.
+Mettre à jour ce modèle pour toute nouvelle route, mutation, identité,
+preview, CSP, donnée, stockage, tunnel, terminaison TLS ou runner. Chaque risque
+fermé doit pointer vers une preuve reproductible.

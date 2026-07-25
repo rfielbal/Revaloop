@@ -14,7 +14,6 @@ import {
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import { DEMO_TOKEN } from "../lib/revaloop";
 import { Brand } from "./components/brand";
 import { PerspectiveToggle } from "./components/perspective-toggle";
 
@@ -46,17 +45,17 @@ const journey = [
 ];
 
 const currentCapabilities = [
-  "Portail développeur et revue client",
-  "Annotations positionnées dans la page",
-  "Statuts, revalidation et décision finale",
-  "Données de démonstration persistées",
+  "Projets et versions de recette isolés",
+  "Invitations éphémères à usage unique",
+  "Retours contextualisés, statuts et revalidation",
+  "Décision finale, révocation et export",
 ];
 
 const upcomingCapabilities = [
   "Agent local et tunnel privé",
-  "Révocation et rotation des liens",
-  "Isolation renforcée des environnements",
-  "Parcours d’auto-hébergement documenté",
+  "Captures d’écran jointes aux retours",
+  "Notifications et intégrations Git",
+  "Déploiement autonome simplifié",
 ];
 
 export default function Home() {
@@ -78,7 +77,7 @@ export default function Home() {
           </nav>
 
           <Link className="flow-header-cta" href="/dashboard">
-            Ouvrir la démo
+            Espace développeur
             <ArrowUpRight aria-hidden="true" />
           </Link>
 
@@ -91,7 +90,7 @@ export default function Home() {
               <a href="#produit">Le produit</a>
               <a href="#confiance">Confiance</a>
               <a href="#opensource">Open source</a>
-              <Link href="/dashboard">Ouvrir la démo</Link>
+              <Link href="/dashboard">Espace développeur</Link>
             </div>
           </details>
         </div>
@@ -101,7 +100,7 @@ export default function Home() {
         <div className="flow-hero-copy">
           <p className="flow-kicker">
             <span aria-hidden="true" />
-            Pré-alpha open source · portail interactif
+            Alpha open source · pilote fonctionnel
           </p>
           <h1>
             Le lien ouvre le projet.
@@ -120,7 +119,7 @@ export default function Home() {
             </Link>
             <Link
               className="flow-button flow-button-secondary"
-              href={`/review/${DEMO_TOKEN}`}
+              href="/demo"
             >
               Voir comme le client
               <span>
@@ -129,7 +128,8 @@ export default function Home() {
             </Link>
           </div>
           <p className="flow-truth-line">
-            Aujourd’hui : portail fonctionnel et données fictives.
+            Aujourd’hui : invitation et retours sécurisés autour d’une preview
+            HTTPS protégée séparément.
             <span> Ensuite : agent local et tunnel privé.</span>
           </p>
         </div>
@@ -288,14 +288,14 @@ export default function Home() {
 
       <section className="flow-reality-section">
         <div className="flow-section-heading flow-section-heading-compact">
-          <span>Une pré-alpha qui dit où elle en est</span>
+          <span>Une alpha qui dit précisément où elle en est</span>
           <h2>Ce qui fonctionne. Ce qui vient ensuite.</h2>
         </div>
         <div className="reality-columns">
           <article>
             <span className="reality-state">
               <Check aria-hidden="true" />
-              Disponible dans la démo
+              Disponible dans le pilote
             </span>
             <ul>
               {currentCapabilities.map((capability) => (
@@ -329,10 +329,10 @@ export default function Home() {
           <span>Confidentialité documentée</span>
           <h2>La confiance se construit aussi dans le parcours de test.</h2>
           <p>
-            Cette démo emploie uniquement des données synthétiques. Le modèle
-            cible prévoit des liens expirants, des sessions révocables et un
-            chemin d’auto-hébergement ; ces garanties restent présentées comme
-            futures tant qu’elles ne sont pas validées de bout en bout.
+            La démo publique emploie uniquement des données synthétiques. Les
+            espaces réels utilisent des invitations à usage unique, des
+            sessions révocables, une séparation stricte entre développeur et
+            cliente, et une base de recette dédiée.
           </p>
           <a
             href="https://github.com/rfielbal/Revaloop/blob/main/docs/THREAT_MODEL.md"
@@ -349,8 +349,11 @@ export default function Home() {
           </article>
           <article>
             <LockKeyhole aria-hidden="true" />
-            <strong>Accès privé</strong>
-            <span>Sessions et révocation prévues avant la bêta.</span>
+            <strong>Espace de revue privé</strong>
+            <span>
+              Secrets hachés et sessions révocables ; la preview conserve sa
+              propre protection d’accès.
+            </span>
           </article>
           <article>
             <ShieldCheck aria-hidden="true" />
@@ -367,9 +370,9 @@ export default function Home() {
         </div>
         <div>
           <p>
-            Le portail de revue est déjà consultable. Le dépôt distingue les
-            fonctions présentes de celles qui demandent encore du durcissement,
-            sans transformer une intention en promesse.
+            Le portail de revue, les invitations et la persistance sont
+            utilisables en pilote. Le dépôt distingue les fonctions validées de
+            celles qui demandent encore du durcissement à grande échelle.
           </p>
           <a
             className="flow-button flow-button-secondary"
@@ -400,7 +403,7 @@ export default function Home() {
           </Link>
           <Link
             className="flow-final-link flow-final-link-client"
-            href={`/review/${DEMO_TOKEN}`}
+            href="/demo"
           >
             <UserRound aria-hidden="true" />
             <span>
@@ -423,7 +426,7 @@ export default function Home() {
             Sécurité
           </a>
         </div>
-        <p>Pré-alpha · construit en France</p>
+        <p>Alpha · construit en France</p>
       </footer>
     </main>
   );

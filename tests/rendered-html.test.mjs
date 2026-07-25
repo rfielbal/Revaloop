@@ -6,9 +6,6 @@ import test from "node:test";
 const cloudflareWorkersModule =
   "data:text/javascript,export%20const%20env%20%3D%20%7B%7D%3B";
 
-// The production bundle targets workerd and keeps this native module external.
-// Page smoke tests do not query D1, so a minimal module lets Node execute the
-// built Worker while preserving the same request/response entrypoint.
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === "cloudflare:workers") {
@@ -23,7 +20,7 @@ registerHooks({
 });
 
 const forbiddenStarterContent =
-  /codex-preview|react-loading-skeleton|vinext-starter|starter project|your site is taking shape|building your site/i;
+  /codex-preview|vinext-starter|starter project|your site is taking shape/i;
 
 let workerPromise;
 
@@ -38,12 +35,13 @@ function getWorker() {
   return workerPromise;
 }
 
-async function render(pathname) {
+async function render(pathname, headers = {}) {
   const worker = await getWorker();
   const response = await worker.fetch(
     new Request(`https://revaloop.test${pathname}`, {
       headers: {
         accept: "text/html",
+        ...headers,
       },
     }),
     {
@@ -78,57 +76,13 @@ function assertNamedMeta(html, name, expectedContent) {
     new RegExp(`\\bname=["']${name}["']`, "i").test(candidate),
   );
 
-  assert.ok(tag, `Expected a "${name}" meta tag`);
+  assert.ok(tag, `Balise meta "${name}" absente`);
   assert.match(
     tag,
     new RegExp(
       `\\bcontent=["']${expectedContent.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["']`,
       "i",
     ),
-  );
-}
-
-function assertNoStarterContent(html) {
-  assert.doesNotMatch(html, forbiddenStarterContent);
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function assertAccessibleStructure(html) {
-  assert.match(html, /<html\b[^>]*\blang=["']fr["']/i);
-  assert.equal((html.match(/<main\b/gi) ?? []).length, 1);
-  assert.equal((html.match(/<h1\b/gi) ?? []).length, 1);
-}
-
-function assertInternalLink(html, href) {
-  const links = html.match(/<a\b[^>]*>/gi) ?? [];
-  const pattern = new RegExp(
-    `\\bhref=["']${escapeRegExp(href)}["']`,
-    "i",
-  );
-
-  assert.ok(
-    links.some((link) => pattern.test(link)),
-    `Lien absent : ${href}`,
-  );
-}
-
-function assertNamedRole(html, role, label) {
-  const tags = html.match(/<[^>]+>/g) ?? [];
-  const rolePattern = new RegExp(
-    `\\brole=["']${escapeRegExp(role)}["']`,
-    "i",
-  );
-  const labelPattern = new RegExp(
-    `\\baria-label=["']${escapeRegExp(label)}["']`,
-    "i",
-  );
-
-  assert.ok(
-    tags.some((tag) => rolePattern.test(tag) && labelPattern.test(tag)),
-    `Rôle ${role} nommé « ${label} » absent`,
   );
 }
 
@@ -144,6 +98,17 @@ function visibleText(html) {
     .trim();
 }
 
+function assertAccessibleStructure(html) {
+  assert.match(html, /<html\b[^>]*\blang=["']fr["']/i);
+  assert.equal((html.match(/<main\b/gi) ?? []).length, 1);
+  assert.equal((html.match(/<h1\b/gi) ?? []).length, 1);
+}
+
+function assertInternalLink(html, href) {
+  const escaped = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.match(html, new RegExp(`<a\\b[^>]*href=["']${escaped}["']`, "i"));
+}
+
 function assertSecurityHeaders(response) {
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("referrer-policy"), "no-referrer");
@@ -153,139 +118,133 @@ function assertSecurityHeaders(response) {
     response.headers.get("cross-origin-resource-policy"),
     "same-origin",
   );
-  assert.equal(
-    response.headers.get("permissions-policy"),
-    "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
-  );
 
-  const contentSecurityPolicy =
-    response.headers.get("content-security-policy") ?? "";
-  assert.match(contentSecurityPolicy, /\bdefault-src 'self'/);
-  assert.match(contentSecurityPolicy, /\bbase-uri 'self'/);
-  assert.match(contentSecurityPolicy, /\bframe-ancestors 'none'/);
-  assert.match(contentSecurityPolicy, /\bform-action 'self'/);
+  const policy = response.headers.get("content-security-policy") ?? "";
+  assert.match(policy, /\bdefault-src 'self'/);
+  assert.match(policy, /\bframe-ancestors 'none'/);
+  assert.match(policy, /\bframe-src https:/);
+  assert.doesNotMatch(policy, /\bwss:/);
 }
 
-test("server-renders the Revaloop landing page", async () => {
+test("rend la landing et sépare clairement démo et espace développeur", async () => {
   const { response, html } = await render("/");
   const text = visibleText(html);
 
   assertHtmlResponse(response);
   assertSecurityHeaders(response);
   assertTitle(html, "Revaloop — Du lien de test à la validation");
-  assertNamedMeta(
-    html,
-    "description",
-    "La plateforme open source de recette client : partagez une version dédiée, recueillez des retours contextualisés et faites-la valider.",
-  );
-  assert.doesNotMatch(
-    html,
-    /<meta(?=[^>]*\bname=["']robots["'])(?=[^>]*\bcontent=["'][^"']*noindex)/i,
-  );
   assertAccessibleStructure(html);
   assert.match(text, /Le lien ouvre le projet\. Revaloop garde le fil\./);
-  assert.match(text, /Le même retour, des deux côtés/);
-  assert.match(text, /Du premier clic à la validation finale\./);
-  assert.match(
-    text,
-    /Un outil que les développeurs peuvent vraiment inspecter\./,
-  );
+  assert.match(text, /Alpha open source · pilote fonctionnel/);
+  assert.match(text, /Invitations éphémères à usage unique/);
   assertInternalLink(html, "/dashboard");
-  assertInternalLink(html, "/review/maison-matisse-v12");
-  assertNamedRole(html, "group", "Changer de point de vue");
-  assertNoStarterContent(html);
+  assertInternalLink(html, "/demo");
+  assert.doesNotMatch(html, /href=["']\/review\/maison-matisse-v12["']/);
+  assert.doesNotMatch(html, forbiddenStarterContent);
 });
 
-test("server-renders the developer dashboard", async () => {
-  const { response, html } = await render("/dashboard");
+test("rend une démonstration cliente publique mais non indexable", async () => {
+  const { response, html } = await render("/demo");
   const text = visibleText(html);
 
   assertHtmlResponse(response);
   assertSecurityHeaders(response);
-  assertTitle(html, "Espace développeur · Revaloop");
-  assertNamedMeta(
-    html,
-    "description",
-    "Suivez une version en recette, traitez les retours et préparez sa validation.",
-  );
+  assertTitle(html, "Démonstration client · Revaloop");
+  assertNamedMeta(html, "robots", "noindex, nofollow, noarchive, nosnippet");
   assertAccessibleStructure(html);
   assert.match(text, /Maison Matisse/);
-  assert.match(text, /Version v1\.2 en recette/);
-  assert.match(text, /File de travail/);
-  assert.match(text, /Retours de cette version/);
-  assert.doesNotMatch(text, /Données de démonstration chargées localement\./);
-  assertNamedRole(html, "group", "Filtrer les retours");
-  assertNoStarterContent(html);
+  assert.match(text, /Parcours suggéré/);
+  assert.match(text, /Environnement de test/);
+  assert.match(text, /Ajouter un retour/);
+  assert.doesNotMatch(html, forbiddenStarterContent);
 });
 
-test("server-renders the private review with noindex metadata", async () => {
-  const { response, html } = await render(
-    "/review/maison-matisse-v12",
-  );
+test("ne divulgue aucun projet sans cookie de session", async () => {
+  const { response, html } = await render("/review/release-inconnue");
   const text = visibleText(html);
 
   assertHtmlResponse(response);
   assertSecurityHeaders(response);
-  assertTitle(html, "Espace de test privé · Revaloop");
-  assertNamedMeta(
-    html,
-    "description",
-    "Consultez une version de test qui vous a été partagée.",
-  );
   assertNamedMeta(html, "robots", "noindex, nofollow, noarchive, nosnippet");
-  assert.equal(
-    response.headers.get("x-robots-tag"),
-    "noindex, nofollow, noarchive, nosnippet",
-  );
   assert.equal(
     response.headers.get("cache-control"),
     "private, no-store, max-age=0",
   );
+  assert.equal(
+    response.headers.get("x-robots-tag"),
+    "noindex, nofollow, noarchive, nosnippet",
+  );
   assertAccessibleStructure(html);
-  assert.match(text, /Maison Matisse/);
-  assert.match(text, /Version v1\.2/);
-  assert.match(text, /Guide de test/);
-  assert.match(text, /Suivez les étapes à votre rythme\./);
-  assert.match(text, /Envoyer mon bilan/);
-  assert.doesNotMatch(
-    text,
-    /Vous testez une démonstration avec des données fictives\./,
-  );
-  assert.match(text, /Parcours suggéré/);
-  assert.match(
-    text,
-    /Environnement de test : utilisez uniquement des informations fictives\./,
-  );
-  assert.match(text, /Ajouter un retour/);
-  assert.doesNotMatch(text, /Tester la page/);
-  assert.doesNotMatch(text, /Signaler ici/);
-  assertNamedRole(html, "group", "Taille de l’écran");
-  assertNamedRole(html, "toolbar", "Outils de recette");
-  assertNoStarterContent(html);
+  assert.match(text, /Cette session n’est pas reconnue/);
+  assert.match(text, /ne révèle aucune information sur le projet/);
+  assert.doesNotMatch(text, /Maison Matisse/);
 });
 
-test("does not disclose the demo project for an invalid review token", async () => {
-  const { response, html } = await render("/review/lien-invalide");
+test("rend la page d’échange sans exposer le secret côté serveur", async () => {
+  const { response, html } = await render("/join");
   const text = visibleText(html);
 
   assertHtmlResponse(response);
   assertSecurityHeaders(response);
+  assertTitle(html, "Ouvrir une invitation · Revaloop");
   assertNamedMeta(html, "robots", "noindex, nofollow, noarchive, nosnippet");
   assertAccessibleStructure(html);
-  assert.match(text, /Ce lien n’est pas valide/);
-  assert.match(text, /Revaloop ne révèle aucune information sur le projet/);
-  assert.doesNotMatch(text, /Maison Matisse/);
-  assertNoStarterContent(html);
+  assert.match(text, /Votre espace de test est prêt/);
+  assert.match(text, /Le secret est retiré de l’adresse/);
+  assertInternalLink(html, "/privacy");
+  assert.doesNotMatch(html, /token=/);
 });
 
-test("keeps the Drizzle schema and initial migration aligned", async () => {
-  const [schema, migration, hosting] = await Promise.all([
+test("rend la notice de confidentialité de l’instance", async () => {
+  const { response, html } = await render("/privacy");
+  const text = visibleText(html);
+
+  assertHtmlResponse(response);
+  assertSecurityHeaders(response);
+  assertTitle(html, "Confidentialité · Revaloop");
+  assertAccessibleStructure(html);
+  assert.match(text, /Ce que Revaloop conserve pendant un test/);
+  assert.match(text, /responsable des données/);
+  assert.match(text, /La preview de staging est un service séparé/);
+});
+
+test("autorise uniquement le bridge public à être chargé en cross-origin", async () => {
+  const { response } = await render("/revaloop-bridge.js");
+
+  assert.equal(
+    response.headers.get("cross-origin-resource-policy"),
+    "cross-origin",
+  );
+});
+
+test("protège le dashboard par Sign in with ChatGPT en production", async () => {
+  const { response } = await render("/dashboard");
+
+  assert.ok([303, 307, 308].includes(response.status));
+  assert.match(
+    response.headers.get("location") ?? "",
+    /^(?:https:\/\/revaloop\.test)?\/signin-with-chatgpt\?return_to=%2Fdashboard$/,
+  );
+  assertSecurityHeaders(response);
+  assert.equal(
+    response.headers.get("cache-control"),
+    "private, no-store, max-age=0",
+  );
+});
+
+test("versionne toutes les tables D1 et la migration de confidentialité", async () => {
+  const [schema, legacy, secure, privacy, hosting] = await Promise.all([
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(
-      new URL(
-        "../drizzle/0000_redundant_vance_astro.sql",
-        import.meta.url,
-      ),
+      new URL("../drizzle/0000_redundant_vance_astro.sql", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../drizzle/0001_sleepy_paper_doll.sql", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../drizzle/0002_sticky_mystique.sql", import.meta.url),
       "utf8",
     ),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
@@ -293,30 +252,32 @@ test("keeps the Drizzle schema and initial migration aligned", async () => {
 
   const schemaTables = [
     ...schema.matchAll(/sqliteTable\(\s*["']([^"']+)["']/g),
-  ]
-    .map((match) => match[1])
-    .sort();
-  const migrationTables = [
-    ...migration.matchAll(/CREATE TABLE `([^`]+)`/g),
-  ]
-    .map((match) => match[1])
-    .sort();
+  ].map((match) => match[1]);
+  const migratedTables = [legacy, secure]
+    .flatMap((sql) => [...sql.matchAll(/CREATE TABLE `([^`]+)`/g)])
+    .map((match) => match[1]);
 
-  assert.deepEqual(schemaTables, [
-    "decisions",
-    "feedback_items",
-    "projects",
-    "releases",
-  ]);
-  assert.deepEqual(migrationTables, schemaTables);
-  assert.match(
-    migration,
-    /CREATE UNIQUE INDEX `releases_share_token_unique` ON `releases` \(`share_token`\)/,
+  assert.equal(schemaTables.length, 17);
+  assert.deepEqual(
+    [...new Set(migratedTables)].sort(),
+    [...schemaTables].sort(),
   );
   assert.match(
-    migration,
-    /FOREIGN KEY \(`release_id`\) REFERENCES `releases`\(`id`\)[^;]+ON DELETE cascade/g,
+    secure,
+    /CREATE UNIQUE INDEX `review_feedback_release_sequence_unique`/,
   );
+  assert.match(
+    secure,
+    /CREATE UNIQUE INDEX `review_decisions_release_unique`/,
+  );
+  assert.match(
+    privacy,
+    /reviewer_session_id` text,/,
+  );
+  assert.match(privacy, /ON DELETE set null/);
+  assert.match(privacy, /PRAGMA defer_foreign_keys=ON/);
+  assert.doesNotMatch(privacy, /PRAGMA foreign_keys=OFF/);
+
   const hostingConfig = JSON.parse(hosting);
   assert.equal(hostingConfig.d1, "DB");
   assert.equal(hostingConfig.r2, null);

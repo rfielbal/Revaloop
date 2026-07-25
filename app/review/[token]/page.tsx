@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { getReviewForReviewer } from "../../../db/repository";
+import { reviewCookieName } from "../../../lib/security";
 import { ReviewClient } from "./review-client";
 import { ReviewUnavailable } from "./review-unavailable";
-import {
-  DEMO_TOKEN,
-  demoFeedback,
-  demoProject,
-  demoRelease,
-  type ReviewPayload,
-} from "../../../lib/revaloop";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Espace de test privé",
@@ -20,40 +18,57 @@ export const metadata: Metadata = {
   },
 };
 
-const initialReview: ReviewPayload = {
-  project: demoProject,
-  release: demoRelease,
-  feedback: demoFeedback,
-  decisions: [],
-};
-
 export default async function ReviewPage({
   params,
 }: {
   params: Promise<{ token: string }>;
 }) {
-  const { token } = await params;
+  const { token: releaseId } = await params;
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get(reviewCookieName(releaseId))?.value;
 
-  if (token !== DEMO_TOKEN) {
+  if (!sessionToken) {
     return (
       <ReviewUnavailable
-        title="Ce lien n’est pas valide"
-        message="Vérifiez le lien reçu ou demandez au développeur de vous renvoyer un accès."
+        title="Cette session n’est pas reconnue"
+        message="Ouvrez le lien d’invitation reçu ou demandez au développeur de créer un nouvel accès."
       />
     );
   }
 
-  // The current wall clock is intentionally read here: expiry is a
-  // request-time access guard in this server component.
-  // eslint-disable-next-line react-hooks/purity
-  if (new Date(demoRelease.expiresAt).getTime() <= Date.now()) {
+  let review: Awaited<ReturnType<typeof getReviewForReviewer>> = null;
+  let unavailable = false;
+
+  try {
+    review = await getReviewForReviewer(releaseId, sessionToken);
+  } catch {
+    unavailable = true;
+  }
+
+  if (unavailable) {
     return (
       <ReviewUnavailable
-        title="Ce lien a expiré"
-        message="Cette version de test n’est plus accessible. Demandez un nouveau lien au développeur."
+        title="L’espace de test est momentanément indisponible"
+        message="Réessayez dans quelques instants ou contactez le développeur."
+        retryHref={`/review/${encodeURIComponent(releaseId)}`}
       />
     );
   }
 
-  return <ReviewClient token={token} initialReview={initialReview} />;
+  if (!review) {
+    return (
+      <ReviewUnavailable
+        title="Cet accès n’est plus disponible"
+        message="La session a expiré ou a été révoquée. Demandez un nouveau lien au développeur."
+      />
+    );
+  }
+
+  return (
+    <ReviewClient
+      token={releaseId}
+      initialReview={review}
+      mode="live"
+    />
+  );
 }

@@ -2,7 +2,8 @@ export type ReleaseStatus =
   | "draft"
   | "in_review"
   | "changes_requested"
-  | "approved";
+  | "approved"
+  | "superseded";
 
 export type FeedbackStatus =
   | "open"
@@ -23,6 +24,7 @@ export interface FeedbackItem {
   status: FeedbackStatus;
   priority: FeedbackPriority;
   pagePath: string;
+  pageTitle?: string;
   viewport: string;
   positionX: number | null;
   positionY: number | null;
@@ -47,13 +49,19 @@ export interface Release {
   title: string;
   commitSha: string;
   status: ReleaseStatus;
-  shareToken: string;
+  previewKind?: "demo" | "external";
+  previewUrl?: string;
+  reviewerMessage?: string;
+  shareToken?: string;
   createdAt: string;
+  updatedAt?: string;
   expiresAt: string;
+  closedAt?: string | null;
 }
 
 export interface Project {
   id: string;
+  organizationId?: string;
   slug: string;
   name: string;
   description: string;
@@ -66,6 +74,53 @@ export interface ReviewPayload {
   release: Release;
   feedback: FeedbackItem[];
   decisions: ReviewDecision[];
+  testItems?: ReviewTestItem[];
+  completedTestItemIds?: string[];
+  reviewerName?: string;
+}
+
+export interface ReviewTestItem {
+  id: string;
+  releaseId: string;
+  position: number;
+  title: string;
+  description: string;
+}
+
+export interface DeveloperProjectSummary {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  accent: string;
+  updatedAt: string;
+  latestRelease: {
+    id: string;
+    version: string;
+    status: ReleaseStatus;
+    updatedAt: string;
+  } | null;
+}
+
+export interface DeveloperWorkspace {
+  viewer: {
+    id: string;
+    displayName: string;
+    email: string;
+  };
+  organization: {
+    id: string;
+    name: string;
+  };
+  projects: DeveloperProjectSummary[];
+  activeReview: ReviewPayload | null;
+}
+
+export interface CreatedInvitation {
+  invitationId: string;
+  releaseId: string;
+  secret: string;
+  expiresAt: string;
 }
 
 export const DEMO_TOKEN = "maison-matisse-v12";
@@ -86,10 +141,37 @@ export const demoRelease: Release = {
   title: "Parcours de réservation",
   commitSha: "a84d9c1",
   status: "changes_requested",
+  previewKind: "demo",
   shareToken: DEMO_TOKEN,
   createdAt: "2026-07-23T14:20:00.000Z",
   expiresAt: "2027-08-06T22:00:00.000Z",
 };
+
+export const demoTestItems: ReviewTestItem[] = [
+  {
+    id: "test_demo_home",
+    releaseId: demoRelease.id,
+    position: 0,
+    title: "Accroche de la page d’accueil",
+    description:
+      "Le message et le bouton principal sont-ils immédiatement compréhensibles ?",
+  },
+  {
+    id: "test_demo_booking",
+    releaseId: demoRelease.id,
+    position: 1,
+    title: "Réservation d’une table",
+    description: "Essayez de réserver un dîner fictif pour deux personnes.",
+  },
+  {
+    id: "test_demo_mobile",
+    releaseId: demoRelease.id,
+    position: 2,
+    title: "Lecture sur téléphone",
+    description:
+      "Vérifiez la navigation et la lisibilité des informations essentielles.",
+  },
+];
 
 export const demoFeedback: FeedbackItem[] = [
   {
@@ -217,4 +299,20 @@ export function formatShortDate(value: string) {
   const parts = getParisDateParts(value);
   const month = frenchMonths[Math.max(0, Number(parts.month) - 1)];
   return `${Number(parts.day)} ${month}`;
+}
+
+export function formatCalendarDate(value: string) {
+  const parts = new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "Europe/Paris",
+  }).formatToParts(new Date(value));
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+
+  return `${values.day}/${values.month}/${values.year}`;
 }

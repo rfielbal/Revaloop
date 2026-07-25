@@ -1,254 +1,160 @@
 # Feuille de route technique
 
-- **Dernière mise à jour :** 24 juillet 2026
-- **Principe :** aucune date sans capacité et aucun statut sans preuve
+- **Dernière mise à jour :** 25 juillet 2026
+- **Principe :** aucun statut sans code, test et limite documentée
 
 ## Légende
 
-- ✅ **Implémenté** : présent dans le dépôt et démontrable.
-- 🧪 **Prototype** : parcours interactif, sans garantie de production.
-- ⏳ **Prévu** : périmètre décidé, code absent.
-- 🔬 **Recherche** : faisabilité ou compromis non tranché.
-- 🚫 **Hors périmètre** : volontairement exclu de la phase.
+- ✅ implémenté et démontrable ;
+- 🧪 alpha utilisable dans un pilote contrôlé ;
+- ⏳ prévu, code absent ;
+- 🔬 recherche ;
+- 🚫 hors périmètre initial.
 
-Une fonctionnalité n’est terminée que si son code, ses tests, sa documentation
-et ses limites sont fusionnés.
+## État actuel — alpha 0.2
 
-## État actuel — prototype 0.1
+### Review plane
 
-### Implémenté
+- ✅ landing et démo cliente fictive ;
+- ✅ Sign in with ChatGPT pour le développeur sur Sites ;
+- ✅ utilisateurs, organisations, membres et autorisation par projet ;
+- ✅ projets multiples ;
+- ✅ création d’une release avec URL HTTPS, consignes et référence Git ;
+- ✅ cible `external` dans une iframe et fallback nouvel onglet ;
+- ✅ bridge facultatif ne transmettant que chemin et titre ;
+- ✅ invitations one-shot de 32 octets stockées hachées ;
+- ✅ échange atomique fragment → session → cookie ;
+- ✅ session maximale de 24 h, rotation, révocation et fermeture ;
+- ✅ checklist persistée ;
+- ✅ retours généraux et visuels ;
+- ✅ transitions séparées développeur/reviewer ;
+- ✅ synchronisation à cinq secondes ;
+- ✅ demande d’ajustements non terminale puis approbation finale atomique ;
+- ✅ nouvelle release bloquée jusqu’à approbation ou expiration de la courante ;
+- ✅ export Markdown ;
+- ✅ suppression d’un projet ;
+- ✅ audit minimal et rate limits ;
+- ✅ migrations D1 et purge opportuniste des données opérationnelles ;
+- ✅ en-têtes défensifs et absence de cache ;
+- 🧪 pilotage d’une vraie preview non sensible.
 
-- ✅ landing française ;
-- 🧪 dashboard Maison Matisse ;
-- 🧪 espace client interactif avec consignes ;
-- 🧪 changement de viewport sur une surface simulée ;
-- 🧪 marqueurs et création de retours ;
-- 🧪 changement du statut d’un retour ;
-- 🧪 approbation ou demande de modifications ;
-- ✅ schéma et persistance D1 ;
-- ✅ API de lecture et de mutation du jeu de démonstration ;
-- ✅ rejet des liens inconnus ou expirés et transitions de statut bornées ;
-- ✅ en-têtes HTTP défensifs ;
-- ✅ robots `noindex` sur l’espace client ;
-- ✅ smoke tests de rendu et contrôle schéma/migration.
+### Limites de l’alpha
 
-### Non implémenté
+- une seule release courante est exposée dans le dashboard ;
+- après approbation, la release reste approuvée mais n’est plus navigable depuis
+  le dashboard dès qu’une nouvelle version existe ;
+- après expiration, publier une nouvelle release révoque les anciens accès et
+  passe la précédente à `superseded` ;
+- l’origine de preview n’est pas limitée par allowlist globale ;
+- l’ouverture publique autorise l’inscription SIWC libre dans un tenant isolé ;
+- le bridge transmet seulement le chemin et le titre : les annotations externes
+  ne sont jamais ancrées à un élément et ne suivent pas le scroll interne ;
+- l’invitation protège la revue, pas l’accès à l’URL de staging ;
+- iframe, authentification, cookies tiers, OAuth/SSO, popups, téléchargements,
+  paiement et caméra restent dépendants de la preview et du navigateur ;
+- le nom reviewer est déclaratif et non vérifié ; l’interface ne collecte pas
+  d’adresse e-mail cliente ;
+- aucune capture ou pièce jointe ;
+- aucun e-mail n’est envoyé ;
+- aucun tunnel local.
 
-- authentification et autorisation ;
-- invitation secrète réelle ;
-- révocation et rotation des invitations ;
-- multi-projet et membres ;
-- release réellement créée ou immuable ;
-- preview externe ou capture ;
-- stockage R2 ;
-- tunnel, agent et relais ;
-- isolation multi-tenant ;
-- auto-hébergement ;
-- tests métier, d’autorisation et d’accès croisé.
+## Jalon 0.2.1 — fiabiliser le pilote
 
-## Jalon 1 — rendre le review plane non public
-
-**Objectif :** permettre un test contrôlé avec des données non sensibles.
-
-- ⏳ authentification développeur derrière un adaptateur ;
-- ⏳ modèle utilisateurs, organisations et membres ;
-- ⏳ contrôles d’autorisation sur chaque route ;
-- ⏳ invitation aléatoire de 32 octets stockée hachée ;
-- ⏳ échange fragment→session→cookie ;
-- ⏳ expiration, rotation et révocation effectives ;
-- ⏳ protection d’origine et CSRF des mutations ;
-- ⏳ rate limits, limites de taille et gestion des abus ;
-- ⏳ audit minimal sans secret ;
-- ⏳ tests IDOR et inter-projets ;
-- ⏳ extension de la suite aux mutations, transitions et accès croisés ;
-- ⏳ canal privé de vulnérabilité et contact de modération.
+- ⏳ tests automatisés D1 des doubles échanges et écritures concurrentes ;
+- ⏳ statut et dernière activité d’une invitation dans le dashboard ;
+- ✅ aide après délai et fallback explicite vers un nouvel onglet ;
+- ⏳ détection fiable du chargement ou du refus de framing, lorsque le navigateur
+  permet de distinguer ces états ;
+- ⏳ journal d’audit consultable par le propriétaire ;
+- ⏳ export serveur signé et format JSON ;
+- ⏳ configuration de rétention par projet ;
+- ⏳ confirmation de suppression renforcée ;
+- ⏳ quotas par organisation ;
+- ⏳ allowlist/invitation développeur pour alpha fermée ;
+- ⏳ historique et sélection de releases.
 
 ### Porte de sortie
 
-- aucune route métier accessible sans identité ou session valide ;
-- tous les tests d’accès croisé échouent comme attendu ;
-- aucun token brut en base ou dans les logs ;
-- révocation et expiration vérifiées côté serveur ;
-- suppression des fixtures possible.
+- parcours réel validé sur Chrome, Safari et Firefox ;
+- tests d’accès croisé entre deux identités ;
+- double échange et feedback concurrent à une approbation couverts ;
+- déploiement public vérifié avec dashboard protégé et `/join` anonyme ;
+- canal privé de vulnérabilité opérationnel.
 
-## Jalon 2 — véritable plan de validation
+## Jalon 0.3 — captures et discussions
 
-**Objectif :** gérer plusieurs projets et versions sans tunnel natif.
-
-- ⏳ création et paramétrage de projets ;
-- ⏳ releases numérotées et immuables après publication ;
-- ⏳ changelog et référence Git facultative ;
-- ⏳ cycles de review conservés par release ;
-- ⏳ room client stable pointant vers la release courante ;
-- ⏳ consignes et points à vérifier persistés ;
-- ⏳ fils de discussion et réponses ;
-- ⏳ décisions historisées ;
-- ⏳ export Markdown ;
-- ⏳ suppression et rétention configurables ;
-- ⏳ événements d’audit ;
-- ⏳ adaptateur `external` pour une URL HTTPS fournie manuellement ;
-- ⏳ fallback lorsque l’iframe est bloquée.
-
-### Limite assumée
-
-Une URL externe peut changer sans que Revaloop le sache. Elle doit être
-affichée comme **mutable** et ne constitue jamais une preuve de la version
-validée.
-
-## Jalon 3 — captures figées et stockage objet
-
-**Objectif :** proposer une preuve visuelle réellement rattachée à une
-release.
-
-- ⏳ binding R2 et interface `ObjectStore` ;
-- ⏳ upload explicite de captures ;
-- ⏳ type, taille, dimensions et métadonnées contrôlés ;
-- ⏳ bucket privé et route média autorisée ;
+- ⏳ binding R2 et stockage privé ;
+- ⏳ capture explicite avec prévisualisation ;
+- ⏳ contrôle MIME, taille et dimensions ;
 - ⏳ empreinte de contenu ;
-- ⏳ annotation en coordonnées relatives ;
-- ⏳ suppression de l’objet avec le retour ou la release ;
-- ⏳ export des pièces jointes ;
-- ⏳ quotas par projet.
+- ⏳ suppression de l’objet avec son retour ;
+- ⏳ fil de discussion par retour ;
+- ⏳ mentions et notifications configurables ;
+- ⏳ intégrations GitHub/GitLab ;
+- ⏳ quotas de stockage.
 
-### Hors périmètre
+🚫 Captures silencieuses, enregistrement continu et collecte de champs restent
+hors périmètre.
 
-- 🚫 capture silencieuse ou continue ;
-- 🚫 enregistrement vidéo ;
-- 🚫 collecte de champs de formulaire.
+## Jalon 0.4 — portabilité du review plane
 
-## Jalon 4 — portabilité et auto-hébergement
-
-**Objectif :** rendre le review plane déployable hors de la plateforme de
-démonstration.
-
-- ⏳ `ProjectRepository`, `ReviewRepository` et `ObjectStore` indépendants de
-  Cloudflare ;
-- ⏳ PostgreSQL comme base de référence ;
-- ⏳ S3/MinIO comme stockage objet de référence ;
+- ⏳ interfaces repository indépendantes de D1 ;
+- ⏳ PostgreSQL de référence ;
+- ⏳ S3/MinIO de référence ;
 - ⏳ OIDC générique ;
-- ⏳ migrations et seed explicites, sans bootstrap au runtime ;
-- ⏳ Docker Compose documenté et testé ;
-- ⏳ sauvegarde, restauration, purge et réversibilité ;
-- ⏳ configuration des domaines, TLS et e-mail ;
-- ⏳ guide de mise à jour et rollback ;
-- ⏳ matrice des responsabilités opérateur/mainteneurs.
+- ⏳ migrations, sauvegarde, restauration et purge documentées ;
+- ⏳ image conteneur et exemple de déploiement ;
+- ⏳ test d’installation sur un environnement vierge ;
+- ⏳ documentation des régions et sous-traitants.
 
-L’auto-hébergement ne passe à « implémenté » qu’après un test depuis une
-machine vierge et une restauration de sauvegarde.
+## Jalon 0.5 — agent et tunnel
 
-## Jalon 5 — agent et relais Revaloop
+Objectif : rendre enfin possible `revaloop share 3000`.
 
-**Objectif :** résoudre le problème initial du partage d’un serveur local.
-
-- ⏳ CLI `revaloop` ;
-- ⏳ détection ou sélection explicite du port ;
-- ⏳ agent Go ;
-- ⏳ device flow avec le review plane ;
-- ⏳ lease court lié à projet, release et port ;
+- ⏳ CLI et agent local ;
+- ⏳ authentification d’appareil ;
 - ⏳ connexion sortante mTLS ;
-- ⏳ relais Go auto-hébergeable ;
-- ⏳ routage HTTP et WebSocket ;
-- ⏳ cible `127.0.0.1:<port>` par défaut ;
-- ⏳ heartbeat et états online/offline ;
-- ⏳ expiration et fermeture sous délai borné ;
-- ⏳ quotas, timeout et backpressure ;
-- ⏳ binaire signé, checksums et provenance ;
-- ⏳ adaptateur `tunnel` dans le review plane.
+- ⏳ cible loopback et port explicitement autorisés ;
+- ⏳ relais HTTP/WebSocket séparé du Worker ;
+- ⏳ lease court lié au projet et à la release ;
+- ⏳ révocation immédiate ;
+- ⏳ quotas de bande passante et connexions ;
+- ⏳ filtres d’hôtes et refus des réseaux internes ;
+- ⏳ aucun log de corps, cookie ou header d’autorisation ;
+- ⏳ tests de proxy ouvert, SSRF, confusion de routage et rejeu.
 
 ### Porte de sortie
 
-Un test end-to-end doit prouver :
+- un poste neuf peut partager une application locale par connexion sortante ;
+- aucune autre cible locale n’est accessible ;
+- l’arrêt ou la révocation coupe le trafic ;
+- les commentaires restent disponibles hors ligne ;
+- l’opérateur documente clairement s’il peut lire le trafic.
 
-1. démarrage d’une application locale fictive ;
-2. ouverture du tunnel sans port entrant ;
-3. navigation HTTP et WebSocket depuis un autre réseau ;
-4. contrôle d’accès avant l’application ;
-5. coupure effective après révocation ;
-6. absence d’accès à une autre adresse du LAN ;
-7. maintien des retours quand le poste devient hors ligne.
+## Jalon 0.6 — hébergement de previews
 
-Avant cette porte, la phrase « partagez votre localhost » reste une vision.
-
-## Jalon 6 — durcissement multi-tenant
-
-**Objectif :** exploiter un service managé sans fuite entre projets.
-
-- ⏳ séparation control plane/data plane ;
-- ⏳ routage lié cryptographiquement au lease ;
-- ⏳ origines et cookies sans portée wildcard dangereuse ;
-- ⏳ quotas par organisation, projet et tunnel ;
-- ⏳ tests de confusion de hostname et tunnel ;
-- ⏳ rotation des clés et procédure de compromission ;
-- ⏳ régions de données documentées ;
-- ⏳ export, suppression et preuve de purge ;
-- ⏳ observabilité sans contenu applicatif ;
-- ⏳ revue de sécurité externe avant statut stable.
-
-L’isolation logique n’est pas décrite comme une isolation par conteneur ou VM.
-
-## Jalon 7 — previews hébergées
-
-**Objectif :** conserver le même espace client pour une preview distante
-durable.
-
-- 🔬 runner éphémère rootless par release ;
-- 🔬 filtrage réseau sortant ;
-- 🔬 secrets à portée minimale ;
-- 🔬 filesystem jetable ;
-- 🔬 limites CPU, mémoire, disque et temps ;
-- 🔬 destruction et audit de fin de vie ;
-- 🔬 adaptateur `hosted`.
-
-Cette phase exécute du code non fiable et nécessite un modèle de menace
-spécifique avant tout prototype public.
+- ⏳ build reproductible depuis une source autorisée ;
+- ⏳ runner rootless éphémère ;
+- ⏳ réseau et secrets isolés ;
+- ⏳ base par release ;
+- ⏳ destruction vérifiable ;
+- ⏳ limites CPU, mémoire, temps et disque ;
+- ⏳ analyse des dépendances et provenance.
 
 ## Recherche — TLS passthrough
 
-Le mode « confidential passthrough » est une piste, pas un jalon promis.
+Le mode managé termine TLS au relais : il facilite l’authentification mais
+l’opérateur peut lire le trafic. Un mode passthrough rendrait le trafic opaque
+au relais, au prix d’une gestion complexe des certificats et de l’impossibilité
+d’injecter un bridge HTTP. Aucun chiffrement de bout en bout ne sera annoncé
+avant prototype et audit.
 
-Questions ouvertes :
+## Gouvernance
 
-- comment fournir un certificat reconnu par le navigateur sans exposer sa clé
-  au relais ?
-- comment associer un domaine stable à un agent éphémère ?
-- comment authentifier le reviewer sans terminer HTTP à l’edge ?
-- comment fournir le widget de review si le relais ne voit pas le contenu ?
-- comment révoquer rapidement une session et son certificat ?
+Une fonction passe à ✅ uniquement lorsque :
 
-Une preuve de concept et un ADR mis à jour sont nécessaires avant toute date.
-
-## Fonctions produit ultérieures
-
-Après les fondations :
-
-- plusieurs reviewers et rôles ;
-- notifications ;
-- retest et report explicite d’un fil ;
-- intégrations GitHub, GitLab, Linear ou Trello ;
-- domaines et marque agence ;
-- i18n ;
-- comparaison de releases ;
-- règles de rétention avancées ;
-- SSO et audit renforcé.
-
-## Non-objectifs initiaux
-
-- disponibilité 24/7 d’un poste local ;
-- données de production ;
-- application native ;
-- co-navigation ;
-- gestion de projet complète ;
-- paiement réel ;
-- capture vidéo ;
-- intelligence artificielle ;
-- proxy TCP ou réseau généraliste.
-
-## Règle de gouvernance
-
-À chaque release :
-
-1. comparer ce document au code ;
-2. déplacer uniquement les éléments prouvés ;
-3. publier les limites connues ;
-4. mettre à jour le modèle de menace ;
-5. ne pas transformer une recherche en promesse marketing.
+1. le parcours nominal fonctionne ;
+2. les erreurs et accès croisés sont testés ;
+3. les données collectées et leur suppression sont documentées ;
+4. le modèle de menace ou un ADR est à jour ;
+5. la limitation utilisateur est visible dans l’interface.

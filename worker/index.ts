@@ -28,6 +28,10 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const isLocal =
+      url.hostname === "localhost" ||
+      url.hostname === "127.0.0.1" ||
+      url.hostname === "::1";
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
@@ -47,28 +51,52 @@ const worker = {
     securedResponse.headers.set("Referrer-Policy", "no-referrer");
     securedResponse.headers.set("X-Frame-Options", "DENY");
     securedResponse.headers.set("Cross-Origin-Opener-Policy", "same-origin");
-    securedResponse.headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    securedResponse.headers.set(
+      "Cross-Origin-Resource-Policy",
+      url.pathname === "/revaloop-bridge.js" ? "cross-origin" : "same-origin",
+    );
     securedResponse.headers.set(
       "Permissions-Policy",
       "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     );
     securedResponse.headers.set(
       "Content-Security-Policy",
-      "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:",
+      [
+        "default-src 'self'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data:",
+        "style-src 'self' 'unsafe-inline'",
+        "script-src 'self' 'unsafe-inline'",
+        `connect-src 'self'${
+          isLocal ? " ws://localhost:* ws://127.0.0.1:*" : ""
+        }`,
+        `frame-src https:${
+          isLocal ? " http://localhost:* http://127.0.0.1:*" : ""
+        }`,
+      ].join("; "),
     );
 
     if (
       url.pathname.startsWith("/review/") ||
-      url.pathname.startsWith("/api/review/") ||
-      url.pathname.startsWith("/api/feedback/")
+      url.pathname.startsWith("/dashboard") ||
+      url.pathname.startsWith("/join") ||
+      url.pathname.startsWith("/api/")
     ) {
       securedResponse.headers.set(
         "Cache-Control",
         "private, no-store, max-age=0",
       );
+      securedResponse.headers.set("Pragma", "no-cache");
     }
 
-    if (url.pathname.startsWith("/review/")) {
+    if (
+      url.pathname.startsWith("/review/") ||
+      url.pathname.startsWith("/dashboard") ||
+      url.pathname.startsWith("/join")
+    ) {
       securedResponse.headers.set(
         "X-Robots-Tag",
         "noindex, nofollow, noarchive, nosnippet",

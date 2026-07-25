@@ -5,17 +5,23 @@ import {
   ArrowUpRight,
   Check,
   CircleCheck,
-  ClipboardCheck,
   Copy,
-  Ellipsis,
+  Download,
   ExternalLink,
+  FilePlus2,
+  KeyRound,
   LayoutDashboard,
   Link2,
-  ListChecks,
+  LogOut,
   Menu,
+  Plus,
+  RotateCcwKey,
+  ShieldCheck,
+  Trash2,
   X,
 } from "lucide-react";
 import {
+  type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
@@ -23,24 +29,20 @@ import {
   useRef,
   useState,
 } from "react";
-import { Brand } from "../components/brand";
 import {
+  formatCalendarDate,
   formatRelativeDate,
   statusLabels,
+  type DeveloperWorkspace,
   type FeedbackItem,
   type FeedbackStatus,
   type ReviewPayload,
   typeLabels,
 } from "../../lib/revaloop";
-
-const columns: FeedbackStatus[] = [
-  "open",
-  "in_progress",
-  "to_review",
-  "resolved",
-];
+import { Brand } from "../components/brand";
 
 type FeedbackFilter = "all" | "todo" | "to_review" | "resolved";
+type DialogName = "project" | "release" | "invitation" | null;
 
 const statusAction: Record<
   FeedbackStatus,
@@ -48,13 +50,14 @@ const statusAction: Record<
 > = {
   open: { label: "Prendre en charge", next: "in_progress" },
   in_progress: { label: "Prêt à revalider", next: "to_review" },
-  to_review: { label: "En attente de Claire", next: null },
+  to_review: { label: "En attente du client", next: null },
   resolved: { label: "Retour validé", next: null },
 };
 
 function initials(name: string) {
   return name
-    .split(" ")
+    .split(/\s+/)
+    .filter(Boolean)
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
@@ -68,7 +71,7 @@ function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
 
   const focusable = Array.from(
     event.currentTarget.querySelectorAll<HTMLElement>(
-      "button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])",
+      "button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])",
     ),
   );
   const first = focusable[0];
@@ -87,250 +90,535 @@ function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
   }
 }
 
+async function responseError(response: Response, fallback: string) {
+  const payload = (await response.json().catch(() => null)) as {
+    error?: string;
+  } | null;
+  return payload?.error ?? fallback;
+}
+
+function releaseStatusLabel(status: ReviewPayload["release"]["status"]) {
+  if (status === "approved") return "Approuvée";
+  if (status === "changes_requested") return "Ajustements demandés";
+  if (status === "superseded") return "Remplacée";
+  if (status === "draft") return "Brouillon";
+  return "En recette";
+}
+
 export function DashboardClient({
   initialWorkspace,
+  renderedAt,
+  signOutPath,
 }: {
-  initialWorkspace: ReviewPayload;
+  initialWorkspace: DeveloperWorkspace;
+  renderedAt: string;
+  signOutPath: string;
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
-  const [selectedId, setSelectedId] = useState(initialWorkspace.feedback[0]?.id);
-  const [activeStatus, setActiveStatus] = useState<FeedbackFilter>("all");
-  const [copied, setCopied] = useState(false);
-  const [showReleaseDialog, setShowReleaseDialog] = useState(false);
+  const [now, setNow] = useState(() => Date.parse(renderedAt));
+  const [selectedId, setSelectedId] = useState(
+    initialWorkspace.activeReview?.feedback[0]?.id,
+  );
+  const [filter, setFilter] = useState<FeedbackFilter>("all");
+  const [dialog, setDialog] = useState<DialogName>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isMobileLayout, setIsMobileLayout] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [notice, setNotice] = useState("");
-  const releaseButtonRef = useRef<HTMLButtonElement>(null);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const sidebarRef = useRef<HTMLElement>(null);
+  const [formError, setFormError] = useState("");
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [inviteExpiresAt, setInviteExpiresAt] = useState("");
+  const dialogTriggerRef = useRef<HTMLButtonElement>(null);
 
-  const closeMobileMenu = useCallback(() => {
-    setMobileMenuOpen(false);
-    window.requestAnimationFrame(() => menuButtonRef.current?.focus());
-  }, []);
+  const review = workspace.activeReview;
+  const activeProjectId = review?.project.id ?? workspace.projects[0]?.id;
+  const isReleaseExpired = review
+    ? Date.parse(review.release.expiresAt) <= now
+    : false;
+  const isActiveRelease = review
+    ? !isReleaseExpired &&
+      ["in_review", "changes_requested"].includes(review.release.status)
+    : false;
+  const canInvite = Boolean(review && isActiveRelease);
+  const canPublishRelease = Boolean(review && !isActiveRelease);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refreshWorkspace = useCallback(async () => {
+    const query = activeProjectId
+      ? `?project=${encodeURIComponent(activeProjectId)}`
+      : "";
+    const response = await fetch(`/api/workspace${query}`, {
+      cache: "no-store",
+    });
 
-    fetch("/api/workspace", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("workspace unavailable");
-        }
-        return (await response.json()) as ReviewPayload;
-      })
-      .then((payload) => {
-        if (!cancelled) {
-          setWorkspace(payload);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setNotice("Mode démonstration : les données initiales restent disponibles.");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!notice) {
-      return;
+    if (!response.ok) {
+      throw new Error("workspace unavailable");
     }
 
-    const timeout = window.setTimeout(() => setNotice(""), 4800);
+    const payload = (await response.json()) as DeveloperWorkspace;
+    setWorkspace(payload);
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    const clock = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(clock);
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      refreshWorkspace().catch(() => undefined);
+    }, 5_000);
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        refreshWorkspace().catch(() => undefined);
+      }
+    };
+
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshWorkspace]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(""), 5_000);
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
   useEffect(() => {
-    if (!showReleaseDialog) {
-      return;
-    }
+    if (!dialog) return;
 
-    function handleEscape(event: KeyboardEvent) {
+    const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setShowReleaseDialog(false);
-        window.requestAnimationFrame(() => releaseButtonRef.current?.focus());
+        closeDialog();
       }
-    }
+    };
 
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, [showReleaseDialog]);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [dialog]);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 820px)");
+    if (!mobileMenuOpen) return;
 
-    function syncLayout(event: MediaQueryList | MediaQueryListEvent) {
-      setIsMobileLayout(event.matches);
-      if (!event.matches) {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
         setMobileMenuOpen(false);
       }
-    }
-
-    syncLayout(mediaQuery);
-    mediaQuery.addEventListener("change", syncLayout);
-    return () => mediaQuery.removeEventListener("change", syncLayout);
-  }, []);
-
-  useEffect(() => {
-    if (!mobileMenuOpen || !isMobileLayout) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.requestAnimationFrame(() => {
-      sidebarRef.current
-        ?.querySelector<HTMLElement>(".workspace-nav-item.active")
-        ?.focus();
-    });
-
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        closeMobileMenu();
-      }
-    }
-
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", handleEscape);
     };
-  }, [closeMobileMenu, isMobileLayout, mobileMenuOpen]);
 
-  function closeReleaseDialog() {
-    setShowReleaseDialog(false);
-    window.requestAnimationFrame(() => releaseButtonRef.current?.focus());
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [mobileMenuOpen]);
+
+  function openDialog(name: Exclude<DialogName, null>) {
+    setFormError("");
+    setInviteUrl("");
+    setInviteExpiresAt("");
+    setDialog(name);
   }
 
-  const filteredFeedback = useMemo(
-    () => {
-      if (activeStatus === "all") {
-        return workspace.feedback;
-      }
+  function closeDialog() {
+    setDialog(null);
+    setFormError("");
+    window.requestAnimationFrame(() => dialogTriggerRef.current?.focus());
+  }
 
-      if (activeStatus === "todo") {
-        return workspace.feedback.filter(
-          (item) => item.status === "open" || item.status === "in_progress",
-        );
-      }
+  const filteredFeedback = useMemo(() => {
+    const feedback = review?.feedback ?? [];
 
-      return workspace.feedback.filter((item) => item.status === activeStatus);
-    },
-    [activeStatus, workspace.feedback],
-  );
+    if (filter === "all") return feedback;
+    if (filter === "todo") {
+      return feedback.filter(
+        (item) => item.status === "open" || item.status === "in_progress",
+      );
+    }
+    return feedback.filter((item) => item.status === filter);
+  }, [filter, review?.feedback]);
 
   const selected =
     filteredFeedback.find((item) => item.id === selectedId) ??
     filteredFeedback[0] ??
     null;
 
-  const counts = useMemo(
-    () =>
-      columns.reduce<Record<FeedbackStatus, number>>(
-        (accumulator, status) => {
-          accumulator[status] = workspace.feedback.filter(
-            (item) => item.status === status,
-          ).length;
-          return accumulator;
-        },
-        { open: 0, in_progress: 0, to_review: 0, resolved: 0 },
-      ),
-    [workspace.feedback],
-  );
+  const counts = useMemo(() => {
+    const result: Record<FeedbackStatus, number> = {
+      open: 0,
+      in_progress: 0,
+      to_review: 0,
+      resolved: 0,
+    };
 
-  async function copyShareLink() {
-    const link = `${window.location.origin}/review/${workspace.release.shareToken}`;
-
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setNotice(`Lien client : ${link}`);
+    for (const item of review?.feedback ?? []) {
+      result[item.status] += 1;
     }
-  }
+
+    return result;
+  }, [review?.feedback]);
 
   async function advanceFeedback(item: FeedbackItem) {
     const nextStatus = statusAction[item.status].next;
 
-    if (!nextStatus || isUpdating) {
-      return;
-    }
+    if (!nextStatus || isUpdating || !review || isReleaseExpired) return;
 
     setIsUpdating(true);
-    const previous = workspace.feedback;
-    setWorkspace((current) => ({
-      ...current,
-      feedback: current.feedback.map((feedback) =>
-        feedback.id === item.id
-          ? {
-              ...feedback,
-              status: nextStatus,
-              updatedAt: new Date().toISOString(),
-            }
-          : feedback,
-      ),
-    }));
 
     try {
       const response = await fetch(`/api/feedback/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: nextStatus,
-          reviewToken: workspace.release.shareToken,
-        }),
+        body: JSON.stringify({ status: nextStatus }),
       });
 
       if (!response.ok) {
-        throw new Error("update failed");
+        throw new Error(
+          await responseError(
+            response,
+            "La mise à jour n’a pas été enregistrée.",
+          ),
+        );
       }
 
       const updated = (await response.json()) as FeedbackItem;
       setWorkspace((current) => ({
         ...current,
-        feedback: current.feedback.map((feedback) =>
-          feedback.id === updated.id ? updated : feedback,
-        ),
+        activeReview: current.activeReview
+          ? {
+              ...current.activeReview,
+              feedback: current.activeReview.feedback.map((feedback) =>
+                feedback.id === updated.id ? updated : feedback,
+              ),
+            }
+          : null,
       }));
-      setNotice(`Le retour #${item.sequence} passe à « ${statusLabels[nextStatus]} ».`);
-    } catch {
-      setWorkspace((current) => ({ ...current, feedback: previous }));
-      setNotice("La mise à jour n’a pas été enregistrée. Réessayez.");
+      setNotice(
+        `Le retour #${item.sequence} passe à « ${statusLabels[nextStatus]} ».`,
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "La mise à jour n’a pas été enregistrée.",
+      );
+      refreshWorkspace().catch(() => undefined);
     } finally {
       setIsUpdating(false);
     }
   }
 
+  function releasePayload(form: HTMLFormElement) {
+    const data = new FormData(form);
+    const testItems = [1, 2, 3]
+      .map((index) => ({
+        title: String(data.get(`testTitle${index}`) ?? "").trim(),
+        description: String(
+          data.get(`testDescription${index}`) ?? "",
+        ).trim(),
+      }))
+      .filter((item) => item.title);
+
+    return {
+      version: String(data.get("version") ?? "").trim(),
+      title: String(data.get("title") ?? "").trim(),
+      commitSha: String(data.get("commitSha") ?? "").trim(),
+      previewUrl: String(data.get("previewUrl") ?? "").trim(),
+      reviewerMessage: String(
+        data.get("reviewerMessage") ?? "",
+      ).trim(),
+      expiresInDays: Number(data.get("expiresInDays") ?? 14),
+      testItems,
+    };
+  }
+
+  async function submitProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsUpdating(true);
+    setFormError("");
+
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const payload = {
+      name: String(data.get("name") ?? "").trim(),
+      description: String(data.get("description") ?? "").trim(),
+      ...releasePayload(form),
+    };
+
+    try {
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          await responseError(response, "Le projet n’a pas pu être créé."),
+        );
+      }
+
+      const result = (await response.json()) as { projectId: string };
+      window.location.assign(
+        `/dashboard?project=${encodeURIComponent(result.projectId)}`,
+      );
+    } catch (error) {
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : "Le projet n’a pas pu être créé.",
+      );
+      setIsUpdating(false);
+    }
+  }
+
+  async function submitRelease(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!review) return;
+
+    setIsUpdating(true);
+    setFormError("");
+
+    try {
+      const response = await fetch(
+        `/api/projects/${encodeURIComponent(review.project.id)}/releases`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(releasePayload(event.currentTarget)),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await responseError(
+            response,
+            "La nouvelle version n’a pas pu être publiée.",
+          ),
+        );
+      }
+
+      closeDialog();
+      setNotice("La nouvelle version est prête à recevoir une invitation.");
+      try {
+        await refreshWorkspace();
+      } catch {
+        window.location.assign(
+          `/dashboard?project=${encodeURIComponent(review.project.id)}`,
+        );
+      }
+    } catch (error) {
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : "La nouvelle version n’a pas pu être publiée.",
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
+  async function submitInvitation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!review) return;
+
+    setIsUpdating(true);
+    setFormError("");
+    const data = new FormData(event.currentTarget);
+
+    try {
+      const response = await fetch(
+        `/api/releases/${encodeURIComponent(review.release.id)}/invitations`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reviewerName: String(data.get("reviewerName") ?? "").trim(),
+            reviewerEmail: "",
+            expiresInDays: Number(data.get("expiresInDays") ?? 7),
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await responseError(
+            response,
+            "L’invitation n’a pas pu être créée.",
+          ),
+        );
+      }
+
+      const payload = (await response.json()) as {
+        inviteUrl: string;
+        expiresAt: string;
+      };
+      setInviteUrl(payload.inviteUrl);
+      setInviteExpiresAt(payload.expiresAt);
+      const copied = await navigator.clipboard
+        .writeText(payload.inviteUrl)
+        .then(() => true)
+        .catch(() => false);
+      setNotice(
+        copied
+          ? "Invitation créée et copiée. L’ancien accès a été révoqué."
+          : "Invitation créée. Copiez le lien affiché avant de fermer.",
+      );
+      await refreshWorkspace();
+    } catch (error) {
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : "L’invitation n’a pas pu être créée.",
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
+  async function revokeAccess() {
+    if (!review || isUpdating) return;
+
+    setIsUpdating(true);
+
+    try {
+      const response = await fetch(
+        `/api/releases/${encodeURIComponent(review.release.id)}/access`,
+        { method: "DELETE" },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await responseError(response, "La révocation a échoué."),
+        );
+      }
+
+      setNotice("Toutes les invitations et sessions de cette version sont révoquées.");
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "La révocation a échoué.",
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
+  async function removeCurrentProject() {
+    if (!review || isUpdating) return;
+
+    const confirmation = window.prompt(
+      `Suppression irréversible : exportez d’abord la recette si nécessaire. Tapez exactement « ${review.project.name} » pour supprimer le projet, ses versions, ses retours et tous les accès.`,
+    );
+
+    if (confirmation !== review.project.name) {
+      if (confirmation !== null) {
+        setNotice("Suppression annulée : le nom saisi ne correspond pas.");
+      }
+      return;
+    }
+
+    setIsUpdating(true);
+
+    try {
+      const response = await fetch(
+        `/api/projects/${encodeURIComponent(review.project.id)}`,
+        { method: "DELETE" },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await responseError(response, "Le projet n’a pas pu être supprimé."),
+        );
+      }
+
+      window.location.assign("/dashboard");
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Le projet n’a pas pu être supprimé.",
+      );
+      setIsUpdating(false);
+    }
+  }
+
+  function exportReview() {
+    if (!review) return;
+
+    const lines = [
+      `# ${review.project.name} — ${review.release.version}`,
+      "",
+      `- Version : ${review.release.title}`,
+      `- Preview : ${review.release.previewUrl ?? "non renseignée"}`,
+      `- Statut : ${releaseStatusLabel(review.release.status)}`,
+      `- Exporté le : ${new Date().toISOString()}`,
+      "",
+      "## Retours",
+      "",
+      ...(review.feedback.length
+        ? review.feedback.flatMap((item) => [
+            `### #${item.sequence} — ${item.title}`,
+            "",
+            `- État : ${statusLabels[item.status]}`,
+            `- Type : ${typeLabels[item.type]}`,
+            `- Importance : ${
+              item.priority === "high" ? "Importante" : "Standard"
+            }`,
+            `- Page : ${item.pagePath}`,
+            `- Écran : ${item.viewport}`,
+            "",
+            item.body,
+            "",
+          ])
+        : ["Aucun retour.", ""]),
+      "## Décision",
+      "",
+      review.decisions[0]
+        ? `Session invitée au nom de ${review.decisions[0].authorName} (identité non vérifiée) — ${releaseStatusLabel(
+            review.decisions[0].status,
+          )}\n\n${review.decisions[0].note}`
+        : "Aucune décision transmise.",
+    ];
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/markdown;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${review.project.slug}-${review.release.version}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="workspace-page workspace-flow">
+      {mobileMenuOpen ? (
+        <button
+          className="mobile-sidebar-backdrop"
+          type="button"
+          aria-label="Fermer la navigation"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      ) : null}
       <aside
-        ref={sidebarRef}
+        id="workspace-navigation"
         className={`workspace-sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}
-        inert={isMobileLayout && !mobileMenuOpen ? true : undefined}
-        aria-hidden={isMobileLayout && !mobileMenuOpen ? true : undefined}
-        role={isMobileLayout ? "dialog" : undefined}
-        aria-modal={isMobileLayout && mobileMenuOpen ? true : undefined}
-        aria-label={isMobileLayout ? "Navigation de l’espace développeur" : undefined}
-        onKeyDown={
-          isMobileLayout && mobileMenuOpen ? trapDialogFocus : undefined
-        }
+        aria-label="Navigation de l’espace développeur"
       >
         <div className="sidebar-brand-block">
           <Link href="/" aria-label="Retour à l’accueil Revaloop">
             <Brand />
           </Link>
-          <span className="sidebar-edition">Espace développeur</span>
+          <span className="sidebar-edition">Espace sécurisé</span>
         </div>
         <button
           className="mobile-sidebar-close"
           type="button"
-          onClick={closeMobileMenu}
+          onClick={() => setMobileMenuOpen(false)}
           aria-label="Fermer la navigation"
         >
           <X aria-hidden="true" />
@@ -338,294 +626,424 @@ export function DashboardClient({
 
         <nav className="workspace-nav" aria-label="Navigation de l’espace">
           <span className="nav-section-label">Espace</span>
-          <button className="workspace-nav-item active" type="button">
+          <Link className="workspace-nav-item active" href="/dashboard">
             <LayoutDashboard className="nav-glyph" aria-hidden="true" />
             Vue d’ensemble
-          </button>
+          </Link>
 
           <span className="nav-section-label nav-projects-label">Projets</span>
-          <button className="project-nav-item active" type="button">
-            <span className="project-avatar">MM</span>
-            <span>
-              <strong>{workspace.project.name}</strong>
-              <small>
-                Version {workspace.release.version} en recette
-              </small>
-            </span>
+          {workspace.projects.map((project) => (
+            <Link
+              className={`project-nav-item ${
+                project.id === activeProjectId ? "active" : ""
+              }`}
+              href={`/dashboard?project=${encodeURIComponent(project.id)}`}
+              key={project.id}
+            >
+              <span className="project-avatar">{initials(project.name)}</span>
+              <span>
+                <strong>{project.name}</strong>
+                <small>
+                  {project.latestRelease
+                    ? `${project.latestRelease.version} · ${releaseStatusLabel(
+                        project.latestRelease.status,
+                      )}`
+                    : "Aucune version"}
+                </small>
+              </span>
+            </Link>
+          ))}
+          <button
+            className="add-project-button"
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              openDialog("project");
+            }}
+          >
+            <Plus aria-hidden="true" />
+            Nouveau projet
           </button>
+          {review ? (
+            <button
+              className="add-project-button"
+              type="button"
+              disabled={!canPublishRelease}
+              onClick={() => {
+                setMobileMenuOpen(false);
+                openDialog("release");
+              }}
+            >
+              <FilePlus2 aria-hidden="true" />
+              Publier une version
+            </button>
+          ) : null}
         </nav>
 
         <div className="sidebar-profile">
-          <span className="avatar avatar-ink">RM</span>
-          <span>
-            <strong>Raphaël Martin</strong>
-            <small>Développeur</small>
+          <span className="avatar avatar-ink">
+            {initials(workspace.viewer.displayName)}
           </span>
-          <Ellipsis aria-hidden="true" />
+          <span>
+            <strong>{workspace.viewer.displayName}</strong>
+            <small>{workspace.viewer.email}</small>
+          </span>
+          <Link href={signOutPath} aria-label="Se déconnecter">
+            <LogOut aria-hidden="true" />
+          </Link>
         </div>
       </aside>
 
-      <main
-        className="workspace-main"
-        inert={isMobileLayout && mobileMenuOpen ? true : undefined}
-        aria-hidden={isMobileLayout && mobileMenuOpen ? true : undefined}
-      >
+      <main className="workspace-main">
         <header className="workspace-header">
           <div className="workspace-title">
             <button
-              ref={menuButtonRef}
               className="mobile-menu-button"
               type="button"
-              aria-label={mobileMenuOpen ? "Fermer le menu" : "Ouvrir le menu"}
+              aria-label="Ouvrir le menu"
+              aria-controls="workspace-navigation"
               aria-expanded={mobileMenuOpen}
-              onClick={() => {
-                if (mobileMenuOpen) {
-                  closeMobileMenu();
-                } else {
-                  setMobileMenuOpen(true);
-                }
-              }}
+              onClick={() => setMobileMenuOpen(true)}
             >
               <Menu aria-hidden="true" />
             </button>
-            <span className="project-avatar project-avatar-large">MM</span>
+            <span className="project-avatar project-avatar-large">
+              {review ? initials(review.project.name) : "+"}
+            </span>
             <div>
-              <span className="studio-kicker">Espace de recette</span>
-              <h1>{workspace.project.name}</h1>
-              <p>{workspace.project.description}</p>
+              <span className="studio-kicker">
+                {workspace.organization.name}
+              </span>
+              <h1>{review?.project.name ?? "Votre premier projet"}</h1>
+              <p>
+                {review?.project.description ??
+                  "Publiez une preview de test avant d’inviter votre cliente."}
+              </p>
             </div>
           </div>
           <div className="workspace-actions">
-            <button
-              className="button button-primary button-dashboard"
-              type="button"
-              onClick={copyShareLink}
-            >
-              {copied ? <Check aria-hidden="true" /> : <Link2 aria-hidden="true" />}
-              {copied ? "Lien copié" : "Copier le lien client"}
-            </button>
-            <button
-              ref={releaseButtonRef}
-              className="button button-ghost button-dashboard"
-              type="button"
-              onClick={() => setShowReleaseDialog(true)}
-            >
-              Comment publier&nbsp;?
-              <ArrowUpRight aria-hidden="true" />
-            </button>
+            {review ? (
+              <>
+                <button
+                  ref={dialogTriggerRef}
+                  className="button button-primary button-dashboard"
+                  type="button"
+                  disabled={!canInvite}
+                  onClick={() => openDialog("invitation")}
+                >
+                  <KeyRound aria-hidden="true" />
+                  Créer un lien client
+                </button>
+                <button
+                  className="button button-ghost button-dashboard"
+                  type="button"
+                  disabled={!canPublishRelease}
+                  title={
+                    canPublishRelease
+                      ? "Publier une nouvelle version"
+                      : "Terminez la boucle de validation de la version actuelle avant d’en publier une autre."
+                  }
+                  onClick={() => openDialog("release")}
+                >
+                  Publier une version
+                  <FilePlus2 aria-hidden="true" />
+                </button>
+              </>
+            ) : (
+              <button
+                ref={dialogTriggerRef}
+                className="button button-primary button-dashboard"
+                type="button"
+                onClick={() => openDialog("project")}
+              >
+                <Plus aria-hidden="true" />
+                Créer mon projet
+              </button>
+            )}
           </div>
         </header>
 
-        <section className="release-strip release-summary">
-          <div className="release-state">
-            <div>
-              <span className="release-label">
-                Version {workspace.release.version}
-              </span>
-              <strong>{workspace.release.title}</strong>
-              <span>
-                Publiée {formatRelativeDate(workspace.release.createdAt)} · commit{" "}
-                <code>{workspace.release.commitSha}</code>
-              </span>
-            </div>
-          </div>
-          <div className="release-focus">
-            <strong>
-              {counts.open + counts.in_progress} retour
-              {counts.open + counts.in_progress > 1 ? "s" : ""} à traiter
-            </strong>
-            <span>
-              {counts.to_review
-                ? `${counts.to_review} prêt${counts.to_review > 1 ? "s" : ""} à revalider`
-                : "Aucune correction en attente de validation"}
-            </span>
-          </div>
-          <Link
-            className="open-review-link"
-            href={`/review/${workspace.release.shareToken}`}
-          >
-            Voir l’espace client
-            <ArrowUpRight aria-hidden="true" />
-          </Link>
-        </section>
-
-        <section className="feedback-workspace">
-          <div className="feedback-panel">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">File de travail</p>
-                <h2>Retours de cette version</h2>
-              </div>
-              <div
-                className="filter-row"
-                role="group"
-                aria-label="Filtrer les retours"
-              >
-                <button
-                  className={activeStatus === "all" ? "active" : ""}
-                  type="button"
-                  aria-pressed={activeStatus === "all"}
-                  onClick={() => setActiveStatus("all")}
-                >
-                  Tous
-                </button>
-                {[
-                  { value: "todo" as const, label: "À traiter" },
-                  { value: "to_review" as const, label: "À revalider" },
-                  { value: "resolved" as const, label: "Validés" },
-                ].map(({ value, label }) => (
-                  <button
-                    className={activeStatus === value ? "active" : ""}
-                    key={value}
-                    type="button"
-                    aria-pressed={activeStatus === value}
-                    onClick={() => setActiveStatus(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="feedback-table">
-              <div className="feedback-table-head" aria-hidden="true">
-                <span>Retour</span>
-                <span>Type</span>
-                <span>État</span>
-                <span>Mis à jour</span>
-              </div>
-              {filteredFeedback.length ? (
-                filteredFeedback.map((item) => (
-                  <button
-                    className={`feedback-row ${
-                      selected?.id === item.id ? "selected" : ""
-                    }`}
-                    key={item.id}
-                    type="button"
-                    aria-pressed={selected?.id === item.id}
-                    onClick={() => setSelectedId(item.id)}
-                  >
-                    <span className="feedback-main-cell">
-                      <strong>{item.title}</strong>
-                    </span>
-                    <span className="feedback-type">
-                      <small className="feedback-mobile-label">Type</small>
-                      {typeLabels[item.type]}
-                    </span>
-                    <span className={`status-badge status-${item.status}`}>
-                      <small className="feedback-mobile-label">État</small>
-                      {statusLabels[item.status]}
-                    </span>
-                    <span className="feedback-date">
-                      <small className="feedback-mobile-label">
-                        Mise à jour
-                      </small>
-                      {formatRelativeDate(item.updatedAt)}
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <div className="empty-feedback">
-                  <Check aria-hidden="true" />
-                  <strong>Aucun retour dans cet état</strong>
-                  <p>Choisissez un autre filtre pour poursuivre la recette.</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <aside className="feedback-detail">
-            {selected ? (
-              <>
-                <div className="detail-heading">
-                  <span className={`status-badge status-${selected.status}`}>
-                    {statusLabels[selected.status]}
+        {review ? (
+          <>
+            <section className="release-strip release-summary">
+              <div className="release-state">
+                <div>
+                  <span className="release-label">
+                    Version {review.release.version} ·{" "}
+                    {isReleaseExpired
+                      ? "Expirée"
+                      : releaseStatusLabel(review.release.status)}
                   </span>
-                </div>
-                <span className="detail-kicker">Retour de Claire</span>
-                <h2>{selected.title}</h2>
-                <div className="detail-author">
-                  <span className="avatar avatar-coral">
-                    {initials(selected.authorName)}
-                  </span>
+                  <strong>{review.release.title}</strong>
                   <span>
-                    <strong>{selected.authorName}</strong>
-                    <small>{formatRelativeDate(selected.createdAt)}</small>
+                    Publiée {formatRelativeDate(review.release.createdAt)}
+                    {review.release.commitSha ? (
+                      <>
+                        {" "}
+                        · commit <code>{review.release.commitSha}</code>
+                      </>
+                    ) : null}
+                    {" · expire le "}
+                    {formatCalendarDate(review.release.expiresAt)}
                   </span>
                 </div>
-                <p className="detail-body">{selected.body}</p>
-                <div className="detail-context">
-                  <div>
-                    <span>Page</span>
-                    <code>{selected.pagePath}</code>
-                  </div>
-                  <div>
-                    <span>Écran</span>
-                    <strong>{selected.viewport}</strong>
-                  </div>
-                  <div>
-                    <span>Version</span>
-                    <strong>{workspace.release.version}</strong>
-                  </div>
-                  <div>
-                    <span>Type</span>
-                    <strong>{typeLabels[selected.type]}</strong>
-                  </div>
-                </div>
-                {selected.positionX !== null &&
-                  selected.positionY !== null && (
-                  <Link
-                    className="context-preview"
-                    href={`/review/${workspace.release.shareToken}?focus=${selected.sequence}`}
-                  >
-                    <div className="context-preview-page">
-                      <span
-                        className="context-pin"
-                        style={{
-                          left: `${selected.positionX}%`,
-                          top: `${selected.positionY}%`,
-                        }}
-                      >
-                        <span className="sr-only">
-                          Emplacement du retour
-                        </span>
-                      </span>
-                    </div>
-                    <span>
-                      Voir dans la page <ExternalLink aria-hidden="true" />
-                    </span>
-                  </Link>
-                )}
-                <div className="detail-actions">
-                  <button
-                    className="button button-primary"
-                    type="button"
-                    disabled={!statusAction[selected.status].next || isUpdating}
-                    aria-busy={isUpdating}
-                    onClick={() => advanceFeedback(selected)}
-                  >
-                    {isUpdating
-                      ? "Enregistrement…"
-                      : statusAction[selected.status].label}
-                  </button>
-                  <button
-                    className="button button-ghost"
-                    type="button"
-                    disabled
-                    title="Les fils de discussion arrivent dans un prochain jalon"
-                  >
-                    Répondre à Claire
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="detail-empty">
-                <CircleCheck aria-hidden="true" />
-                <strong>Sélectionnez un retour</strong>
               </div>
-            )}
-          </aside>
-        </section>
+              <div className="release-focus">
+                {review.decisions[0] ? (
+                  <>
+                    <strong>
+                      Décision :{" "}
+                      {releaseStatusLabel(review.decisions[0].status)}
+                    </strong>
+                    <span>
+                      Session invitée au nom de{" "}
+                      {review.decisions[0].authorName} · identité non vérifiée ·{" "}
+                      {formatRelativeDate(review.decisions[0].createdAt)}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <strong>
+                      {counts.open + counts.in_progress} retour
+                      {counts.open + counts.in_progress > 1 ? "s" : ""} à
+                      traiter
+                    </strong>
+                    <span>
+                      {counts.to_review
+                        ? `${counts.to_review} prêt${
+                            counts.to_review > 1 ? "s" : ""
+                          } à revalider`
+                        : "Aucune correction en attente de validation"}
+                    </span>
+                  </>
+                )}
+              </div>
+              <a
+                className="open-review-link"
+                href={review.release.previewUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ouvrir la preview
+                <ExternalLink aria-hidden="true" />
+              </a>
+            </section>
+
+            <div className="workspace-utility-bar">
+              <button type="button" onClick={exportReview}>
+                <Download aria-hidden="true" />
+                Exporter la recette
+              </button>
+              <button
+                type="button"
+                disabled={isUpdating}
+                onClick={revokeAccess}
+              >
+                <RotateCcwKey aria-hidden="true" />
+                Révoquer l’accès client
+              </button>
+              <button
+                className="utility-danger"
+                type="button"
+                disabled={isUpdating}
+                onClick={removeCurrentProject}
+              >
+                <Trash2 aria-hidden="true" />
+                Supprimer le projet
+              </button>
+              <span>
+                <ShieldCheck aria-hidden="true" />
+                Preview externe · utilisez une DB de test
+              </span>
+            </div>
+
+            <section className="feedback-workspace">
+              <div className="feedback-panel">
+                <div className="panel-heading">
+                  <div>
+                    <p className="eyebrow">File de travail</p>
+                    <h2>Retours de cette version</h2>
+                  </div>
+                  <div
+                    className="filter-row"
+                    role="group"
+                    aria-label="Filtrer les retours"
+                  >
+                    {[
+                      ["all", "Tous"],
+                      ["todo", "À traiter"],
+                      ["to_review", "À revalider"],
+                      ["resolved", "Validés"],
+                    ].map(([value, label]) => (
+                      <button
+                        className={filter === value ? "active" : ""}
+                        key={value}
+                        type="button"
+                        aria-pressed={filter === value}
+                        onClick={() => setFilter(value as FeedbackFilter)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="feedback-table">
+                  <div className="feedback-table-head" aria-hidden="true">
+                    <span>Retour</span>
+                    <span>Type</span>
+                    <span>État</span>
+                    <span>Mis à jour</span>
+                  </div>
+                  {filteredFeedback.length ? (
+                    filteredFeedback.map((item) => (
+                      <button
+                        className={`feedback-row ${
+                          selected?.id === item.id ? "selected" : ""
+                        }`}
+                        key={item.id}
+                        type="button"
+                        aria-pressed={selected?.id === item.id}
+                        onClick={() => setSelectedId(item.id)}
+                      >
+                        <span className="feedback-main-cell">
+                          <span className="feedback-mobile-label">Retour</span>
+                          <strong>
+                            #{item.sequence} · {item.title}
+                          </strong>
+                        </span>
+                        <span className="feedback-type">
+                          <span className="feedback-mobile-label">Type</span>
+                          {typeLabels[item.type]}
+                        </span>
+                        <span className={`status-badge status-${item.status}`}>
+                          <span className="feedback-mobile-label">État</span>
+                          {statusLabels[item.status]}
+                        </span>
+                        <span className="feedback-date">
+                          <span className="feedback-mobile-label">
+                            Mise à jour
+                          </span>
+                          {formatRelativeDate(item.updatedAt)}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="empty-feedback">
+                      <CircleCheck aria-hidden="true" />
+                      <strong>Aucun retour dans cet état</strong>
+                      <p>
+                        Le client pourra déposer ses remarques depuis son
+                        invitation.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <aside className="feedback-detail">
+                {selected ? (
+                  <>
+                    <span className={`status-badge status-${selected.status}`}>
+                      {statusLabels[selected.status]}
+                    </span>
+                    <p className="eyebrow">
+                      Retour de {selected.authorName}
+                    </p>
+                    <h2>{selected.title}</h2>
+                    <p>{selected.body}</p>
+                    <dl className="secure-feedback-meta">
+                      <div>
+                        <dt>Page</dt>
+                        <dd>{selected.pagePath}</dd>
+                      </div>
+                      <div>
+                        <dt>Écran</dt>
+                        <dd>{selected.viewport}</dd>
+                      </div>
+                      <div>
+                        <dt>Type</dt>
+                        <dd>{typeLabels[selected.type]}</dd>
+                      </div>
+                      <div>
+                        <dt>Importance</dt>
+                        <dd>
+                          {selected.priority === "high"
+                            ? "Importante"
+                            : "Standard"}
+                        </dd>
+                      </div>
+                    </dl>
+                    {statusAction[selected.status].next ? (
+                      <button
+                        className="button button-primary button-full"
+                        type="button"
+                        disabled={isUpdating || isReleaseExpired}
+                        aria-busy={isUpdating}
+                        onClick={() => advanceFeedback(selected)}
+                      >
+                        {statusAction[selected.status].label}
+                        <Check aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <p className="detail-waiting">
+                        {selected.status === "to_review"
+                          ? "Le client doit maintenant confirmer ou rouvrir ce retour."
+                          : "Ce retour a été validé par le client."}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <div className="empty-feedback">
+                    <Link2 aria-hidden="true" />
+                    <strong>La boucle est prête</strong>
+                    <p>Les nouveaux retours apparaîtront ici automatiquement.</p>
+                  </div>
+                )}
+              </aside>
+            </section>
+          </>
+        ) : (
+          <section className="workspace-onboarding">
+            <div>
+              <span className="onboarding-icon">
+                <Link2 aria-hidden="true" />
+              </span>
+              <p className="eyebrow">Première recette</p>
+              <h2>Reliez une vraie preview à Revaloop.</h2>
+              <p>
+                Utilisez une URL HTTPS de staging, une base de test et des
+                services externes en mode sandbox. Le site de production ne
+                doit pas être utilisé pour ce pilote.
+              </p>
+              <button
+                className="button button-primary"
+                type="button"
+                onClick={() => openDialog("project")}
+              >
+                Créer le projet et sa première version
+                <ArrowUpRight aria-hidden="true" />
+              </button>
+            </div>
+            <ol>
+              <li>
+                <span>01</span>
+                <strong>Indiquez votre preview HTTPS</strong>
+                <p>Revaloop ne copie ni votre code ni votre base.</p>
+              </li>
+              <li>
+                <span>02</span>
+                <strong>Créez une invitation éphémère</strong>
+                <p>Le secret disparaît de l’adresse après ouverture.</p>
+              </li>
+              <li>
+                <span>03</span>
+                <strong>Recevez les retours contextualisés</strong>
+                <p>La cliente n’accède jamais à votre dashboard.</p>
+              </li>
+            </ol>
+          </section>
+        )}
 
         {notice ? (
           <p className="sync-notice" role="status">
@@ -634,84 +1052,296 @@ export function DashboardClient({
         ) : null}
       </main>
 
-      {showReleaseDialog && (
+      {dialog ? (
         <div
           className="dialog-backdrop"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.currentTarget === event.target) {
-              closeReleaseDialog();
-            }
+            if (event.currentTarget === event.target) closeDialog();
           }}
         >
           <section
-            className="release-dialog"
+            className="release-dialog secure-dialog"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="release-dialog-title"
+            aria-labelledby="secure-dialog-title"
             onKeyDown={trapDialogFocus}
           >
             <button
               className="dialog-close"
               type="button"
               autoFocus
-              onClick={closeReleaseDialog}
+              onClick={closeDialog}
               aria-label="Fermer"
             >
               <X aria-hidden="true" />
             </button>
-            <span className="dialog-icon">
-              <ClipboardCheck aria-hidden="true" />
-            </span>
-            <p className="eyebrow">Nouvelle version</p>
-            <h2 id="release-dialog-title">Publiez depuis votre terminal.</h2>
-            <p>
-              Cette commande décrit le parcours cible. L’agent réseau et le
-              relais ne sont pas encore livrés dans cette pré-alpha ; le portail
-              de revue, lui, est déjà fonctionnel.
-            </p>
-            <div className="command-block">
-              <span>$</span>
-              <code>revaloop share http://localhost:3000</code>
-              <button
-                type="button"
-                onClick={() => {
+
+            {dialog === "invitation" ? (
+              <InvitationDialog
+                error={formError}
+                expiresAt={inviteExpiresAt}
+                inviteUrl={inviteUrl}
+                isUpdating={isUpdating}
+                reviewerName={review?.reviewerName}
+                onSubmit={submitInvitation}
+                onCopy={() => {
                   navigator.clipboard
-                    .writeText("revaloop share http://localhost:3000")
-                    .catch(() => undefined);
-                  setNotice("Commande Revaloop copiée.");
+                    .writeText(inviteUrl)
+                    .then(() => setNotice("Lien client copié."))
+                    .catch(() =>
+                      setNotice(
+                        "Copie automatique refusée. Sélectionnez le lien manuellement.",
+                      ),
+                    );
                 }}
-              >
-                <Copy aria-hidden="true" />
-                Copier
-              </button>
-            </div>
-            <div className="dialog-safety">
-              <span>!</span>
-              <p>
-                Utilisez une base de test et des services externes en mode
-                sandbox. Une session locale n’est pas un hébergement permanent.
-              </p>
-            </div>
-            <button
-              className="button button-ink button-full"
-              type="button"
-              onClick={closeReleaseDialog}
-            >
-              <ListChecks aria-hidden="true" />
-              Fermer
-            </button>
+              />
+            ) : (
+              <ReleaseForm
+                error={formError}
+                includeProject={dialog === "project"}
+                isUpdating={isUpdating}
+                onSubmit={
+                  dialog === "project" ? submitProject : submitRelease
+                }
+              />
+            )}
           </section>
         </div>
-      )}
-      {mobileMenuOpen && (
-        <button
-          className="mobile-sidebar-backdrop"
-          type="button"
-          aria-label="Fermer le menu"
-          onClick={closeMobileMenu}
-        />
-      )}
+      ) : null}
     </div>
+  );
+}
+
+function ReleaseForm({
+  includeProject,
+  isUpdating,
+  error,
+  onSubmit,
+}: {
+  includeProject: boolean;
+  isUpdating: boolean;
+  error: string;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="secure-form" onSubmit={onSubmit}>
+      <span className="dialog-icon">
+        <FilePlus2 aria-hidden="true" />
+      </span>
+      <p className="eyebrow">
+        {includeProject ? "Nouveau projet" : "Nouvelle version"}
+      </p>
+      <h2 id="secure-dialog-title">
+        {includeProject
+          ? "Préparez un espace de recette isolé."
+          : "Publiez une nouvelle release."}
+      </h2>
+      <p className="secure-dialog-lead">
+        La cible est une preview externe mutable. Utilisez exclusivement une
+        base de test et des services sandbox.
+      </p>
+      <div className="dialog-safety">
+        <ShieldCheck aria-hidden="true" />
+        <p>
+          Revaloop sécurise l’invitation et les retours, pas l’URL de staging.
+          Protégez cette preview séparément et retirez toute donnée sensible.
+        </p>
+      </div>
+
+      {includeProject ? (
+        <div className="secure-form-grid">
+          <label>
+            <span>Nom du projet</span>
+            <input name="name" required minLength={2} maxLength={100} />
+          </label>
+          <label>
+            <span>Description</span>
+            <input name="description" maxLength={500} />
+          </label>
+        </div>
+      ) : null}
+
+      <label>
+        <span>URL HTTPS de la preview</span>
+        <input
+          name="previewUrl"
+          type="url"
+          placeholder="https://staging.exemple.fr"
+          required
+        />
+      </label>
+
+      <div className="secure-form-grid secure-form-grid-three">
+        <label>
+          <span>Version</span>
+          <input name="version" defaultValue="v0.1" required maxLength={40} />
+        </label>
+        <label>
+          <span>Titre</span>
+          <input
+            name="title"
+            placeholder="Parcours principal"
+            required
+            minLength={3}
+            maxLength={140}
+          />
+        </label>
+        <label>
+          <span>Commit facultatif</span>
+          <input name="commitSha" maxLength={80} />
+        </label>
+      </div>
+
+      <label>
+        <span>Message à la cliente</span>
+        <textarea
+          name="reviewerMessage"
+          maxLength={1_200}
+          placeholder="Bonjour, vérifiez les points ci-dessous avec uniquement des données fictives."
+        />
+      </label>
+
+      <fieldset className="test-item-fields">
+        <legend>Parcours suggéré</legend>
+        {[1, 2, 3].map((index) => (
+          <div className="secure-form-grid" key={index}>
+            <label>
+              <span>Point {index}</span>
+              <input
+                name={`testTitle${index}`}
+                defaultValue={
+                  index === 1 ? "Vérifier le parcours principal" : ""
+                }
+                maxLength={120}
+              />
+            </label>
+            <label>
+              <span>Précision</span>
+              <input
+                name={`testDescription${index}`}
+                maxLength={400}
+              />
+            </label>
+          </div>
+        ))}
+      </fieldset>
+
+      <label className="secure-form-compact">
+        <span>Expiration de la release</span>
+        <select name="expiresInDays" defaultValue="14">
+          <option value="7">7 jours</option>
+          <option value="14">14 jours</option>
+          <option value="30">30 jours</option>
+        </select>
+      </label>
+
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      <button
+        className="button button-primary button-full"
+        type="submit"
+        disabled={isUpdating}
+        aria-busy={isUpdating}
+      >
+        {isUpdating ? "Publication…" : "Publier cette version"}
+        <ArrowUpRight aria-hidden="true" />
+      </button>
+    </form>
+  );
+}
+
+function InvitationDialog({
+  isUpdating,
+  reviewerName,
+  inviteUrl,
+  expiresAt,
+  error,
+  onSubmit,
+  onCopy,
+}: {
+  isUpdating: boolean;
+  reviewerName?: string;
+  inviteUrl: string;
+  expiresAt: string;
+  error: string;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCopy: () => void;
+}) {
+  if (inviteUrl) {
+    return (
+      <div className="secure-form">
+        <span className="dialog-icon">
+          <Check aria-hidden="true" />
+        </span>
+        <p className="eyebrow">Invitation prête</p>
+        <h2 id="secure-dialog-title">Copiez ce lien maintenant.</h2>
+        <p className="secure-dialog-lead">
+          Le secret n’est affiché qu’une fois. Créer une nouvelle invitation
+          révoquera celle-ci ainsi que sa session.
+        </p>
+        <div className="invite-result">
+          <code>{inviteUrl}</code>
+          <button type="button" onClick={onCopy}>
+            <Copy aria-hidden="true" />
+            Copier
+          </button>
+        </div>
+        <p className="invitation-expiry">
+          Expire le {formatCalendarDate(expiresAt)}.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <form className="secure-form" onSubmit={onSubmit}>
+      <span className="dialog-icon">
+        <KeyRound aria-hidden="true" />
+      </span>
+      <p className="eyebrow">Accès client</p>
+      <h2 id="secure-dialog-title">Créez une invitation à usage unique.</h2>
+      <p className="secure-dialog-lead">
+        Le lien est échangé contre une session privée. Son secret n’est jamais
+        conservé en clair par Revaloop.
+      </p>
+      <label>
+        <span>Nom affiché pour la session invitée</span>
+        <input
+          name="reviewerName"
+          defaultValue={reviewerName ?? ""}
+          required
+          minLength={2}
+          maxLength={100}
+        />
+      </label>
+      <label className="secure-form-compact">
+        <span>Expiration de l’invitation</span>
+        <select name="expiresInDays" defaultValue="7">
+          <option value="1">24 heures</option>
+          <option value="3">3 jours</option>
+          <option value="7">7 jours</option>
+          <option value="14">14 jours</option>
+        </select>
+      </label>
+      <div className="dialog-safety">
+        <ShieldCheck aria-hidden="true" />
+        <p>
+          La création de ce lien révoque automatiquement les anciens accès de
+          cette version. La nouvelle personne invitée verra l’historique des
+          retours déjà présents ; créez un autre projet si le destinataire
+          change.
+        </p>
+      </div>
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      <button
+        className="button button-primary button-full"
+        type="submit"
+        disabled={isUpdating}
+        aria-busy={isUpdating}
+      >
+        {isUpdating ? "Création…" : "Créer et copier le lien"}
+        <Link2 aria-hidden="true" />
+      </button>
+    </form>
   );
 }

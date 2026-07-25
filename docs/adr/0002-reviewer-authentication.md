@@ -1,109 +1,110 @@
 # ADR-0002 — Échanger une invitation opaque contre une session
 
-- **Statut de la décision :** proposé
-- **Statut d’implémentation :** non implémenté
+- **Statut de la décision :** accepté
+- **Statut d’implémentation :** implémenté dans l’alpha 0.2
 - **Date :** 24 juillet 2026
+- **Mise à jour :** 25 juillet 2026
 
 ## Contexte
 
-Le client ne doit pas créer de compte. Un simple identifiant dans l’URL est
-facile à partager, mais il apparaît dans l’historique, les logs, les captures
-et parfois les referrers.
+La cliente ne doit pas créer de compte. Un bearer token dans le chemin ou la
+query apparaît dans l’historique, les logs, les captures et parfois le
+referrer. Un PIN court seul n’a pas assez d’entropie.
 
-Le prototype actuel utilise `maison-matisse-v12` dans le chemin, le stocke en
-clair et ne vérifie ni expiration ni révocation. Ce mécanisme est une fixture,
-pas un modèle d’authentification.
+## Décision
 
-Un PIN court seul n’apporte pas assez d’entropie et invite au brute force.
-
-## Décision proposée
-
-Créer une invitation avec un secret aléatoire de 32 octets :
+Créer un secret aléatoire de 32 octets :
 
 ```text
 https://revaloop.example/join#token=<secret>
 ```
 
-Le flux cible est :
+Le flux est :
 
-1. le fragment reste côté navigateur et n’est pas envoyé avec le premier
-   `GET` ;
-2. la page `/join` lit le fragment ;
-3. elle envoie le secret une seule fois par `POST` same-origin ;
-4. le serveur compare son SHA-256 au hash stocké ;
-5. il vérifie expiration, révocation et quota de sessions ;
-6. il crée une session opaque ;
-7. il renvoie un cookie `Secure`, `HttpOnly`, `SameSite=Lax` ;
-8. le navigateur efface le fragment et redirige vers une URL sans secret.
+1. le fragment reste côté navigateur au premier `GET` ;
+2. `/join` le lit puis remplace immédiatement l’URL par `/join` ;
+3. un `POST` same-origin envoie le secret ;
+4. le serveur compare son SHA-256 au hash D1 ;
+5. un batch conditionnel crée la session, marque l’invitation utilisée et
+   écrit l’audit ;
+6. si la session ne peut pas être créée, l’invitation n’est pas consommée ;
+7. le serveur renvoie un cookie opaque `Secure`, `HttpOnly`,
+   `SameSite=Strict`, sans `Domain` ;
+8. la session expire au plus tôt entre l’invitation et 24 heures ;
+9. le navigateur rejoint `/review/[releaseId]`, sans secret dans l’URL.
 
 Le secret brut :
 
-- n’est jamais stocké en base ;
-- n’est jamais journalisé ;
-- n’est jamais inclus dans l’audit ou l’analytics ;
-- n’est plus nécessaire après l’échange.
+- n’est rendu qu’une fois au développeur ;
+- n’est jamais stocké ;
+- n’apparaît ni dans l’audit, ni dans les métadonnées projet ;
+- devient inutilisable après échange ;
+- est révoqué lors d’une rotation ou d’une action explicite du développeur.
 
-Un PIN peut être ajouté comme second facteur facultatif. Il n’est jamais
-l’unique secret et doit être protégé par des limites de tentatives.
+Une nouvelle release ne peut pas être publiée tant que la courante non expirée
+est `in_review` ou `changes_requested`. Après expiration, la publication
+suivante révoque les anciens accès restants ; après approbation, la release est
+déjà terminale et sa session ne permet plus aucune mutation.
 
 ## Autorisation
 
-La session reviewer est limitée à :
+La session est liée à une invitation et une release. Chaque lecture vérifie :
 
-- une review room ;
-- les releases explicitement visibles dans cette room ;
-- les actions de commentaire et décision autorisées ;
-- une durée ;
-- aucun accès au dashboard.
+- hash de session ;
+- correspondance session/invitation/release ;
+- trois expirations ;
+- deux états de révocation.
 
-La possession d’un identifiant de ressource ne remplace pas cette vérification.
+Chaque mutation refait la vérification dans son SQL final afin qu’une
+révocation concurrente coupe aussi une écriture déjà commencée.
+
+La session permet uniquement checklist, retours, revalidation et décision. Elle
+n’accorde aucun accès au dashboard.
+
+Le développeur saisit un nom affiché lors de l’invitation. Le serveur le porte
+dans la session et l’utilise comme auteur, sans authentifier la personne qui
+possède le lien. L’interface fournie ne demande aucune adresse e-mail cliente.
+L’API conserve un champ e-mail nullable pour compatibilité avec un client
+personnalisé, mais il n’accorde aucun droit.
+
+## Déconnexion
+
+« Fermer cette session » met `reviewer_sessions.revoked_at` à jour côté serveur,
+écrit un audit sans secret puis efface le cookie. Effacer uniquement le cookie
+n’aurait pas suffi contre une copie volée.
 
 ## Conséquences positives
 
-- le secret n’apparaît pas dans la requête initiale ou le referrer ;
-- la base ne contient qu’un hash ;
-- la session peut être révoquée séparément ;
-- l’URL de navigation reste partageable sans continuer à transporter le
-  secret ;
-- le client conserve un parcours sans compte.
+- aucun bearer secret dans la requête initiale ;
+- aucune valeur brute en D1 ;
+- rejeu refusé ;
+- révocation indépendante ;
+- parcours cliente sans compte ;
+- échange atomique ;
+- auteur déterminé côté serveur.
 
 ## Coûts et risques
 
 - JavaScript requis sur `/join` ;
-- le fragment peut être lu par un script compromis sur cette page ;
-- le bearer link reste transférable avant son premier usage ;
-- gestion supplémentaire des sessions et cookies ;
-- nécessité d’un flux de récupération ou de nouvelle invitation ;
-- le hash SHA-256 protège la base, mais un token réellement aléatoire reste
-  indispensable.
+- le bearer link est transférable avant son premier usage ;
+- un script compromis sur `/join` pourrait lire le fragment ;
+- une session de 24 h implique de recréer une invitation après expiration ;
+- le nom déclaré ne prouve pas l’identité de la personne ;
+- un e-mail éventuellement fourni par un client API personnalisé ne la prouve
+  pas davantage ;
+- un déploiement globalement privé empêche une cliente extérieure d’accéder à
+  `/join`.
 
 ## Alternatives écartées
 
-### Token dans le chemin
+- **Token dans le chemin ou la query :** exposition inutile aux intermédiaires.
+- **PIN seul :** espace de recherche insuffisant.
+- **Compte reviewer obligatoire :** friction contraire au premier produit.
+- **JWT non révocable :** incompatible avec la rotation immédiate recherchée.
 
-Écarté : présence dans access logs, historique et outils intermédiaires.
+## Vérification
 
-### Token dans la query string
-
-Écarté pour les mêmes raisons et pour le risque de referrer.
-
-### PIN seul
-
-Écarté : espace de recherche trop faible.
-
-### Compte obligatoire pour le client
-
-Écarté pour le premier produit : friction contraire à la proposition de
-valeur. Il pourra devenir une option pour les environnements réglementés.
-
-## Conditions d’acceptation
-
-Cet ADR ne passe à « implémenté » qu’avec des tests couvrant :
-
-- secret valide, invalide, expiré et révoqué ;
-- absence du secret dans URL finale, logs et base ;
-- rejeu de l’invitation ;
-- révocation d’une session existante ;
-- accès à une autre room ;
-- limites de tentative du PIN optionnel ;
-- cookies et protection des mutations.
+La suite automatise génération, hash, attributs du cookie, origine et
+non-divulgation sans session. Le pilote doit encore maintenir des tests
+d’intégration D1 couvrant double échange, expiration, rotation et révocation
+concurrente.
