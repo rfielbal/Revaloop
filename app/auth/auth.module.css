@@ -257,21 +257,27 @@
 }
 
 .passwordField {
-  position: relative;
-  display: block;
+  display: grid;
+}
+
+.passwordField input,
+.passwordField button {
+  grid-area: 1 / 1;
 }
 
 .passwordField input {
-  padding-right: 52px;
+  display: block;
+  padding-right: 64px;
 }
 
 .passwordField button {
-  position: absolute;
-  top: 50%;
-  right: 8px;
+  position: relative;
+  z-index: 1;
   display: grid;
-  width: 39px;
-  height: 39px;
+  width: 44px;
+  height: 44px;
+  margin-right: 7px;
+  place-self: center end;
   place-items: center;
   border: 0;
   border-radius: 11px;
@@ -279,7 +285,6 @@
   color: #b9cecc;
   cursor: pointer;
   padding: 0;
-  transform: translateY(-50%);
 }
 
 .passwordField button:hover {
