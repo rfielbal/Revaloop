@@ -5,12 +5,14 @@
 
 ## Principe directeur
 
-Revaloop sépare deux systèmes :
+Revaloop sépare trois frontières :
 
 1. le **review plane**, aujourd’hui implémenté, qui gère identité, projets,
    releases, invitations, retours, discussion, révisions déclarées et
    décisions ;
-2. le futur **data plane**, qui transportera le trafic entre le navigateur
+2. le **compagnon desktop local**, aujourd’hui implémenté en alpha, qui prépare
+   et surveille explicitement le projet sans charger le site dans sa WebView ;
+3. le futur **data plane**, qui transportera le trafic entre le navigateur
    client et une application locale.
 
 Le Worker web ne doit jamais devenir implicitement un proxy réseau générique.
@@ -24,6 +26,9 @@ flowchart LR
     dashboard --> api["API métier"]
 
     dev --> preview["Preview HTTPS tierce"]
+    dev --> desktop["Compagnon Tauri local"]
+    desktop -->|"ouvre le navigateur système"| dashboard
+    desktop -->|"script dev explicite"| local["127.0.0.1:port"]
     api --> d1[("Cloudflare D1")]
 
     client["Cliente"] --> join["/join#token"]
@@ -54,6 +59,49 @@ séparément par l’application tierce.
 
 Le plugin de build copie la configuration Sites et les migrations dans
 `dist/.openai`.
+
+### Compagnon desktop
+
+Le dossier `desktop/` contient une SPA React/Vite locale et un backend Tauri 2
+en Rust. Ce n’est pas une copie du Worker et aucune origine distante n’est
+chargée dans sa fenêtre.
+
+Les seules commandes IPC exposées sont sémantiques :
+
+| Commande | Limite |
+|---|---|
+| `inspect_project` | dossier choisi, `package.json` régulier et inférieur à 1 Mio |
+| `start_dev_server` | relecture du manifeste, script inchangé, exécution fixe de `npm --ignore-scripts run dev` |
+| `stop_dev_server` | processus et groupe créés par l’application uniquement |
+| `probe_preview` | HTTP(S) vers une adresse loopback numérique normalisée |
+| `load_settings` / `save_settings` | chemin et URL non secrètes dans le dossier de configuration de l’app |
+| `open_external` | preview loopback ou routes `login`/`dashboard` d’une origine HTTPS validée |
+
+Le renderer ne dispose ni d’un shell générique, ni d’un client HTTP natif, ni
+d’un accès filesystem général. Ses permissions sont limitées à l’écoute et au
+retrait des événements émis par Rust, ainsi qu’au sélecteur natif de dossier.
+La CSP locale interdit frames, objets, workers et formulaires ; les assets sont
+embarqués.
+
+Le script du projet reste du code arbitraire appartenant au développeur. Il
+n’est jamais lancé à la sélection : le chemin, le contenu exact du script et
+une confirmation sont affichés avant l’action. Les hooks npm `predev` et
+`postdev` sont désactivés afin qu’aucun script adjacent ne soit exécuté
+implicitement. Les logs sont gardés dans la
+mémoire du renderer, bornés, non persistés et les lignes contenant des marqueurs
+de credential sont masquées. `HOST=127.0.0.1` est fourni au processus, mais un
+script reste libre de l’ignorer ; seule la cible manipulée par Revaloop est
+strictement bornée au loopback.
+
+Le bouton vers l’espace en ligne ouvre le navigateur système. Les cookies
+`HttpOnly` et `SameSite=Strict` y restent ; ils ne sont ni copiés ni lus par
+Tauri.
+
+Une future intégration API suivra un canal d’appareil séparé : navigateur
+système, Authorization Code avec PKCE S256 et callback loopback exact, tokens
+opaques hachés et révocables, access token court en mémoire Rust et refresh
+rotatif dans le coffre OS. Les routes web conserveront leur vérification
+d’origine et ne recevront pas de CORS permissif.
 
 ### Routes
 
@@ -366,6 +414,7 @@ injection de bridge. Voir [ADR-0003](adr/0003-tls-termination-modes.md).
 - [ADR-0002 — Échanger une invitation opaque contre une session](adr/0002-reviewer-authentication.md)
 - [ADR-0003 — Distinguer terminaison TLS et passthrough](adr/0003-tls-termination-modes.md)
 - [ADR-0004 — Gérer le compte développeur dans Revaloop](adr/0004-developer-authentication.md)
+- [ADR-0005 — Séparer le compagnon desktop du site et du tunnel](adr/0005-desktop-companion.md)
 
 Toute évolution d’identité, d’autorisation, de stockage, d’origine ou de
 transport doit mettre à jour ce document et le modèle de menace.

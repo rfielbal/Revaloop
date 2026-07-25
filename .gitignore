@@ -43,3 +43,8 @@ next-env.d.ts
 /output/
 /.playwright-cli/
 /work/
+
+# desktop
+/desktop/node_modules/
+/desktop/dist/
+/desktop/src-tauri/target/

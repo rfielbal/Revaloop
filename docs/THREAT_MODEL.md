@@ -22,7 +22,9 @@ Inclus :
 - preview HTTPS tierce dans une iframe ;
 - bridge facultatif `postMessage` ;
 - API et D1 ;
-- Worker et en-têtes.
+- Worker et en-têtes ;
+- compagnon desktop Tauri local, sélection de projet, processus, logs en mémoire
+  et ouverture du navigateur système.
 
 Hors périmètre :
 
@@ -50,6 +52,9 @@ Hors périmètre :
 - bilan courant et approbation finale ;
 - audit ;
 - disponibilité et budget D1 ;
+- chemin du projet local, script `dev`, URL loopback et origine Revaloop
+  configurée ;
+- processus enfant lancé par le compagnon et journal local éphémère ;
 - confiance dans les limites affichées.
 
 Le contenu, les cookies et la base de la preview sont des actifs de
@@ -67,6 +72,8 @@ l’application tierce. Revaloop ne doit pas les collecter.
 - preview tierce compromise ;
 - opérateur Sites/Cloudflare ;
 - dépendance ou chaîne de build compromise ;
+- projet local malveillant ou compromis ;
+- autre processus du compte système et poste local compromis ;
 - futur agent ou relais compromis.
 
 ## Frontières
@@ -81,6 +88,10 @@ flowchart LR
     worker --> browser["Navigateur"]
     browser --> preview["Preview HTTPS non fiable"]
     preview -. "postMessage borné" .-> browser
+    developer["Développeur local"] --> desktop["SPA Tauri locale"]
+    desktop -->|"IPC borné"| rust["Backend Rust"]
+    rust -->|"script dev explicite"| loopback["127.0.0.1:port"]
+    rust -->|"navigateur système"| auth
 ```
 
 Hypothèses :
@@ -88,7 +99,10 @@ Hypothèses :
 - le build de production est servi en HTTPS ;
 - D1 exécute un batch séquentiel de façon transactionnelle ;
 - le développeur contrôle ou approuve l’URL de staging ;
-- la cliente n’entre que des données fictives.
+- la cliente n’entre que des données fictives ;
+- le compte et le système d’exploitation du poste développeur ne sont pas déjà
+  compromis ;
+- le développeur ne confirme l’exécution que pour un projet qu’il juge fiable.
 
 ## Invariants implémentés
 
@@ -168,6 +182,29 @@ reviewer → token hash → session → invitation → release → ressource
 - hash tronqué pour les buckets de rate limit ;
 - purge des buckets et audit ancien.
 
+### Compagnon desktop local
+
+- assets React/Vite locaux uniquement, aucune origine distante dans la WebView ;
+- CSP sans frame, objet, worker, formulaire ni réseau distant ;
+- capabilities limitées à `core:event:allow-listen`,
+  `core:event:allow-unlisten` et au choix natif d’un dossier ;
+- aucune permission shell ou filesystem générique dans le renderer ;
+- `package.json` régulier, borné à 1 Mio et relu avant exécution ;
+- script `dev` présenté et confirmation explicite obligatoire ;
+- commande native fixe `npm --ignore-scripts run dev`, sans `predev`,
+  `postdev` ni interpolation fournie par le renderer ;
+- un seul processus géré ; arrêt limité à son groupe sur Unix ou à son arbre
+  sur Windows ;
+- URL de preview limitée à une IP loopback, avec normalisation de `localhost`,
+  sans credential, query string ni fragment ;
+- origine du review plane en HTTPS, HTTP limité au loopback ;
+- destinations externes en liste fermée puis ouvertes dans le navigateur
+  système ;
+- aucun token ou cookie web dans le desktop ;
+- configuration locale sans secret, fichier `0600` sur Unix ;
+- logs bornés, en mémoire, non écrits sur disque et lignes sensibles masquées ;
+- fermeture de l’application déclenchant l’arrêt du processus géré.
+
 ## Registre des risques actuels
 
 | ID | Menace | Contrôle | Risque résiduel / action |
@@ -196,6 +233,13 @@ reviewer → token hash → session → invitation → release → ressource
 | T22 | vol session développeur | token opaque haché, cookie Host/HttpOnly/Secure/Strict, expiration et révocation | pas d’écran pour révoquer toutes les sessions |
 | T23 | faux signal de correctif | incrément autorisé de `preview_revision` | ne prouve ni déploiement, ni commit, ni contenu servi |
 | T24 | message attribué au mauvais acteur | auteur dérivé de la session et release autorisée | nom reviewer déclaratif, pas d’identité forte |
+| T25 | projet local malveillant ou écoute LAN | sélection, affichage du script, consentement, hooks npm adjacents désactivés et `HOST=127.0.0.1` fourni | le script `dev` garde les droits du compte et peut ignorer `HOST` ou ouvrir une autre interface |
+| T26 | abus de l’IPC Tauri | commandes sémantiques, entrées bornées, aucune origine distante ni shell générique | une XSS dans les assets locaux pourrait appeler les commandes autorisées |
+| T27 | pivot réseau depuis le probe | IP loopback et port explicites, aucun redirect HTTP suivi | un service local accessible au compte peut recevoir une connexion TCP |
+| T28 | fuite dans les logs desktop | mémoire uniquement, plafond de lignes, masquage de marqueurs sensibles | un secret sans marqueur reconnu peut encore être affiché par le projet |
+| T29 | persistance locale excessive | chemin et URL non secrètes uniquement, permissions compte | le chemin peut révéler un nom de client à un autre processus du même compte |
+| T30 | binaire desktop altéré | aucun artefact public annoncé | signature, notarisation, provenance et updater signé requis avant distribution |
+| T31 | affaiblissement de l’auth pour le natif | aucune API native actuelle, cookies confinés au navigateur | implémenter PKCE, tokens appareils et révocation avant tout accès API desktop |
 
 T01, T02, T06, T07, T19, T21 et T22 demandent une validation d’intégration avant une
 publication générale.

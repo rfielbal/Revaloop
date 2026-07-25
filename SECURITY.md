@@ -114,6 +114,34 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 - `Cache-Control: private, no-store` sur dashboard, join, review et API ;
 - `noindex`, `nofollow`, `noarchive`, `nosnippet` sur les espaces privés.
 
+### Compagnon desktop
+
+- Tauri 2 et interface React/Vite embarquée, sans contenu distant dans la
+  WebView ;
+- CSP locale interdisant frames, objets, workers et formulaires ;
+- aucune capability distante, aucun shell ni filesystem générique exposés au
+  renderer ;
+- unique permission plugin : ouverture du sélecteur natif de dossier ;
+- `package.json` borné à 1 Mio, script `dev` relu avant exécution ;
+- consentement explicite avant la commande fixe
+  `npm --ignore-scripts run dev`, qui désactive `predev` et `postdev` ;
+- aucun argument shell ou nom de commande fourni par le renderer ;
+- un seul processus géré et arrêt de son groupe sur macOS/Linux ou de son arbre
+  sur Windows ;
+- preview restreinte à `127.0.0.1`, `localhost` ou `::1`, sans credentials,
+  query ni fragment ;
+- origine Revaloop en HTTPS, ou HTTP uniquement pour une instance loopback ;
+- destinations externes en liste fermée, ouvertes dans le navigateur système ;
+- aucun mot de passe, cookie, token développeur ou invitation dans l’app ;
+- paramètres non secrets seulement, fichier local `0600` sur Unix ;
+- journal mémoire borné et masquage défensif de lignes sensibles ;
+- tests Rust des validateurs d’URL et du masquage de logs.
+
+Le desktop n’est pas une sandbox pour le code du projet : confirmer
+Le script `dev` reste exécuté par le shell npm avec les droits de votre compte
+système. Désactiver les hooks `predev` et `postdev` évite une exécution
+implicite, mais ne transforme pas le projet en sandbox.
+
 ## Limites connues
 
 - il n’existe pas encore de vérification d’adresse e-mail, de réinitialisation
@@ -154,7 +182,19 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 - il n’existe ni pièce jointe, ni capture, ni stockage R2 ;
 - les positions d’annotation sont des coordonnées de viewport ; aucune capture
   automatique, sélection DOM ou preuve visuelle immuable n’est produite ;
-- aucun agent ou tunnel local n’est implémenté ;
+- le compagnon desktop local est implémenté, mais aucun agent de tunnel, relais
+  ou partage distant de `localhost` ne l’est ;
+- le desktop n’appelle pas encore l’API Revaloop : l’authentification reste dans
+  le navigateur système ;
+- aucune distribution desktop signée, notariée ou mise à jour automatiquement
+  n’est publiée ;
+- le filtre des logs repose sur des marqueurs connus et ne remplace pas
+  l’interdiction de journaliser des secrets dans le projet ;
+- `HOST=127.0.0.1` est fourni au script, mais un framework peut l’ignorer et
+  écouter sur une interface LAN ; le compagnon borne sa propre cible, pas le
+  comportement du code exécuté ;
+- un poste ou un compte système déjà compromis peut lire les données et agir
+  avec les droits de l’utilisateur ;
 - aucun build, hébergement ou déploiement de preview n’est fourni ;
 - le signalement d’une nouvelle `preview_revision` ne déploie pas la preview,
   n’isole pas sa base et ne prouve pas son contenu ;
@@ -178,6 +218,15 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 - suppression du projet lorsqu’il n’est plus nécessaire ;
 - vérification contractuelle séparée si le projet exige un procès-verbal de
   recette formel.
+
+Pour le compagnon desktop :
+
+- inspectez le script `dev` avant de confirmer ;
+- n’ouvrez qu’un dépôt de confiance et gardez ses dépendances à jour ;
+- utilisez une URL loopback et une base locale ou de test ;
+- ne collez aucun token dans l’URL du site ou de la preview ;
+- arrêtez le projet depuis Revaloop avant de quitter ;
+- ne distribuez pas le binaire alpha non signé à un client.
 
 `noindex` n’est jamais un contrôle d’accès.
 

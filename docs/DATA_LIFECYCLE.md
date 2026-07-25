@@ -53,6 +53,36 @@ reviewer. L’API et le schéma conservent un champ nullable pour compatibilité
 avec des clients personnalisés ; s’il est alimenté, il ne déclenche aucun envoi
 et ne prouve pas davantage l’identité.
 
+## Données locales du compagnon desktop
+
+Le compagnon ne lit ni D1, ni les cookies du navigateur, ni un token API. Il
+conserve dans le dossier de configuration de l’application :
+
+| Donnée | Finalité | Rétention |
+|---|---|---|
+| chemin canonique du projet | retrouver le dossier choisi | jusqu’au changement, à la suppression du fichier ou de l’app |
+| URL loopback de preview | tester et ouvrir le port local explicite | même règle |
+| origine du site Revaloop | ouvrir `login` ou `dashboard` dans le navigateur | même règle |
+
+Ces valeurs sont sérialisées dans `settings.json`. Sur Unix, le fichier reçoit
+le mode `0600`. Ce ne sont pas des secrets, mais le chemin peut révéler un nom
+de client : utilisez un nom de dossier neutre si cette métadonnée est sensible.
+
+Le nom, la version et le script `dev` du `package.json` sont lus à la demande et
+gardés seulement dans la mémoire de l’application. Le manifeste est limité à
+1 Mio et n’est pas copié dans le fichier de configuration.
+
+Les sorties standard et erreur du processus sont bornées aux 250 dernières
+lignes côté interface, non persistées et oubliées à la fermeture ou quand
+l’utilisateur les efface. Une ligne contenant un marqueur courant de cookie,
+authorization, token, secret ou mot de passe est remplacée entièrement. Ce
+filtre réduit le risque mais ne garantit pas qu’un secret inhabituel soit
+reconnu : un projet de test ne doit pas écrire ses credentials dans ses logs.
+
+L’identifiant du processus existe uniquement en mémoire pendant son exécution.
+La fermeture de Revaloop tente d’arrêter ce processus et son groupe sur Unix,
+ou son arbre de processus sur Windows.
+
 ## Données non collectées
 
 Revaloop ne conserve pas :
@@ -87,6 +117,9 @@ flowchart LR
     d1 --> dashboard["Dashboard"]
     d1 --> review["Espace reviewer"]
     preview["Preview tierce"] -. "path + title" .-> review
+    desktop["Compagnon desktop"] --> config["Configuration locale sans secret"]
+    desktop -->|"ouvre"| dashboard
+    desktop -->|"stdout/stderr en mémoire"| local["Projet local"]
 ```
 
 La preview tierce est directement chargée dans le navigateur. Son opérateur et
@@ -110,6 +143,8 @@ saisies dans celui-ci.
 | projet, release, retour, décision | jusqu’à suppression du projet |
 | message de release | jusqu’à suppression du projet |
 | utilisateur/organisation | pas encore de suppression self-service |
+| configuration desktop | jusqu’à suppression manuelle du fichier ou de l’app |
+| logs et PID desktop | mémoire uniquement, oubliés à la fermeture |
 
 La maintenance s’exécute au bootstrap d’un isolate. Ce n’est pas un cron à
 heure garantie : une instance inactive peut conserver les données plus
@@ -166,6 +201,11 @@ Ces limites doivent être évaluées avant toute donnée personnelle réelle.
 Les erreurs inattendues sont envoyées à `console.error` avec un message
 générique. Le code ne journalise volontairement ni secret, cookie, corps de
 retour, e-mail reviewer ni URL avec query.
+
+Le compagnon desktop n’écrit aucun log applicatif sur disque. Son panneau
+terminal reçoit uniquement la sortie du processus local et applique les limites
+décrites plus haut. Les logs de compilation Rust, npm ou du système
+d’exploitation lancés en dehors de l’app suivent leur propre configuration.
 
 L’opérateur Sites/Cloudflare peut produire ses propres logs techniques selon
 sa configuration. L’entité qui déploie l’instance doit documenter région,

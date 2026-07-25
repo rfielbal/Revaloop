@@ -46,6 +46,20 @@
 - ✅ en-têtes défensifs et absence de cache ;
 - 🧪 pilotage d’une vraie preview non sensible.
 
+### Compagnon desktop
+
+- ✅ Tauri 2 avec SPA React/Vite locale, sans contenu distant ;
+- ✅ sélection native du dossier et lecture bornée de `package.json` ;
+- ✅ présentation du script et consentement explicite ;
+- ✅ lancement fixe de `npm --ignore-scripts run dev`, sans hooks adjacents, et
+  arrêt de l’arbre de processus géré ;
+- ✅ logs éphémères bornés avec masquage défensif ;
+- ✅ validation d’une cible loopback et test TCP local ;
+- ✅ ouverture du site et de la preview dans le navigateur système ;
+- ✅ CSP et capabilities minimales, sans shell ni client HTTP générique ;
+- ✅ tests Rust, build Vite et CI desktop macOS ;
+- 🧪 build local macOS arm64 non signé.
+
 ### Limites de l’alpha
 
 - une seule release courante est exposée dans le dashboard ;
@@ -65,7 +79,8 @@
   d’adresse e-mail cliente ;
 - aucune capture ou pièce jointe ;
 - aucun e-mail n’est envoyé ;
-- aucun tunnel local.
+- aucun tunnel local ni synchronisation API native ;
+- aucune distribution desktop signée ou notariée.
 
 ## Jalon 0.2.1 — fiabiliser le pilote
 
@@ -135,14 +150,19 @@ hors périmètre.
 - ⏳ test d’installation sur un environnement vierge ;
 - ⏳ documentation des régions et sous-traitants.
 
-## Jalon 0.6 — agent et tunnel
+## Jalon 0.6 — compagnon connecté, agent et tunnel
 
 Objectif : rendre enfin possible `revaloop share 3000`.
 
-- ⏳ CLI et agent local ;
+- ✅ socle Tauri local et contrôle explicite du script `dev` ;
+- ✅ cible loopback et port explicitement autorisés dans le compagnon ;
+- ⏳ CLI `revaloop share` et agent de tunnel ;
 - ⏳ authentification d’appareil ;
+- ⏳ API desktop versionnée sans CORS et tokens opaques hachés ;
+- ⏳ PKCE S256 via navigateur système, access court et refresh rotatif dans le
+  coffre OS ;
+- ⏳ écran de révocation des appareils ;
 - ⏳ connexion sortante mTLS ;
-- ⏳ cible loopback et port explicitement autorisés ;
 - ⏳ relais HTTP/WebSocket séparé du Worker ;
 - ⏳ lease court lié au projet et à la release ;
 - ⏳ révocation immédiate ;
@@ -150,6 +170,7 @@ Objectif : rendre enfin possible `revaloop share 3000`.
 - ⏳ filtres d’hôtes et refus des réseaux internes ;
 - ⏳ aucun log de corps, cookie ou header d’autorisation ;
 - ⏳ tests de proxy ouvert, SSRF, confusion de routage et rejeu.
+- ⏳ signature, notarisation, provenance et updater signé pour chaque OS.
 
 ### Porte de sortie
 

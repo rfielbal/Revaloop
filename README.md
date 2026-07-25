@@ -9,7 +9,9 @@ reste valide.
 > [!IMPORTANT]
 > **Statut : alpha 0.3 en cours, pour pilote contrôlé.**
 > Le review plane est utilisable avec une preview HTTPS et une base de test.
-> Revaloop ne partage pas encore un serveur `localhost` et n’est pas un proxy.
+> Le compagnon desktop peut sélectionner, lancer et surveiller un projet local,
+> mais Revaloop ne partage pas encore ce serveur `localhost` et n’est pas un
+> proxy.
 > L’invitation protège l’espace de revue, pas l’URL de staging : celle-ci doit
 > disposer de sa propre protection d’accès.
 > N’utilisez jamais une base de production, un secret réel ou des données
@@ -53,6 +55,32 @@ reste valide.
 - audit minimal sans secret, limites de débit et corps JSON bornés ;
 - migrations D1 versionnées, purge des données opérationnelles expirées ;
 - démo publique entièrement fictive sur `/demo`.
+
+### Compagnon desktop local
+
+- application Tauri 2 avec une interface React/Vite embarquée localement ;
+- aucun site distant chargé dans la WebView privilégiée ;
+- sélection explicite d’un dossier par le dialogue natif ;
+- lecture bornée de son seul `package.json` avant toute action ;
+- présentation du script `dev` et consentement obligatoire ;
+- exécution fixe de `npm --ignore-scripts run dev`, sans `predev`, `postdev` ni
+  commande shell arbitraire venant de l’interface ;
+- arrêt limité au processus lancé par Revaloop et à ses descendants ;
+- cible de preview limitée à `127.0.0.1`, `localhost` ou `::1` ;
+- test TCP local court, logs en mémoire et masquage des lignes potentiellement
+  sensibles ;
+- ouverture du dashboard, du login et de la preview dans le navigateur système,
+  où restent les cookies web ;
+- configuration locale limitée au chemin du projet et à des URL non secrètes.
+
+Cette première alpha est un compagnon développeur, pas encore le tunnel. Elle
+n’appelle pas l’API Revaloop et ne stocke aucun credential. Le client continue
+d’utiliser le site sans rien installer.
+
+Le compagnon fournit `HOST=127.0.0.1` au processus, mais le script du projet
+peut ignorer cette variable et choisir lui-même une autre interface réseau.
+Vérifiez le message d’écoute de votre framework avant d’utiliser une application
+ou une base sensible.
 
 ## Parcours pilote
 
@@ -185,7 +213,8 @@ contournement du cache HTTP, d’un CDN ou d’un Service Worker de la preview.
 |---|---|
 | Partager directement `localhost` | non implémenté |
 | CLI `revaloop share` | non implémentée |
-| Agent local et relais HTTP/WebSocket | non implémentés |
+| Compagnon desktop local | alpha implémentée |
+| Agent de tunnel et relais HTTP/WebSocket | non implémentés |
 | Build ou hébergement intégré de previews | non implémenté |
 | Captures et pièces jointes | non implémentées |
 | Notifications e-mail/Slack/GitHub | non implémentées |
@@ -223,6 +252,13 @@ OpenAI Sites / Cloudflare Worker
     ├── invitations et sessions hachées
     └── messages, retours, décisions et audits
 
+Compagnon desktop Tauri
+├── SPA locale sans contenu distant
+├── dossier choisi et package.json borné
+├── lancement explicite du seul script dev
+├── logs éphémères et test loopback
+└── ouverture du plan de revue dans le navigateur système
+
 Preview HTTPS tierce
 └── chargée directement par le navigateur, jamais proxifiée par Revaloop
 ```
@@ -230,7 +266,7 @@ Preview HTTPS tierce
 Le futur agent/tunnel constitue un data plane séparé. Voir
 [Architecture](docs/ARCHITECTURE.md).
 
-## Développement local
+## Développement local — site
 
 Prérequis : Node.js `>= 22.13.0` et npm.
 
@@ -267,6 +303,38 @@ npm run db:generate
 du dashboard, les en-têtes, les migrations, les primitives d’authentification,
 la génération des secrets, les cookies, les URLs de preview, l’origine des
 mutations et la validation JSON.
+
+## Développement local — application desktop
+
+Prérequis supplémentaires : Rust stable, Cargo et les outils natifs de la
+plateforme. Sur macOS, Xcode Command Line Tools doit être disponible.
+
+```bash
+npm ci
+npm run desktop:dev
+```
+
+La première compilation Rust peut prendre plusieurs minutes. Dans la fenêtre
+Revaloop :
+
+1. choisissez le dossier du projet ;
+2. vérifiez le script affiché ;
+3. confirmez explicitement son exécution ;
+4. lancez le projet ;
+5. conservez `http://127.0.0.1:3000` ou indiquez son vrai port ;
+6. utilisez « Ouvrir mes retours » pour retrouver le site dans le navigateur.
+
+Validation et build local :
+
+```bash
+npm run desktop:check
+npm run desktop:build
+```
+
+Le build produit un binaire pour la plateforme courante. Les artefacts de cette
+alpha ne sont ni signés ni notariés : ils conviennent au développement local,
+pas à une distribution publique. macOS, Windows et Linux devront posséder leur
+propre pipeline signé avant une release.
 
 ## Sécurité et données
 

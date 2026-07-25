@@ -48,11 +48,12 @@ const currentCapabilities = [
   "Projets et versions de recette isolés",
   "Invitations éphémères à usage unique",
   "Retours contextualisés, statuts et revalidation",
+  "Compagnon desktop pour le projet local",
   "Décision finale, révocation et export",
 ];
 
 const upcomingCapabilities = [
-  "Agent local et tunnel privé",
+  "Tunnel privé depuis le compagnon desktop",
   "Captures d’écran jointes aux retours",
   "Notifications et intégrations Git",
   "Déploiement autonome simplifié",
@@ -129,8 +130,8 @@ export default function Home() {
           </div>
           <p className="flow-truth-line">
             Aujourd’hui : invitation et retours sécurisés autour d’une preview
-            HTTPS protégée séparément.
-            <span> Ensuite : agent local et tunnel privé.</span>
+            HTTPS protégée séparément, plus un compagnon desktop local.
+            <span> Ensuite : tunnel privé vers le client.</span>
           </p>
         </div>
 
