@@ -16,6 +16,7 @@ import {
   type ReviewTestItem,
 } from "../lib/revaloop";
 import { generateSecret, sha256 } from "../lib/security";
+import { ensureDatabaseCompatibility } from "./compatibility-migrations";
 
 type MemberContext = {
   userId: string;
@@ -453,29 +454,7 @@ async function bootstrapDatabase() {
     await db.batch(statements.slice(index, index + 20));
   }
 
-  const releaseColumns = await db
-    .prepare("PRAGMA table_info(review_releases)")
-    .all<{ name: string }>();
-
-  if (
-    !releaseColumns.results.some((column) => column.name === "preview_revision")
-  ) {
-    try {
-      await db
-        .prepare(
-          `ALTER TABLE review_releases
-           ADD COLUMN preview_revision INTEGER NOT NULL DEFAULT 0`,
-        )
-        .run();
-    } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        !/duplicate column name/i.test(error.message)
-      ) {
-        throw error;
-      }
-    }
-  }
+  await ensureDatabaseCompatibility(db);
 
   const now = new Date();
   const staleOperationalData = new Date(

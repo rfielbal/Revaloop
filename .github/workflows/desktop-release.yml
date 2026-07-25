@@ -1,0 +1,521 @@
+name: Desktop release candidate
+
+run-name: Desktop ${{ inputs.release_tag }} · ${{ inputs.mode }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag SemVer correspondant exactement à desktop/package.json"
+        required: true
+        type: string
+      mode:
+        description: "Fabriquer des artefacts privés ou préparer une release brouillon signée"
+        required: true
+        default: unsigned-artifacts
+        type: choice
+        options:
+          - unsigned-artifacts
+          - signed-draft
+      confirm_signed_draft:
+        description: "Confirmer la préparation du brouillon signé (ne publie jamais la release)"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      package_version: ${{ steps.release.outputs.package_version }}
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate tag, version and release mode
+        id: release
+        shell: bash
+        env:
+          CONFIRM_SIGNED_DRAFT: ${{ inputs.confirm_signed_draft }}
+          RELEASE_MODE: ${{ inputs.mode }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Le tag doit respecter SemVer et commencer par v."
+            exit 1
+          fi
+
+          package_version="$(node --print "require('./desktop/package.json').version")"
+          if [[ "${RELEASE_TAG}" != "v${package_version}" ]]; then
+            echo "::error::Le tag demandé ne correspond pas à desktop/package.json."
+            exit 1
+          fi
+
+          if [[ "${RELEASE_MODE}" == "signed-draft" ]]; then
+            if [[ "${CONFIRM_SIGNED_DRAFT}" != "true" ]]; then
+              echo "::error::La confirmation explicite du brouillon signé est obligatoire."
+              exit 1
+            fi
+            if [[ "${GITHUB_REF_TYPE}" != "tag" || "${GITHUB_REF_NAME}" != "${RELEASE_TAG}" ]]; then
+              echo "::error::Un brouillon signé doit être lancé depuis le tag exact déjà poussé."
+              exit 1
+            fi
+          fi
+
+          echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
+
+  unsigned:
+    name: Unsigned test artifacts · ${{ matrix.label }}
+    needs: validate
+    if: inputs.mode == 'unsigned-artifacts'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            os: macos-15
+            platform: macos
+          - label: Windows x64
+            os: windows-2025
+            platform: windows
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit complete build chain
+        run: npm audit --audit-level=high
+
+      - name: Check Electron application
+        run: npm run desktop:check
+
+      - name: Build unsigned test artifacts
+        run: npm run desktop:dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Collect macOS artifacts and SBOM
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/macos
+          find desktop/release -maxdepth 1 -type f \
+            \( -name 'Revaloop-*.dmg' -o -name 'Revaloop-*.zip' \) \
+            -exec cp '{}' artifacts/macos/ \;
+          test -n "$(find artifacts/macos -maxdepth 1 -type f -name 'Revaloop-*' -print -quit)"
+          npm sbom --workspace @revaloop/desktop \
+            --sbom-format spdx \
+            --sbom-type application \
+            > artifacts/macos/revaloop-sbom-macos.spdx.json
+          (
+            cd artifacts/macos
+            shasum -a 256 Revaloop-* > SHA256SUMS-macos.txt
+            shasum -a 256 revaloop-sbom-macos.spdx.json > SBOM-SHA256-macos.txt
+          )
+
+      - name: Collect Windows artifacts and SBOM
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/windows | Out-Null
+          Get-ChildItem desktop/release -File -Filter "Revaloop-*.exe" |
+            Copy-Item -Destination artifacts/windows
+          if (-not (Get-ChildItem artifacts/windows -File -Filter "Revaloop-*.exe")) {
+            throw "Aucun installateur Windows n'a été produit."
+          }
+          npm sbom --workspace "@revaloop/desktop" `
+            --sbom-format spdx `
+            --sbom-type application |
+            Set-Content -Encoding utf8NoBOM artifacts/windows/revaloop-sbom-windows.spdx.json
+          Push-Location artifacts/windows
+          Get-ChildItem -File -Filter "Revaloop-*" |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
+              "${hash} *$($_.Name)"
+            } |
+            Set-Content -Encoding utf8NoBOM SHA256SUMS-windows.txt
+          $sbomHash = (Get-FileHash -Algorithm SHA256 revaloop-sbom-windows.spdx.json).Hash.ToLowerInvariant()
+          "${sbomHash} *revaloop-sbom-windows.spdx.json" |
+            Set-Content -Encoding utf8NoBOM SBOM-SHA256-windows.txt
+          Pop-Location
+
+      - name: Upload private test artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: revaloop-desktop-unsigned-${{ matrix.platform }}-${{ inputs.release_tag }}
+          path: artifacts/${{ matrix.platform }}/
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
+
+  macos-signed:
+    name: Signed and notarized macOS arm64
+    needs: validate
+    if: inputs.mode == 'signed-draft'
+    runs-on: macos-15
+    timeout-minutes: 60
+    environment: desktop-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit complete build chain
+        run: npm audit --audit-level=high
+
+      - name: Check release environment and secrets
+        shell: bash
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          RELEASE_ENV_READY: ${{ vars.DESKTOP_RELEASE_ENV_READY }}
+        run: |
+          set -euo pipefail
+          if [[ "${RELEASE_ENV_READY:-}" != "true" ]]; then
+            echo "::error::L’environnement desktop-release n’est pas explicitement activé."
+            exit 1
+          fi
+          for secret_name in \
+            MAC_CSC_LINK \
+            MAC_CSC_KEY_PASSWORD \
+            APPLE_API_KEY \
+            APPLE_API_KEY_ID \
+            APPLE_API_ISSUER
+          do
+            if [[ -z "${!secret_name:-}" ]]; then
+              echo "::error::Le secret ${secret_name} est absent."
+              exit 1
+            fi
+          done
+
+      - name: Check Electron application
+        run: npm run desktop:check
+
+      - name: Compile Electron application
+        run: npm run desktop:build
+
+      - name: Build, sign and notarize macOS artifacts
+        shell: bash
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+        run: |
+          set -euo pipefail
+          api_key_path="${RUNNER_TEMP}/AuthKey_${APPLE_API_KEY_ID}.p8"
+          trap 'rm -f "${api_key_path}"' EXIT
+          umask 077
+          printf '%s' "${APPLE_API_KEY_CONTENT}" > "${api_key_path}"
+          export APPLE_API_KEY="${api_key_path}"
+          node desktop/electron/scripts/package.mjs \
+            --mac \
+            --arm64 \
+            --force-code-signing \
+            --notarize
+
+      - name: Verify signature, hardened runtime and notarization
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_path="$(find desktop/release -type d -name 'Revaloop.app' -print -quit)"
+          dmg_path="$(find desktop/release -maxdepth 1 -type f -name 'Revaloop-*.dmg' -print -quit)"
+          test -n "${app_path}"
+          test -n "${dmg_path}"
+          codesign --verify --deep --strict --verbose=2 "${app_path}"
+          codesign_details="$(codesign --display --verbose=4 "${app_path}" 2>&1)"
+          printf '%s\n' "${codesign_details}"
+          if [[ ! "${codesign_details}" =~ flags=.*runtime ]]; then
+            echo "::error::Le hardened runtime n’est pas présent dans la signature."
+            exit 1
+          fi
+          spctl --assess --type execute --verbose=4 "${app_path}"
+          xcrun stapler validate "${app_path}"
+
+      - name: Collect macOS artifacts and SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/macos
+          find desktop/release -maxdepth 1 -type f \
+            \( -name 'Revaloop-*.dmg' -o -name 'Revaloop-*.zip' \) \
+            -exec cp '{}' artifacts/macos/ \;
+          test -n "$(find artifacts/macos -maxdepth 1 -type f -name 'Revaloop-*' -print -quit)"
+          npm sbom --workspace @revaloop/desktop \
+            --sbom-format spdx \
+            --sbom-type application \
+            > artifacts/macos/revaloop-sbom-macos.spdx.json
+          (
+            cd artifacts/macos
+            shasum -a 256 Revaloop-* > SHA256SUMS-macos.txt
+            shasum -a 256 revaloop-sbom-macos.spdx.json > SBOM-SHA256-macos.txt
+          )
+
+      - name: Attest macOS build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-checksums: artifacts/macos/SHA256SUMS-macos.txt
+
+      - name: Attest macOS SBOM
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-checksums: artifacts/macos/SHA256SUMS-macos.txt
+          sbom-path: artifacts/macos/revaloop-sbom-macos.spdx.json
+
+      - name: Upload signed macOS artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: revaloop-desktop-signed-macos-${{ inputs.release_tag }}
+          path: artifacts/macos/
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: false
+
+  windows-signed:
+    name: Signed Windows x64
+    needs: validate
+    if: inputs.mode == 'signed-draft'
+    runs-on: windows-2025
+    timeout-minutes: 50
+    environment: desktop-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit complete build chain
+        run: npm audit --audit-level=high
+
+      - name: Check release environment and secrets
+        shell: pwsh
+        env:
+          RELEASE_ENV_READY: ${{ vars.DESKTOP_RELEASE_ENV_READY }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+        run: |
+          if ($env:RELEASE_ENV_READY -ne "true") {
+            throw "L'environnement desktop-release n'est pas explicitement activé."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK)) {
+            throw "Le secret WIN_CSC_LINK est absent."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD)) {
+            throw "Le secret WIN_CSC_KEY_PASSWORD est absent."
+          }
+
+      - name: Check Electron application
+        run: npm run desktop:check
+
+      - name: Compile Electron application
+        run: npm run desktop:build
+
+      - name: Build and sign Windows artifacts
+        shell: pwsh
+        run: |
+          node desktop/electron/scripts/package.mjs `
+            --win `
+            --x64 `
+            --force-code-signing
+        env:
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+
+      - name: Verify Authenticode signature and timestamp
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem desktop/release -File -Filter "Revaloop-*.exe"
+          if (-not $installers) {
+            throw "Aucun installateur Windows n'a été produit."
+          }
+          foreach ($installer in $installers) {
+            $signature = Get-AuthenticodeSignature $installer.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "Signature Authenticode invalide pour $($installer.Name): $($signature.Status)"
+            }
+            if ($null -eq $signature.TimeStamperCertificate) {
+              throw "Horodatage Authenticode absent pour $($installer.Name)."
+            }
+          }
+
+      - name: Collect Windows artifacts and SBOM
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/windows | Out-Null
+          Get-ChildItem desktop/release -File -Filter "Revaloop-*.exe" |
+            Copy-Item -Destination artifacts/windows
+          npm sbom --workspace "@revaloop/desktop" `
+            --sbom-format spdx `
+            --sbom-type application |
+            Set-Content -Encoding utf8NoBOM artifacts/windows/revaloop-sbom-windows.spdx.json
+          Push-Location artifacts/windows
+          Get-ChildItem -File -Filter "Revaloop-*" |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
+              "${hash} *$($_.Name)"
+            } |
+            Set-Content -Encoding utf8NoBOM SHA256SUMS-windows.txt
+          $sbomHash = (Get-FileHash -Algorithm SHA256 revaloop-sbom-windows.spdx.json).Hash.ToLowerInvariant()
+          "${sbomHash} *revaloop-sbom-windows.spdx.json" |
+            Set-Content -Encoding utf8NoBOM SBOM-SHA256-windows.txt
+          Pop-Location
+
+      - name: Attest Windows build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-checksums: artifacts/windows/SHA256SUMS-windows.txt
+
+      - name: Attest Windows SBOM
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-checksums: artifacts/windows/SHA256SUMS-windows.txt
+          sbom-path: artifacts/windows/revaloop-sbom-windows.spdx.json
+
+      - name: Upload signed Windows artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: revaloop-desktop-signed-windows-${{ inputs.release_tag }}
+          path: artifacts/windows/
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: false
+
+  draft-release:
+    name: Create private draft release
+    needs:
+      - validate
+      - macos-signed
+      - windows-signed
+    if: inputs.mode == 'signed-draft'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: desktop-release
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Download signed macOS artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: revaloop-desktop-signed-macos-${{ inputs.release_tag }}
+          path: artifacts/macos
+
+      - name: Download signed Windows artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: revaloop-desktop-signed-windows-${{ inputs.release_tag }}
+          path: artifacts/windows
+
+      - name: Verify downloaded checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd artifacts/macos
+            sha256sum --check SHA256SUMS-macos.txt
+            sha256sum --check SBOM-SHA256-macos.txt
+          )
+          (
+            cd artifacts/windows
+            sha256sum --check SHA256SUMS-windows.txt
+            sha256sum --check SBOM-SHA256-windows.txt
+          )
+
+      - name: Create draft release without publishing it
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "::error::Une release existe déjà pour ${RELEASE_TAG}."
+            exit 1
+          fi
+          gh release create "${RELEASE_TAG}" \
+            artifacts/macos/* \
+            artifacts/windows/* \
+            --draft \
+            --prerelease \
+            --latest=false \
+            --verify-tag \
+            --title "Revaloop Desktop ${RELEASE_TAG}" \
+            --notes "Brouillon automatisé. Vérifier signatures, notarisation, checksums, SBOM, provenance et notes selon docs/DESKTOP_RELEASE.md avant toute publication."

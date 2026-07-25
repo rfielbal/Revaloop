@@ -97,6 +97,30 @@ test("conserve les coordonnées de 0 à 100 avec une précision au centième", a
   }
 });
 
+test("garde le contrôle de sortie du plein écran visible sans hover", async () => {
+  const [reviewClient, productUi] = await Promise.all([
+    source("../app/review/[token]/review-client.tsx"),
+    source("../app/product-ui.css"),
+  ]);
+
+  assert.match(
+    reviewClient,
+    /className="review-fullscreen-toggle"[\s\S]{0,260}aria-pressed=\{isPreviewExpanded\}/,
+  );
+  assert.match(
+    productUi,
+    /\.review-flow\s+\.review-toolbar\s+\.review-fullscreen-toggle\[aria-pressed="true"\]\s*\{[\s\S]*?background:\s*var\(--rv-color-action\);[\s\S]*?color:\s*var\(--rv-color-on-action\);[\s\S]*?\}/,
+  );
+  assert.match(
+    productUi,
+    /\.review-flow\s+\.review-toolbar\s+\.review-fullscreen-toggle\s*\{[\s\S]*?min-height:\s*var\(--rv-control-height\);[\s\S]*?min-width:\s*var\(--rv-control-height\);[\s\S]*?\}/,
+  );
+  assert.match(
+    productUi,
+    /\.review-flow\s+\.review-toolbar\s+\.review-fullscreen-toggle:focus-visible\s*\{[\s\S]*?box-shadow:[\s\S]*?outline:[\s\S]*?\}/,
+  );
+});
+
 test("désactive les actions développeur lorsque la release n’est plus active", async () => {
   const dashboard = await source("../app/dashboard/dashboard-client.tsx");
   const activeReleaseDefinition = between(

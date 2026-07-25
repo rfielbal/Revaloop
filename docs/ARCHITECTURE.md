@@ -11,7 +11,8 @@ Revaloop sépare trois frontières :
    releases, invitations, retours, discussion, révisions déclarées et
    décisions ;
 2. le **compagnon desktop local**, aujourd’hui implémenté en alpha, qui prépare
-   et surveille explicitement le projet sans charger le site dans sa WebView ;
+   et surveille explicitement le projet sans charger le site dans sa fenêtre
+   privilégiée ;
 3. le futur **data plane**, qui transportera le trafic entre le navigateur
    client et une application locale.
 
@@ -26,7 +27,7 @@ flowchart LR
     dashboard --> api["API métier"]
 
     dev --> preview["Preview HTTPS tierce"]
-    dev --> desktop["Compagnon Tauri local"]
+    dev --> desktop["Compagnon Electron local"]
     desktop -->|"ouvre le navigateur système"| dashboard
     desktop -->|"script dev explicite"| local["127.0.0.1:port"]
     api --> d1[("Cloudflare D1")]
@@ -62,46 +63,93 @@ Le plugin de build copie la configuration Sites et les migrations dans
 
 ### Compagnon desktop
 
-Le dossier `desktop/` contient une SPA React/Vite locale et un backend Tauri 2
-en Rust. Ce n’est pas une copie du Worker et aucune origine distante n’est
-chargée dans sa fenêtre.
+Le dossier `desktop/` contient une SPA React/Vite partagée par deux runtimes. Le
+runtime principal de développement est Electron ; le backend Tauri 2/Rust
+historique reste maintenu comme fallback explicite. Aucun des deux n’embarque le
+Worker vinext ou D1.
 
-Les seules commandes IPC exposées sont sémantiques :
+```mermaid
+flowchart LR
+    renderer["Renderer React sandboxé"] -->|"bridge gelé"| preload["Preload minimal"]
+    preload -->|"IPC en liste fermée"| main["Processus principal Electron"]
+    main --> assets["Assets locaux revaloop://app"]
+    main --> settings["settings.json sans secret"]
+    main --> npm["npm --ignore-scripts run dev"]
+    main --> probe["Probe TCP loopback"]
+    main --> browser["Navigateur système"]
+```
 
-| Commande | Limite |
+En production empaquetée, le processus principal sert uniquement les assets du
+bundle via le scheme sécurisé `revaloop://app`. Le handler accepte seulement
+`GET`, vérifie le host, refuse toute traversée hors du répertoire du renderer et
+ajoute CSP, `nosniff`, `no-referrer` et COOP. En développement, l’unique origine
+renderer admise est exactement `http://127.0.0.1:1420/`.
+
+La fenêtre active la sandbox Electron, `contextIsolation`, `webSecurity` et
+désactive `nodeIntegration` dans la frame, les sous-frames et les workers. Le
+renderer ne reçoit ni Node, ni `ipcRenderer`, ni shell, ni filesystem ou client
+HTTP générique. Le preload expose seulement ce contrat :
+
+| Groupe IPC | Limite |
 |---|---|
-| `inspect_project` | dossier choisi, `package.json` régulier et inférieur à 1 Mio |
-| `start_dev_server` | relecture du manifeste, script inchangé, exécution fixe de `npm --ignore-scripts run dev` |
-| `stop_dev_server` | processus et groupe créés par l’application uniquement |
-| `probe_preview` | HTTP(S) vers une adresse loopback numérique normalisée |
-| `load_settings` / `save_settings` | chemin et URL non secrètes dans le dossier de configuration de l’app |
-| `open_external` | preview loopback ou routes `login`/`dashboard` d’une origine HTTPS validée |
+| sélection et inspection | dialogue natif dans le main, chemin canonique, `package.json` régulier et inférieur à 1 Mio |
+| lecture et sauvegarde des réglages | preview loopback et origine Revaloop validées, chemin fourni par l’état autoritaire du main |
+| statut, démarrage et arrêt | un processus géré, opérations sérialisées, confirmation native, script attendu seulement, relecture du manifeste puis commande fixe |
+| probe de preview | connexion TCP courte vers une adresse loopback et un port explicite |
+| ouverture externe | seulement `preview`, `login` ou `dashboard`, dans le navigateur système |
+| événements | lignes de log et statut du processus, sans primitive IPC générique |
 
-Le renderer ne dispose ni d’un shell générique, ni d’un client HTTP natif, ni
-d’un accès filesystem général. Ses permissions sont limitées à l’écoute et au
-retrait des événements émis par Rust, ainsi qu’au sélecteur natif de dossier.
-La CSP locale interdit frames, objets, workers et formulaires ; les assets sont
-embarqués.
+Chaque invocation vérifie que le sender est exactement la `webContents` de la
+fenêtre principale, que la frame appelante est sa `mainFrame` et que son URL est
+l’origine locale attendue. Le processus principal conserve le projet
+sélectionné comme autorité : le chemin peut être affiché dans l’interface, mais
+le handler de démarrage n’accepte aucun chemin venant du renderer.
+
+Les nouvelles fenêtres, navigations hors origine, WebViews, permissions et
+téléchargements sont refusés. La CSP du scheme local interdit notamment frame,
+objet, worker et formulaire. Le build de distribution configure aussi les fuses
+Electron pour interdire RunAsNode, `NODE_OPTIONS`, les arguments d’inspection et
+le chargement hors ASAR, avec intégrité ASAR activée.
 
 Le script du projet reste du code arbitraire appartenant au développeur. Il
 n’est jamais lancé à la sélection : le chemin, le contenu exact du script et
-une confirmation sont affichés avant l’action. Les hooks npm `predev` et
-`postdev` sont désactivés afin qu’aucun script adjacent ne soit exécuté
-implicitement. Les logs sont gardés dans la
-mémoire du renderer, bornés, non persistés et les lignes contenant des marqueurs
-de credential sont masquées. `HOST=127.0.0.1` est fourni au processus, mais un
-script reste libre de l’ignorer ; seule la cible manipulée par Revaloop est
+une confirmation native sont affichés avant chaque action. Après confirmation,
+le main émet puis consomme une autorisation courte et à usage unique, liée au
+chemin et au script. Un renderer compromis ne peut donc pas lancer silencieusement
+le projet. Le main relit ensuite le manifeste, compare le script attendu puis
+lance exactement
+`npm --ignore-scripts run dev`, avec `shell: false`. Les hooks npm `predev` et
+`postdev` sont ainsi désactivés. `HOST=127.0.0.1` est fourni au processus, mais
+un script reste libre de l’ignorer ; seule la cible manipulée par Revaloop est
 strictement bornée au loopback.
 
+Les demandes de démarrage et d’arrêt sont sérialisées. Un second démarrage
+concurrent est refusé et un arrêt demandé pendant l’inspection annule le
+lancement avant de rendre la main, afin de ne jamais perdre la référence du
+processus enfant.
+
+Les lignes stdout/stderr sont nettoyées, limitées à 2 000 caractères et
+entièrement masquées lorsqu’un marqueur sensible connu est détecté. Le main
+cesse d’émettre après 20 000 événements par lancement et le renderer ne conserve
+que les 250 dernières lignes. Rien n’est écrit sur disque.
+
 Le bouton vers l’espace en ligne ouvre le navigateur système. Les cookies
-`HttpOnly` et `SameSite=Strict` y restent ; ils ne sont ni copiés ni lus par
-Tauri.
+`HttpOnly` et `SameSite=Strict` y restent : le compagnon n’appelle pas l’API
+Revaloop, ne stocke aucun token et ne lit aucun cookie web.
 
 Une future intégration API suivra un canal d’appareil séparé : navigateur
 système, Authorization Code avec PKCE S256 et callback loopback exact, tokens
-opaques hachés et révocables, access token court en mémoire Rust et refresh
+opaques hachés et révocables, access token court dans le runtime natif et refresh
 rotatif dans le coffre OS. Les routes web conserveront leur vérification
 d’origine et ne recevront pas de CORS permissif.
+
+Electron agrandit la surface de dépendances par rapport à Tauri, mais raccourcit
+la boucle locale : `npm run desktop:dev` démarre directement l’app depuis le
+dépôt sans installer puis réinstaller un binaire. Cette décision temporaire est
+encadrée par [ADR-0006](adr/0006-electron-development-runtime.md). Tauri reste
+disponible via les commandes `desktop:tauri:*`. Aucune distribution publique
+n’est prévue avant signature des artefacts, notarisation macOS et provenance
+vérifiable.
 
 ### Routes
 
@@ -303,6 +351,10 @@ credentials et sessions développeur, la discussion et
 environnements Sites qui démarrent sur une D1 vide ; il devra disparaître
 lorsque le déploiement exécutera explicitement les migrations.
 
+Le [modèle conceptuel des données](DATABASE_MCD.md) détaille les entités,
+cardinalités, contraintes physiques, flux, règles de rétention et écarts à
+résoudre avant une première release.
+
 ## Preview externe
 
 `normalizeExternalPreviewUrl` accepte uniquement :
@@ -415,6 +467,7 @@ injection de bridge. Voir [ADR-0003](adr/0003-tls-termination-modes.md).
 - [ADR-0003 — Distinguer terminaison TLS et passthrough](adr/0003-tls-termination-modes.md)
 - [ADR-0004 — Gérer le compte développeur dans Revaloop](adr/0004-developer-authentication.md)
 - [ADR-0005 — Séparer le compagnon desktop du site et du tunnel](adr/0005-desktop-companion.md)
+- [ADR-0006 — Utiliser Electron pour la boucle de développement desktop](adr/0006-electron-development-runtime.md)
 
 Toute évolution d’identité, d’autorisation, de stockage, d’origine ou de
 transport doit mettre à jour ce document et le modèle de menace.

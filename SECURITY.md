@@ -116,31 +116,73 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 
 ### Compagnon desktop
 
-- Tauri 2 et interface React/Vite embarquée, sans contenu distant dans la
-  WebView ;
-- CSP locale interdisant frames, objets, workers et formulaires ;
-- aucune capability distante, aucun shell ni filesystem générique exposés au
-  renderer ;
-- unique permission plugin : ouverture du sélecteur natif de dossier ;
+- Electron est le runtime principal de développement ; Tauri 2 reste un
+  fallback explicite, décrit dans
+  [l’ADR-0005 historique](docs/adr/0005-desktop-companion.md) et
+  [l’ADR-0006](docs/adr/0006-electron-development-runtime.md) ;
+- assets React/Vite locaux ; un build empaqueté les sert en lecture seule par le
+  scheme privilégié `revaloop://app`, avec contrôle du host, protection contre
+  la traversée de chemin, CSP et en-têtes défensifs ;
+- serveur Vite de développement accepté uniquement à l’origine exacte
+  `http://127.0.0.1:1420/` ;
+- sandbox Electron activée globalement et sur la fenêtre,
+  `contextIsolation: true`, `nodeIntegration: false`,
+  `nodeIntegrationInWorker: false`, `nodeIntegrationInSubFrames: false`,
+  `webSecurity: true`, WebView désactivée et contenu mixte refusé ;
+- preload réduit à un objet gelé de commandes sémantiques, sans exposition de
+  `ipcRenderer`, Node, shell ou filesystem générique ;
+- chaque invocation IPC vérifie l’identité exacte de la `webContents`, la
+  `mainFrame` et son URL locale avant d’atteindre le handler ;
+- nouvelles fenêtres, navigation hors origine, attachement de WebView,
+  permissions et téléchargements refusés ;
 - `package.json` borné à 1 Mio, script `dev` relu avant exécution ;
-- consentement explicite avant la commande fixe
-  `npm --ignore-scripts run dev`, qui désactive `predev` et `postdev` ;
+- le processus principal conserve le projet sélectionné comme autorité ; le
+  renderer ne peut pas fournir un chemin au handler de lancement ;
+- consentement explicite dans une boîte de dialogue native du processus
+  principal avant chaque lancement, suivi d’une autorisation de dix secondes,
+  à usage unique et liée au chemin et au script ;
+- commande fixe exécutée sans shell, `npm --ignore-scripts run dev`, qui
+  désactive `predev` et `postdev` ;
+- variables de contrôle internes `NODE_OPTIONS`, `NODE_PATH`,
+  `NPM_CONFIG_NODE_OPTIONS` et `ELECTRON_*` utilisées par Revaloop retirées
+  avant de lancer le projet ;
 - aucun argument shell ou nom de commande fourni par le renderer ;
-- un seul processus géré et arrêt de son groupe sur macOS/Linux ou de son arbre
-  sur Windows ;
+- un seul processus géré, démarrages et arrêts sérialisés, puis arrêt de son
+  groupe sur macOS/Linux ou de son arbre sur Windows ;
 - preview restreinte à `127.0.0.1`, `localhost` ou `::1`, sans credentials,
   query ni fragment ;
 - origine Revaloop en HTTPS, ou HTTP uniquement pour une instance loopback ;
 - destinations externes en liste fermée, ouvertes dans le navigateur système ;
 - aucun mot de passe, cookie, token développeur ou invitation dans l’app ;
 - paramètres non secrets seulement, fichier local `0600` sur Unix ;
-- journal mémoire borné et masquage défensif de lignes sensibles ;
-- tests Rust des validateurs d’URL et du masquage de logs.
+- chaque ligne de journal est nettoyée, limitée à 2 000 caractères et masquée
+  si elle contient un marqueur sensible ; le processus principal cesse
+  d’émettre après 20 000 événements et l’interface ne conserve que les 250
+  dernières lignes en mémoire ;
+- les artefacts Electron configurent des fuses interdisant RunAsNode,
+  `NODE_OPTIONS`, l’inspection CLI et le chargement hors ASAR, avec validation
+  d’intégrité ASAR et chiffrement des cookies activés ;
+- aucun appel à l’API Revaloop, aucun token natif et aucun cookie web dans le
+  runtime desktop ;
+- tests TypeScript/Node des validateurs, frontières d’assets, destinations,
+  projet, logs et configuration ; la suite Tauri/Rust reste disponible pour le
+  fallback.
 
-Le desktop n’est pas une sandbox pour le code du projet : confirmer
-Le script `dev` reste exécuté par le shell npm avec les droits de votre compte
-système. Désactiver les hooks `predev` et `postdev` évite une exécution
-implicite, mais ne transforme pas le projet en sandbox.
+Le desktop n’est pas une sandbox pour le code du projet. Confirmer
+la commande reste indispensable : même si Revaloop démarre npm avec
+`shell: false`, npm exécute le contenu du script `dev` avec les droits de votre
+compte système. Désactiver les hooks `predev` et `postdev` évite une exécution
+adjacente implicite, mais ne transforme pas le projet en sandbox.
+Les autres variables du processus restent disponibles au projet pour préserver
+son environnement de développement : ne lancez donc pas Revaloop depuis un
+terminal chargé de secrets dont ce projet n’a pas besoin.
+
+Electron embarque Chromium et Node et possède donc une surface de dépendances
+plus large que Tauri. Cette décision est temporaire et optimise la boucle de
+développement sans réinstallation ; les frontières ci-dessus compensent ce
+choix mais ne remplacent ni audit ni mises à jour rapides d’Electron. Aucun
+binaire public ne doit être annoncé avant signature des artefacts, notarisation
+macOS et vérification de provenance.
 
 ## Limites connues
 

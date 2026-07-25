@@ -1,0 +1,56 @@
+appId: dev.revaloop.desktop
+productName: Revaloop
+copyright: Copyright 2026 Revaloop contributors
+electronVersion: 43.2.0
+
+asar: true
+compression: maximum
+npmRebuild: false
+removePackageScripts: true
+removePackageKeywords: true
+
+directories:
+  output: ../release
+  buildResources: ../src-tauri/icons
+
+files:
+  - "**/*"
+  - "!**/*.map"
+
+artifactName: Revaloop-${version}-${os}-${arch}.${ext}
+publish: null
+
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  loadBrowserProcessSpecificV8Snapshot: true
+  grantFileProtocolExtraPrivileges: false
+
+mac:
+  category: public.app-category.developer-tools
+  icon: icon.icns
+  hardenedRuntime: true
+  minimumSystemVersion: "11.0"
+  target:
+    - dmg
+    - zip
+
+win:
+  icon: icon.ico
+  target:
+    - nsis
+
+linux:
+  category: Development
+  icon: icon.png
+  target:
+    - AppImage
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false

@@ -55,8 +55,9 @@ et ne prouve pas davantage l’identité.
 
 ## Données locales du compagnon desktop
 
-Le compagnon ne lit ni D1, ni les cookies du navigateur, ni un token API. Il
-conserve dans le dossier de configuration de l’application :
+Le runtime Electron principal ne lit ni D1, ni les cookies du navigateur, ni un
+token API. Il n’appelle actuellement aucune API Revaloop. Son processus
+principal conserve dans le dossier de configuration de l’application :
 
 | Donnée | Finalité | Rétention |
 |---|---|---|
@@ -68,16 +69,23 @@ Ces valeurs sont sérialisées dans `settings.json`. Sur Unix, le fichier reçoi
 le mode `0600`. Ce ne sont pas des secrets, mais le chemin peut révéler un nom
 de client : utilisez un nom de dossier neutre si cette métadonnée est sensible.
 
+Le chemin sélectionné est canonisé et reste l’autorité du processus principal.
+Le renderer peut l’afficher, mais le handler de démarrage n’accepte aucun chemin
+fourni par l’interface : il réutilise le projet détenu dans le main puis relit
+son manifeste.
+
 Le nom, la version et le script `dev` du `package.json` sont lus à la demande et
 gardés seulement dans la mémoire de l’application. Le manifeste est limité à
 1 Mio et n’est pas copié dans le fichier de configuration.
 
-Les sorties standard et erreur du processus sont bornées aux 250 dernières
-lignes côté interface, non persistées et oubliées à la fermeture ou quand
-l’utilisateur les efface. Une ligne contenant un marqueur courant de cookie,
-authorization, token, secret ou mot de passe est remplacée entièrement. Ce
-filtre réduit le risque mais ne garantit pas qu’un secret inhabituel soit
-reconnu : un projet de test ne doit pas écrire ses credentials dans ses logs.
+Les sorties standard et erreur du processus ne sont pas persistées. Dans le
+main Electron, chaque ligne est nettoyée et limitée à 2 000 caractères ; une
+ligne contenant un marqueur courant de cookie, authorization, token, secret ou
+mot de passe est remplacée entièrement. Le main cesse d’émettre après 20 000
+événements par lancement et l’interface ne garde que les 250 dernières lignes,
+oubliées à la fermeture ou lorsque l’utilisateur les efface. Ce filtre réduit
+le risque mais ne garantit pas qu’un secret inhabituel soit reconnu : un projet
+de test ne doit pas écrire ses credentials dans ses logs.
 
 L’identifiant du processus existe uniquement en mémoire pendant son exécution.
 La fermeture de Revaloop tente d’arrêter ce processus et son groupe sur Unix,
@@ -204,8 +212,9 @@ retour, e-mail reviewer ni URL avec query.
 
 Le compagnon desktop n’écrit aucun log applicatif sur disque. Son panneau
 terminal reçoit uniquement la sortie du processus local et applique les limites
-décrites plus haut. Les logs de compilation Rust, npm ou du système
-d’exploitation lancés en dehors de l’app suivent leur propre configuration.
+décrites plus haut. Les logs de compilation Electron/Vite, npm, du fallback
+Tauri/Rust ou du système d’exploitation lancés en dehors de l’app suivent leur
+propre configuration.
 
 L’opérateur Sites/Cloudflare peut produire ses propres logs techniques selon
 sa configuration. L’entité qui déploie l’instance doit documenter région,

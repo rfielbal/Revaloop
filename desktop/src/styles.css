@@ -1182,6 +1182,26 @@ button:disabled {
   color: white;
 }
 
+.url-field-light.url-field-error {
+  border-color: rgba(255, 180, 169, 0.82);
+  box-shadow: 0 0 0 4px rgba(200, 107, 87, 0.2);
+}
+
+.field-feedback {
+  max-width: 560px;
+  margin: 8px 2px 0;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.field-feedback-success {
+  color: #c4dfd0;
+}
+
+.field-feedback-error {
+  color: #ffd7d1;
+}
+
 .workspace-actions {
   display: flex;
   margin-top: 17px;

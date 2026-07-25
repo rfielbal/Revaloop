@@ -58,11 +58,22 @@ reste valide.
 
 ### Compagnon desktop local
 
-- application Tauri 2 avec une interface React/Vite embarquée localement ;
-- aucun site distant chargé dans la WebView privilégiée ;
+- runtime principal Electron avec une interface React/Vite locale ; en build
+  empaqueté, les assets sont servis par l’origine dédiée `revaloop://app` ;
+- renderer sandboxé avec `contextIsolation: true` et toutes les variantes de
+  `nodeIntegration` désactivées ;
+- preload réduit à un bridge IPC sémantique ; chaque appel est refusé si le
+  sender, la frame principale ou son URL ne correspondent pas exactement à la
+  fenêtre locale attendue ;
+- navigation, nouvelles fenêtres, WebView, permissions et téléchargements
+  refusés dans la fenêtre native ;
 - sélection explicite d’un dossier par le dialogue natif ;
 - lecture bornée de son seul `package.json` avant toute action ;
-- présentation du script `dev` et consentement obligatoire ;
+- chemin canonique conservé comme autorité par le processus principal ;
+  l’interface peut l’afficher mais ne peut pas fournir un autre chemin au
+  lancement ;
+- présentation du script `dev`, consentement obligatoire et relecture avant
+  exécution ;
 - exécution fixe de `npm --ignore-scripts run dev`, sans `predev`, `postdev` ni
   commande shell arbitraire venant de l’interface ;
 - arrêt limité au processus lancé par Revaloop et à ses descendants ;
@@ -71,16 +82,27 @@ reste valide.
   sensibles ;
 - ouverture du dashboard, du login et de la preview dans le navigateur système,
   où restent les cookies web ;
-- configuration locale limitée au chemin du projet et à des URL non secrètes.
+- configuration locale limitée au chemin du projet et à des URL non secrètes ;
+- fuses de distribution configurés pour interdire notamment RunAsNode,
+  `NODE_OPTIONS`, l’inspection CLI et le chargement hors ASAR.
 
 Cette première alpha est un compagnon développeur, pas encore le tunnel. Elle
 n’appelle pas l’API Revaloop et ne stocke aucun credential. Le client continue
 d’utiliser le site sans rien installer.
 
+Le runtime Tauri 2 historique reste maintenu comme fallback explicite. Il
+partage la même interface et les mêmes invariants métier, mais `desktop:dev`
+lance désormais Electron afin d’accélérer la boucle locale sans installation ni
+réinstallation d’un binaire. Voir
+[ADR-0006](docs/adr/0006-electron-development-runtime.md).
+
 Le compagnon fournit `HOST=127.0.0.1` au processus, mais le script du projet
 peut ignorer cette variable et choisir lui-même une autre interface réseau.
 Vérifiez le message d’écoute de votre framework avant d’utiliser une application
-ou une base sensible.
+ou une base sensible. Revaloop retire les options Node/Electron qui pourraient
+modifier implicitement l’exécution, mais transmet les autres variables ambiantes
+utiles au projet : lancez-le depuis un terminal qui ne contient aucun secret
+inutile.
 
 ## Parcours pilote
 
@@ -252,12 +274,16 @@ OpenAI Sites / Cloudflare Worker
     ├── invitations et sessions hachées
     └── messages, retours, décisions et audits
 
-Compagnon desktop Tauri
-├── SPA locale sans contenu distant
-├── dossier choisi et package.json borné
+Compagnon desktop Electron
+├── SPA locale sur revaloop://app en build empaqueté
+├── renderer sandboxé + preload/IPC minimal et vérifié
+├── dossier choisi, autorité du chemin dans le processus principal
 ├── lancement explicite du seul script dev
 ├── logs éphémères et test loopback
 └── ouverture du plan de revue dans le navigateur système
+
+Fallback Tauri 2
+└── même SPA et mêmes invariants métier, runtime alternatif maintenu
 
 Preview HTTPS tierce
 └── chargée directement par le navigateur, jamais proxifiée par Revaloop
@@ -306,16 +332,20 @@ mutations et la validation JSON.
 
 ## Développement local — application desktop
 
-Prérequis supplémentaires : Rust stable, Cargo et les outils natifs de la
-plateforme. Sur macOS, Xcode Command Line Tools doit être disponible.
+Le runtime principal de développement est Electron. Node.js et npm suffisent
+après l’installation des dépendances du dépôt :
 
 ```bash
 npm ci
 npm run desktop:dev
 ```
 
-La première compilation Rust peut prendre plusieurs minutes. Dans la fenêtre
-Revaloop :
+Cette commande compile le processus principal et le preload, démarre le renderer
+Vite sur l’origine fixe `http://127.0.0.1:1420/`, puis ouvre Electron. Relancez
+la commande après une modification du processus principal ou du preload ; les
+changements du renderer suivent la boucle Vite sans installation d’application.
+
+Dans la fenêtre Revaloop :
 
 1. choisissez le dossier du projet ;
 2. vérifiez le script affiché ;
@@ -329,12 +359,25 @@ Validation et build local :
 ```bash
 npm run desktop:check
 npm run desktop:build
+npm run desktop:pack
+npm run desktop:dist
 ```
 
-Le build produit un binaire pour la plateforme courante. Les artefacts de cette
-alpha ne sont ni signés ni notariés : ils conviennent au développement local,
-pas à une distribution publique. macOS, Windows et Linux devront posséder leur
-propre pipeline signé avant une release.
+`desktop:build` compile les assets ; `desktop:pack` crée une application
+décompressée pour la QA locale ; `desktop:dist` produit les installateurs de la
+plateforme courante. Ceux de cette alpha ne sont ni signés ni notariés : ils
+conviennent à une vérification locale, pas à une distribution publique. La
+première préversion téléchargeable exige des pipelines de signature par OS et
+une notarisation macOS.
+
+Le runtime Tauri 2 reste disponible comme fallback. Il exige Rust stable, Cargo
+et les outils natifs de la plateforme :
+
+```bash
+npm run desktop:tauri:dev
+npm run desktop:tauri:check
+npm run desktop:tauri:build
+```
 
 ## Sécurité et données
 
@@ -361,6 +404,8 @@ Documents de référence :
 - [Politique de sécurité](SECURITY.md)
 - [Modèle de menace](docs/THREAT_MODEL.md)
 - [Cycle de vie des données](docs/DATA_LIFECYCLE.md)
+- [Modèle conceptuel des données](docs/DATABASE_MCD.md)
+- [Première distribution desktop](docs/DESKTOP_RELEASE.md)
 - [Feuille de route](docs/ROADMAP.md)
 - [Système de design](docs/DESIGN_SYSTEM.md)
 - [ADRs](docs/adr/)

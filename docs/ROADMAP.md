@@ -48,17 +48,27 @@
 
 ### Compagnon desktop
 
-- ✅ Tauri 2 avec SPA React/Vite locale, sans contenu distant ;
+- ✅ Electron comme runtime principal de développement, lancé directement depuis
+  le dépôt sans installation ni réinstallation d’un binaire ;
+- ✅ assets React/Vite locaux via `revaloop://app` en build empaqueté et origine
+  Vite loopback exacte en développement ;
+- ✅ sandbox, `contextIsolation`, `nodeIntegration` désactivée, preload/IPC
+  minimal et contrôle exact du sender, de la frame et de l’URL ;
+- ✅ refus des navigations hors origine, popups, WebViews, permissions et
+  téléchargements ;
 - ✅ sélection native du dossier et lecture bornée de `package.json` ;
-- ✅ présentation du script et consentement explicite ;
+- ✅ autorité du chemin détenue dans le processus principal, présentation du
+  script et consentement explicite ;
 - ✅ lancement fixe de `npm --ignore-scripts run dev`, sans hooks adjacents, et
   arrêt de l’arbre de processus géré ;
 - ✅ logs éphémères bornés avec masquage défensif ;
 - ✅ validation d’une cible loopback et test TCP local ;
 - ✅ ouverture du site et de la preview dans le navigateur système ;
-- ✅ CSP et capabilities minimales, sans shell ni client HTTP générique ;
-- ✅ tests Rust, build Vite et CI desktop macOS ;
-- 🧪 build local macOS arm64 non signé.
+- ✅ aucune API, aucun token natif et aucun cookie web dans l’app ;
+- ✅ fuses Electron durcis pour les artefacts empaquetés ;
+- ✅ tests TypeScript/Node et build Electron/Vite ;
+- ✅ runtime Tauri 2 maintenu comme fallback explicite et tests Rust conservés ;
+- 🧪 artefacts Electron locaux non signés, non destinés au téléchargement.
 
 ### Limites de l’alpha
 
@@ -154,7 +164,8 @@ hors périmètre.
 
 Objectif : rendre enfin possible `revaloop share 3000`.
 
-- ✅ socle Tauri local et contrôle explicite du script `dev` ;
+- ✅ socle Electron local, fallback Tauri et contrôle explicite du script
+  `dev` ;
 - ✅ cible loopback et port explicitement autorisés dans le compagnon ;
 - ⏳ CLI `revaloop share` et agent de tunnel ;
 - ⏳ authentification d’appareil ;

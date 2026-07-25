@@ -23,8 +23,9 @@ Inclus :
 - bridge facultatif `postMessage` ;
 - API et D1 ;
 - Worker et en-têtes ;
-- compagnon desktop Tauri local, sélection de projet, processus, logs en mémoire
-  et ouverture du navigateur système.
+- compagnon desktop Electron local, sélection de projet, processus, logs en
+  mémoire et ouverture du navigateur système ; runtime Tauri 2 conservé comme
+  fallback.
 
 Hors périmètre :
 
@@ -88,10 +89,10 @@ flowchart LR
     worker --> browser["Navigateur"]
     browser --> preview["Preview HTTPS non fiable"]
     preview -. "postMessage borné" .-> browser
-    developer["Développeur local"] --> desktop["SPA Tauri locale"]
-    desktop -->|"IPC borné"| rust["Backend Rust"]
-    rust -->|"script dev explicite"| loopback["127.0.0.1:port"]
-    rust -->|"navigateur système"| auth
+    developer["Développeur local"] --> renderer["Renderer Electron sandboxé"]
+    renderer -->|"preload + IPC borné"| main["Processus principal"]
+    main -->|"script dev explicite"| loopback["127.0.0.1:port"]
+    main -->|"navigateur système"| auth
 ```
 
 Hypothèses :
@@ -184,15 +185,29 @@ reviewer → token hash → session → invitation → release → ressource
 
 ### Compagnon desktop local
 
-- assets React/Vite locaux uniquement, aucune origine distante dans la WebView ;
-- CSP sans frame, objet, worker, formulaire ni réseau distant ;
-- capabilities limitées à `core:event:allow-listen`,
-  `core:event:allow-unlisten` et au choix natif d’un dossier ;
-- aucune permission shell ou filesystem générique dans le renderer ;
+- assets React/Vite locaux ; build empaqueté servi par `revaloop://app` avec
+  host exact, confinement au dossier du renderer, méthode `GET` uniquement, CSP
+  et en-têtes défensifs ;
+- origine Vite de développement limitée exactement à
+  `http://127.0.0.1:1420/` ;
+- sandbox globale et renderer, `contextIsolation: true`, `webSecurity: true`,
+  toutes les variantes de `nodeIntegration` désactivées, WebView et contenu
+  mixte refusés ;
+- preload limité à un bridge gelé de commandes sémantiques, sans exposition de
+  Node, `ipcRenderer`, shell, filesystem ou client HTTP générique ;
+- contrôle de chaque sender IPC : fenêtre active exacte, `mainFrame` exacte et
+  URL locale exacte ;
+- refus des nouvelles fenêtres, navigations hors origine, WebViews, permissions
+  et téléchargements ;
 - `package.json` régulier, borné à 1 Mio et relu avant exécution ;
 - script `dev` présenté et confirmation explicite obligatoire ;
-- commande native fixe `npm --ignore-scripts run dev`, sans `predev`,
-  `postdev` ni interpolation fournie par le renderer ;
+- chemin canonique autoritaire détenu par le processus principal ; aucun chemin
+  de projet accepté par le handler de démarrage ;
+- commande native fixe `npm --ignore-scripts run dev`, lancée avec
+  `shell: false`, sans `predev`, `postdev` ni interpolation fournie par le
+  renderer ;
+- retrait de `NODE_OPTIONS`, `NODE_PATH`, `NPM_CONFIG_NODE_OPTIONS` et des
+  variables Electron internes de Revaloop avant de lancer le projet ;
 - un seul processus géré ; arrêt limité à son groupe sur Unix ou à son arbre
   sur Windows ;
 - URL de preview limitée à une IP loopback, avec normalisation de `localhost`,
@@ -200,10 +215,15 @@ reviewer → token hash → session → invitation → release → ressource
 - origine du review plane en HTTPS, HTTP limité au loopback ;
 - destinations externes en liste fermée puis ouvertes dans le navigateur
   système ;
-- aucun token ou cookie web dans le desktop ;
+- aucun appel API, token ou cookie web dans le desktop ;
 - configuration locale sans secret, fichier `0600` sur Unix ;
-- logs bornés, en mémoire, non écrits sur disque et lignes sensibles masquées ;
-- fermeture de l’application déclenchant l’arrêt du processus géré.
+- logs en mémoire : ligne limitée à 2 000 caractères, marqueurs sensibles
+  masqués, maximum de 20 000 événements émis par lancement et 250 lignes
+  conservées dans l’interface ;
+- fermeture de l’application déclenchant l’arrêt du processus géré ;
+- fuses de distribution : RunAsNode, `NODE_OPTIONS`, inspection CLI et
+  chargement hors ASAR désactivés, intégrité ASAR activée ;
+- Tauri 2 maintenu comme fallback explicite sans devenir le runtime par défaut.
 
 ## Registre des risques actuels
 
@@ -233,12 +253,12 @@ reviewer → token hash → session → invitation → release → ressource
 | T22 | vol session développeur | token opaque haché, cookie Host/HttpOnly/Secure/Strict, expiration et révocation | pas d’écran pour révoquer toutes les sessions |
 | T23 | faux signal de correctif | incrément autorisé de `preview_revision` | ne prouve ni déploiement, ni commit, ni contenu servi |
 | T24 | message attribué au mauvais acteur | auteur dérivé de la session et release autorisée | nom reviewer déclaratif, pas d’identité forte |
-| T25 | projet local malveillant ou écoute LAN | sélection, affichage du script, consentement, hooks npm adjacents désactivés et `HOST=127.0.0.1` fourni | le script `dev` garde les droits du compte et peut ignorer `HOST` ou ouvrir une autre interface |
-| T26 | abus de l’IPC Tauri | commandes sémantiques, entrées bornées, aucune origine distante ni shell générique | une XSS dans les assets locaux pourrait appeler les commandes autorisées |
+| T25 | projet local malveillant, secret ambiant ou écoute LAN | sélection, affichage du script, consentement, hooks npm adjacents désactivés, options Node/Electron internes retirées et `HOST=127.0.0.1` fourni | le script `dev` garde les droits du compte, reçoit les autres variables ambiantes et peut ignorer `HOST` ou ouvrir une autre interface |
+| T26 | renderer Electron compromis ou abus IPC | assets locaux, sandbox/context isolation, bridge sémantique, sender/frame/URL exacts, aucune primitive shell ou filesystem générique | une XSS locale pourrait appeler les commandes autorisées ; Chromium + Node augmentent la surface de dépendances par rapport à Tauri |
 | T27 | pivot réseau depuis le probe | IP loopback et port explicites, aucun redirect HTTP suivi | un service local accessible au compte peut recevoir une connexion TCP |
 | T28 | fuite dans les logs desktop | mémoire uniquement, plafond de lignes, masquage de marqueurs sensibles | un secret sans marqueur reconnu peut encore être affiché par le projet |
 | T29 | persistance locale excessive | chemin et URL non secrètes uniquement, permissions compte | le chemin peut révéler un nom de client à un autre processus du même compte |
-| T30 | binaire desktop altéré | aucun artefact public annoncé | signature, notarisation, provenance et updater signé requis avant distribution |
+| T30 | binaire desktop altéré | aucun artefact public annoncé, fuses configurés pour le packaging local | signature, notarisation, provenance, validation des fuses et updater signé requis avant distribution |
 | T31 | affaiblissement de l’auth pour le natif | aucune API native actuelle, cookies confinés au navigateur | implémenter PKCE, tokens appareils et révocation avant tout accès API desktop |
 
 T01, T02, T06, T07, T19, T21 et T22 demandent une validation d’intégration avant une

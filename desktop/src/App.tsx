@@ -1,7 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -21,37 +18,26 @@ import {
   ShieldCheck,
   SquareTerminal,
 } from "lucide-react";
-
-type DesktopSettings = {
-  projectPath: string | null;
-  previewUrl: string;
-  controlPlaneUrl: string;
-};
-
-type ProjectInfo = {
-  path: string;
-  name: string;
-  version: string | null;
-  devScript: string;
-  packageManager: string;
-  command: string;
-};
-
-type RuntimeStatus = {
-  running: boolean;
-  pid: number | null;
-};
-
-type ProbeResult = {
-  reachable: boolean;
-  normalizedUrl: string;
-  message: string;
-};
-
-type LogLine = {
-  stream: "stdout" | "stderr" | "system";
-  line: string;
-};
+import {
+  chooseNativeProject,
+  getRuntimeStatus,
+  hasNativeRuntime,
+  inspectStoredProject,
+  loadDesktopSettings,
+  onNativePreviewLog,
+  onNativeRuntimeStatus,
+  openNativeExternal,
+  probeNativePreview,
+  saveDesktopSettings,
+  startNativeDevServer,
+  stopNativeDevServer,
+  type DesktopSettings,
+  type LogLine,
+  type ProbeResult,
+  type ProjectInfo,
+  type RuntimeStatus,
+} from "./desktop-runtime";
+import { persistControlPlaneSettings } from "../electron/shared/control-plane-settings";
 
 const DEFAULT_SETTINGS: DesktopSettings = {
   projectPath: null,
@@ -91,7 +77,7 @@ function StatusGlyph({
 }
 
 export function App() {
-  const nativeRuntime = isTauri();
+  const nativeRuntime = hasNativeRuntime();
   const [settings, setSettings] =
     useState<DesktopSettings>(DEFAULT_SETTINGS);
   const [project, setProject] = useState<ProjectInfo | null>(null);
@@ -105,14 +91,23 @@ export function App() {
   const [busy, setBusy] = useState<string | null>("initialisation");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [controlPlaneFeedback, setControlPlaneFeedback] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const persistedSettingsRef =
+    useRef<DesktopSettings>(DEFAULT_SETTINGS);
 
   const appendLog = useCallback((entry: LogLine) => {
     setLogs((current) => [...current.slice(-249), entry]);
   }, []);
 
   const inspectProject = useCallback(async (path: string) => {
-    const inspected = await invoke<ProjectInfo>("inspect_project", { path });
+    const inspected = await inspectStoredProject(path);
+    if (!inspected) {
+      throw new Error("Le projet mémorisé n’est plus accessible.");
+    }
     setProject(inspected);
     setConsent(false);
     return inspected;
@@ -120,20 +115,19 @@ export function App() {
 
   const saveSettings = useCallback(
     async (next: DesktopSettings) => {
-      setSettings(next);
-      if (nativeRuntime) {
-        const saved = await invoke<DesktopSettings>("save_settings", {
-          settings: next,
-        });
-        setSettings(saved);
-      }
+      const saved = nativeRuntime
+        ? await saveDesktopSettings(next)
+        : next;
+      persistedSettingsRef.current = saved;
+      setSettings(saved);
+      return saved;
     },
     [nativeRuntime],
   );
 
   const refreshRuntime = useCallback(async () => {
     if (!nativeRuntime) return;
-    const status = await invoke<RuntimeStatus>("runtime_status");
+    const status = await getRuntimeStatus();
     setRuntime(status);
   }, [nativeRuntime]);
 
@@ -151,9 +145,7 @@ export function App() {
       if (!quiet) setBusy("probe");
       setError(null);
       try {
-        const result = await invoke<ProbeResult>("probe_preview", {
-          url: settings.previewUrl,
-        });
+        const result = await probeNativePreview(settings.previewUrl);
         setProbe(result);
       } catch (currentError) {
         setProbe(null);
@@ -181,10 +173,11 @@ export function App() {
 
       try {
         const [stored, status] = await Promise.all([
-          invoke<DesktopSettings>("load_settings"),
-          invoke<RuntimeStatus>("runtime_status"),
+          loadDesktopSettings(),
+          getRuntimeStatus(),
         ]);
         if (!mounted) return;
+        persistedSettingsRef.current = stored;
         setSettings(stored);
         setRuntime(status);
         if (stored.projectPath) {
@@ -197,15 +190,12 @@ export function App() {
           }
         }
 
-        unlistenLog = await listen<LogLine>("preview-log", (event) => {
-          if (mounted) appendLog(event.payload);
+        unlistenLog = await onNativePreviewLog((line) => {
+          if (mounted) appendLog(line);
         });
-        unlistenStatus = await listen<RuntimeStatus>(
-          "runtime-status",
-          (event) => {
-            if (mounted) setRuntime(event.payload);
-          },
-        );
+        unlistenStatus = await onNativeRuntimeStatus((status) => {
+          if (mounted) setRuntime(status);
+        });
       } catch (currentError) {
         if (mounted) setError(errorMessage(currentError));
       } finally {
@@ -260,13 +250,10 @@ export function App() {
     setError(null);
     setNotice(null);
     try {
-      const selection = await open({
-        directory: true,
-        multiple: false,
-        title: "Choisir le projet à tester",
-      });
-      if (!selection || Array.isArray(selection)) return;
-      const inspected = await inspectProject(selection);
+      const inspected = await chooseNativeProject();
+      if (!inspected) return;
+      setProject(inspected);
+      setConsent(false);
       await saveSettings({ ...settings, projectPath: inspected.path });
       setNotice(
         "Projet vérifié. Aucun fichier n’a été modifié et aucun script n’a été exécuté.",
@@ -286,10 +273,7 @@ export function App() {
     setLogs([]);
     try {
       await saveSettings(settings);
-      const status = await invoke<RuntimeStatus>("start_dev_server", {
-        path: project.path,
-        expectedScript: project.devScript,
-      });
+      const status = await startNativeDevServer(project);
       setRuntime(status);
       appendLog({
         stream: "system",
@@ -309,7 +293,7 @@ export function App() {
     setBusy("stop");
     setError(null);
     try {
-      const status = await invoke<RuntimeStatus>("stop_dev_server");
+      const status = await stopNativeDevServer();
       setRuntime(status);
       setProbe(null);
       appendLog({
@@ -346,10 +330,37 @@ export function App() {
     setError(null);
     try {
       await saveSettings(settings);
-      await invoke("open_external", { target });
+      await openNativeExternal(target);
     } catch (currentError) {
       setError(errorMessage(currentError));
     }
+  }
+
+  async function persistControlPlaneUrl() {
+    const candidate = settings;
+    setControlPlaneFeedback(null);
+    const result = await persistControlPlaneSettings({
+      candidate,
+      persisted: persistedSettingsRef.current,
+      save: nativeRuntime
+        ? saveDesktopSettings
+        : async (next) => next,
+    });
+    if (result.ok) {
+      persistedSettingsRef.current = result.settings;
+    }
+    setSettings((current) =>
+      current.controlPlaneUrl === candidate.controlPlaneUrl
+        ? {
+            ...current,
+            controlPlaneUrl: result.settings.controlPlaneUrl,
+          }
+        : current,
+    );
+    setControlPlaneFeedback({
+      tone: result.ok ? "success" : "error",
+      message: result.message,
+    });
   }
 
   return (
@@ -714,7 +725,13 @@ export function App() {
               <label className="field-label" htmlFor="control-plane-url">
                 Instance Revaloop
               </label>
-              <div className="url-field url-field-light">
+              <div
+                className={`url-field url-field-light ${
+                  controlPlaneFeedback?.tone === "error"
+                    ? "url-field-error"
+                    : ""
+                }`}
+              >
                 <span aria-hidden="true">
                   <Globe2 />
                 </span>
@@ -723,15 +740,35 @@ export function App() {
                   type="url"
                   spellCheck="false"
                   value={settings.controlPlaneUrl}
-                  onChange={(event) =>
+                  aria-invalid={controlPlaneFeedback?.tone === "error"}
+                  aria-describedby={
+                    controlPlaneFeedback
+                      ? "control-plane-feedback"
+                      : undefined
+                  }
+                  onChange={(event) => {
+                    setControlPlaneFeedback(null);
                     setSettings((current) => ({
                       ...current,
                       controlPlaneUrl: event.target.value,
-                    }))
-                  }
-                  onBlur={() => void saveSettings(settings)}
+                    }));
+                  }}
+                  onBlur={() => void persistControlPlaneUrl()}
                 />
               </div>
+              {controlPlaneFeedback && (
+                <p
+                  className={`field-feedback field-feedback-${controlPlaneFeedback.tone}`}
+                  id="control-plane-feedback"
+                  role={
+                    controlPlaneFeedback.tone === "error"
+                      ? "alert"
+                      : "status"
+                  }
+                >
+                  {controlPlaneFeedback.message}
+                </p>
+              )}
               <div className="workspace-actions">
                 <button
                   className="primary-button primary-button-light"

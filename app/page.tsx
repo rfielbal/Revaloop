@@ -73,6 +73,7 @@ export default function Home() {
 
           <nav className="flow-site-nav" aria-label="Navigation principale">
             <a href="#produit">Le produit</a>
+            <a href="#desktop">Desktop</a>
             <a href="#confiance">Confiance</a>
             <a href="#opensource">Open source</a>
           </nav>
@@ -89,6 +90,7 @@ export default function Home() {
             </summary>
             <div>
               <a href="#produit">Le produit</a>
+              <a href="#desktop">Desktop</a>
               <a href="#confiance">Confiance</a>
               <a href="#opensource">Open source</a>
               <Link href="/dashboard">Espace développeur</Link>
@@ -315,6 +317,81 @@ export default function Home() {
               ))}
             </ul>
           </article>
+        </div>
+      </section>
+
+      <section className="flow-desktop-section" id="desktop">
+        <div className="desktop-copy">
+          <span>Compagnon local · Electron</span>
+          <h2>Votre projet local, prêt à être revu.</h2>
+          <p>
+            L’application Electron peut déjà être lancée depuis le dépôt, sans
+            réinstaller une nouvelle version à chaque évolution. Elle vous aide
+            à choisir le projet, confirme la commande à exécuter puis ouvre
+            Revaloop dans le navigateur.
+          </p>
+          <div className="desktop-actions">
+            <a
+              className="flow-button desktop-readme-link"
+              href="https://github.com/rfielbal/Revaloop/blob/main/README.md#développement-local--application-desktop"
+            >
+              <Code2 aria-hidden="true" />
+              Lancer depuis le README
+              <span>
+                <ArrowUpRight aria-hidden="true" />
+              </span>
+            </a>
+            <a
+              className="desktop-releases-link"
+              href="https://github.com/rfielbal/Revaloop/releases"
+            >
+              Voir les futures releases
+              <ArrowUpRight aria-hidden="true" />
+            </a>
+          </div>
+          <p className="desktop-release-note">
+            Aucun binaire public pour le moment. La première préversion
+            téléchargeable sera publiée sur GitHub Releases après signature des
+            binaires et notarisation macOS.
+          </p>
+        </div>
+
+        <div
+          className="desktop-window"
+          role="img"
+          aria-label="Aperçu du compagnon desktop Revaloop"
+        >
+          <div className="desktop-window-heading">
+            <span>
+              <MonitorSmartphone aria-hidden="true" />
+            </span>
+            <div>
+              <small>Compagnon local</small>
+              <strong>Revaloop Desktop</strong>
+            </div>
+            <em>Electron</em>
+          </div>
+          <div className="desktop-window-content">
+            <div className="desktop-project-card">
+              <small>Projet sélectionné</small>
+              <strong>mon-projet-client</strong>
+              <span>/projets/mon-projet-client</span>
+            </div>
+            <div className="desktop-command-card">
+              <small>Commande confirmée avant lancement</small>
+              <code>npm --ignore-scripts run dev</code>
+            </div>
+            <div className="desktop-open-row">
+              <span>
+                <Check aria-hidden="true" />
+              </span>
+              <div>
+                <small>Ouverture locale</small>
+                <strong>http://127.0.0.1:3000</strong>
+              </div>
+              <ArrowUpRight aria-hidden="true" />
+            </div>
+          </div>
         </div>
       </section>
 
