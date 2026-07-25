@@ -19,6 +19,10 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import {
+  DEFAULT_CONTROL_PLANE_URL,
+  DEFAULT_PREVIEW_URL,
+} from "../electron/shared/contract";
+import {
   chooseNativeProject,
   getRuntimeStatus,
   hasNativeRuntime,
@@ -37,12 +41,19 @@ import {
   type ProjectInfo,
   type RuntimeStatus,
 } from "./desktop-runtime";
+import {
+  DESKTOP_SECTION_IDS,
+  activeSectionFromPositions,
+  sectionActivationLine,
+  type DesktopSectionId,
+} from "./section-navigation";
 import { persistControlPlaneSettings } from "../electron/shared/control-plane-settings";
+import { persistPreviewSettings } from "../electron/shared/preview-settings";
 
 const DEFAULT_SETTINGS: DesktopSettings = {
   projectPath: null,
-  previewUrl: "http://127.0.0.1:3000",
-  controlPlaneUrl: "http://127.0.0.1:3000",
+  previewUrl: DEFAULT_PREVIEW_URL,
+  controlPlaneUrl: DEFAULT_CONTROL_PLANE_URL,
 };
 
 function errorMessage(error: unknown) {
@@ -88,6 +99,8 @@ export function App() {
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [consent, setConsent] = useState(false);
+  const [activeSection, setActiveSection] =
+    useState<DesktopSectionId>("overview");
   const [busy, setBusy] = useState<string | null>("initialisation");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,12 +109,26 @@ export function App() {
     message: string;
   } | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const mainContainerRef = useRef<HTMLElement>(null);
+  const settingsWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const persistedSettingsRef =
     useRef<DesktopSettings>(DEFAULT_SETTINGS);
 
   const appendLog = useCallback((entry: LogLine) => {
     setLogs((current) => [...current.slice(-249), entry]);
   }, []);
+
+  const enqueueSettingsWrite = useCallback(
+    <T,>(operation: () => Promise<T>): Promise<T> => {
+      const result = settingsWriteQueueRef.current.then(operation);
+      settingsWriteQueueRef.current = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    },
+    [],
+  );
 
   const inspectProject = useCallback(async (path: string) => {
     const inspected = await inspectStoredProject(path);
@@ -112,18 +139,6 @@ export function App() {
     setConsent(false);
     return inspected;
   }, []);
-
-  const saveSettings = useCallback(
-    async (next: DesktopSettings) => {
-      const saved = nativeRuntime
-        ? await saveDesktopSettings(next)
-        : next;
-      persistedSettingsRef.current = saved;
-      setSettings(saved);
-      return saved;
-    },
-    [nativeRuntime],
-  );
 
   const refreshRuntime = useCallback(async () => {
     if (!nativeRuntime) return;
@@ -217,6 +232,54 @@ export function App() {
     }
   }, [logs]);
 
+  useEffect(() => {
+    const main = mainContainerRef.current;
+    if (!main) return;
+
+    let frame: number | null = null;
+    const update = () => {
+      frame = null;
+      const mainStyle = window.getComputedStyle(main);
+      const mainScrolls =
+        mainStyle.overflowY !== "visible" &&
+        main.scrollHeight > main.clientHeight + 1;
+      const activationLine = sectionActivationLine({
+        containerTop: main.getBoundingClientRect().top,
+        containerHeight: main.clientHeight,
+        viewportHeight: window.innerHeight,
+        scrollsInternally: mainScrolls,
+      });
+      const positions = DESKTOP_SECTION_IDS.flatMap((id) => {
+        const section = document.getElementById(id);
+        return section ? [{ id, top: section.getBoundingClientRect().top }] : [];
+      });
+      setActiveSection(
+        activeSectionFromPositions(positions, activationLine),
+      );
+    };
+    const scheduleUpdate = () => {
+      if (frame === null) frame = window.requestAnimationFrame(update);
+    };
+
+    scheduleUpdate();
+    main.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(scheduleUpdate);
+    resizeObserver?.observe(main);
+
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      main.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+      resizeObserver?.disconnect();
+    };
+  }, []);
+
   const localState = useMemo(() => {
     if (runtime.running) {
       return {
@@ -252,9 +315,19 @@ export function App() {
     try {
       const inspected = await chooseNativeProject();
       if (!inspected) return;
+      await enqueueSettingsWrite(async () => {
+        const saved = await saveDesktopSettings({
+          ...persistedSettingsRef.current,
+          projectPath: inspected.path,
+        });
+        persistedSettingsRef.current = saved;
+        setSettings((current) => ({
+          ...current,
+          projectPath: saved.projectPath,
+        }));
+      });
       setProject(inspected);
       setConsent(false);
-      await saveSettings({ ...settings, projectPath: inspected.path });
       setNotice(
         "Projet vérifié. Aucun fichier n’a été modifié et aucun script n’a été exécuté.",
       );
@@ -272,7 +345,6 @@ export function App() {
     setNotice(null);
     setLogs([]);
     try {
-      await saveSettings(settings);
       const status = await startNativeDevServer(project);
       setRuntime(status);
       appendLog({
@@ -307,17 +379,37 @@ export function App() {
     }
   }
 
-  async function persistPreviewUrl() {
-    setBusy("save-url");
+  async function persistPreviewUrl(): Promise<boolean> {
+    const previewUrl = settings.previewUrl;
     setError(null);
-    try {
-      await saveSettings(settings);
+    return enqueueSettingsWrite(async () => {
+      const persisted = persistedSettingsRef.current;
+      const candidate: DesktopSettings = {
+        ...persisted,
+        previewUrl,
+      };
+      const result = await persistPreviewSettings({
+        candidate,
+        persisted,
+        save: nativeRuntime
+          ? saveDesktopSettings
+          : async (next) => next,
+      });
+      if (result.ok) {
+        persistedSettingsRef.current = result.settings;
+      }
+      setSettings((current) =>
+        current.previewUrl === previewUrl
+          ? {
+              ...current,
+              previewUrl: result.settings.previewUrl,
+            }
+          : current,
+      );
       setProbe(null);
-    } catch (currentError) {
-      setError(errorMessage(currentError));
-    } finally {
-      setBusy(null);
-    }
+      if (!result.ok) setError(result.message);
+      return result.ok;
+    });
   }
 
   async function openExternal(
@@ -329,7 +421,11 @@ export function App() {
     }
     setError(null);
     try {
-      await saveSettings(settings);
+      const ready =
+        target === "preview"
+          ? await persistPreviewUrl()
+          : await persistControlPlaneUrl();
+      if (!ready) return;
       await openNativeExternal(target);
     } catch (currentError) {
       setError(errorMessage(currentError));
@@ -337,29 +433,37 @@ export function App() {
   }
 
   async function persistControlPlaneUrl() {
-    const candidate = settings;
+    const controlPlaneUrl = settings.controlPlaneUrl;
     setControlPlaneFeedback(null);
-    const result = await persistControlPlaneSettings({
-      candidate,
-      persisted: persistedSettingsRef.current,
-      save: nativeRuntime
-        ? saveDesktopSettings
-        : async (next) => next,
-    });
-    if (result.ok) {
-      persistedSettingsRef.current = result.settings;
-    }
-    setSettings((current) =>
-      current.controlPlaneUrl === candidate.controlPlaneUrl
-        ? {
-            ...current,
-            controlPlaneUrl: result.settings.controlPlaneUrl,
-          }
-        : current,
-    );
-    setControlPlaneFeedback({
-      tone: result.ok ? "success" : "error",
-      message: result.message,
+    return enqueueSettingsWrite(async () => {
+      const persisted = persistedSettingsRef.current;
+      const candidate: DesktopSettings = {
+        ...persisted,
+        controlPlaneUrl,
+      };
+      const result = await persistControlPlaneSettings({
+        candidate,
+        persisted,
+        save: nativeRuntime
+          ? saveDesktopSettings
+          : async (next) => next,
+      });
+      if (result.ok) {
+        persistedSettingsRef.current = result.settings;
+      }
+      setSettings((current) =>
+        current.controlPlaneUrl === controlPlaneUrl
+          ? {
+              ...current,
+              controlPlaneUrl: result.settings.controlPlaneUrl,
+            }
+          : current,
+      );
+      setControlPlaneFeedback({
+        tone: result.ok ? "success" : "error",
+        message: result.message,
+      });
+      return result.ok;
     });
   }
 
@@ -371,28 +475,52 @@ export function App() {
 
       <aside className="desktop-sidebar">
         <Brand />
-        <p className="sidebar-edition">Compagnon local · alpha</p>
+        <p className="sidebar-edition">Mode local · sans compte</p>
 
         <nav aria-label="Repères de l’application">
-          <a className="sidebar-link active" href="#overview">
+          <a
+            className={`sidebar-link ${activeSection === "overview" ? "active" : ""}`}
+            href="#overview"
+            aria-label="Aperçu — état du poste"
+            aria-current={
+              activeSection === "overview" ? "location" : undefined
+            }
+            onClick={() => setActiveSection("overview")}
+          >
             <Laptop2 aria-hidden="true" />
             <span>
               <strong>Aperçu</strong>
               <small>État du poste</small>
             </span>
           </a>
-          <a className="sidebar-link" href="#project">
+          <a
+            className={`sidebar-link ${activeSection === "project" ? "active" : ""}`}
+            href="#project"
+            aria-label="Projet local — script et preview"
+            aria-current={
+              activeSection === "project" ? "location" : undefined
+            }
+            onClick={() => setActiveSection("project")}
+          >
             <Code2 aria-hidden="true" />
             <span>
               <strong>Projet local</strong>
               <small>Script et preview</small>
             </span>
           </a>
-          <a className="sidebar-link" href="#workspace">
+          <a
+            className={`sidebar-link ${activeSection === "workspace" ? "active" : ""}`}
+            href="#workspace"
+            aria-label="Espace en ligne — navigateur séparé"
+            aria-current={
+              activeSection === "workspace" ? "location" : undefined
+            }
+            onClick={() => setActiveSection("workspace")}
+          >
             <MessageCircleMore aria-hidden="true" />
             <span>
               <strong>Espace en ligne</strong>
-              <small>Retours et invitations</small>
+              <small>Navigateur séparé</small>
             </span>
           </a>
         </nav>
@@ -400,19 +528,23 @@ export function App() {
         <div className="sidebar-security">
           <ShieldCheck aria-hidden="true" />
           <div>
-            <strong>Accès minimal</strong>
+            <strong>Deux espaces séparés</strong>
             <p>
-              Aucun secret Revaloop dans cette interface. Aucun dossier sans
-              sélection explicite.
+              Le projet se lance ici sans compte. La connexion et les retours
+              restent dans le navigateur.
             </p>
           </div>
         </div>
       </aside>
 
-      <main className="desktop-main" id="desktop-content">
+      <main
+        className="desktop-main"
+        id="desktop-content"
+        ref={mainContainerRef}
+      >
         <header className="desktop-topbar" data-tauri-drag-region>
           <div>
-            <span className="eyebrow">Poste développeur</span>
+            <span className="eyebrow">Compagnon local · non connecté</span>
             <h1>Votre boucle locale, sous contrôle.</h1>
           </div>
           <div className={`runtime-pill runtime-pill-${localState.tone}`}>
@@ -449,12 +581,13 @@ export function App() {
             <span className="eyebrow">Le rôle de l’application</span>
             <h2>
               Le code reste ici.
-              <em> Le dialogue reste partagé.</em>
+              <em> Le web reste séparé.</em>
             </h2>
             <p>
-              L’app prépare et surveille votre environnement local. L’espace
-              web garde les invitations, messages et validations accessibles
-              au client sans installation.
+              Cette fenêtre ne possède aucun compte Revaloop. Elle choisit et
+              lance un projet sur ce poste ; l’espace web s’ouvre séparément
+              dans votre navigateur pour la connexion, les invitations et les
+              retours.
             </p>
           </div>
           <div className="trust-path" aria-label="Architecture actuelle">
@@ -483,7 +616,7 @@ export function App() {
                 <Globe2 aria-hidden="true" />
               </span>
               <strong>Espace web</strong>
-              <small>retours partagés</small>
+              <small>navigateur séparé</small>
             </div>
           </div>
         </section>
@@ -509,6 +642,18 @@ export function App() {
                 )}
               </button>
             </header>
+
+            <div className="project-contract" role="note">
+              <ShieldCheck aria-hidden="true" />
+              <div>
+                <strong>Un dossier local, pas un téléversement.</strong>
+                <p>
+                  Choisissez la racine contenant un <code>package.json</code>{" "}
+                  et un script <code>scripts.dev</code>. Aucun fichier du projet
+                  n’est envoyé à Revaloop.
+                </p>
+              </div>
+            </div>
 
             {project ? (
               <div className="project-summary">
@@ -540,7 +685,7 @@ export function App() {
                 </span>
                 <strong>Sélectionner le dossier du projet</strong>
                 <small>
-                  Seul son package.json sera inspecté avant votre confirmation.
+                  La racine doit déclarer package.json → scripts.dev.
                 </small>
               </button>
             )}
@@ -715,13 +860,25 @@ export function App() {
         <section className="workspace-section" id="workspace">
           <article className="workspace-card">
             <div className="workspace-copy">
-              <span className="eyebrow">Espace en ligne</span>
-              <h2>Retrouvez les retours sans déplacer la session.</h2>
+              <span className="eyebrow">Espace web séparé</span>
+              <h2>Connexion et retours restent dans votre navigateur.</h2>
               <p>
-                L’authentification web reste dans votre navigateur. L’app
-                desktop ne lit ni votre mot de passe, ni vos cookies, ni le
-                secret d’une invitation cliente.
+                Cette application native ne possède pas de session Revaloop,
+                n’upload aucun projet et n’affiche pas encore les retours.
+                Les boutons ci-dessous ouvrent le site dans le navigateur, où
+                le compte et les cookies restent isolés de l’application.
               </p>
+              <div className="workspace-boundary" role="note">
+                <KeyRound aria-hidden="true" />
+                <div>
+                  <strong>Vous n’êtes pas connecté dans l’application.</strong>
+                  <p>
+                    Une connexion ouverte dans le navigateur n’est pas importée
+                    dans le compagnon. L’accès dépend aussi des droits de
+                    l’instance choisie.
+                  </p>
+                </div>
+              </div>
               <label className="field-label" htmlFor="control-plane-url">
                 Instance Revaloop
               </label>
@@ -756,6 +913,10 @@ export function App() {
                   onBlur={() => void persistControlPlaneUrl()}
                 />
               </div>
+              <p className="workspace-instance-help">
+                Cette origine vise le service Revaloop, jamais la preview locale.
+                Vous pouvez la remplacer par votre propre instance HTTPS.
+              </p>
               {controlPlaneFeedback && (
                 <p
                   className={`field-feedback field-feedback-${controlPlaneFeedback.tone}`}
@@ -776,7 +937,7 @@ export function App() {
                   onClick={() => void openExternal("dashboard")}
                   disabled={!nativeRuntime}
                 >
-                  Ouvrir mes retours
+                  Ouvrir le tableau de bord web
                   <ArrowUpRight aria-hidden="true" />
                 </button>
                 <button
@@ -786,7 +947,7 @@ export function App() {
                   disabled={!nativeRuntime}
                 >
                   <KeyRound aria-hidden="true" />
-                  Se connecter
+                  Se connecter sur le web
                 </button>
               </div>
             </div>

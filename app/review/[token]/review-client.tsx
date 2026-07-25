@@ -194,6 +194,8 @@ export function ReviewClient({
   const loadedPreviewRevisionRef = useRef(
     initialReview.release.previewRevision ?? 0,
   );
+  const reviewMutationVersionRef = useRef(0);
+  const activeReviewMutationsRef = useRef(0);
   const testPoints = review.testItems ?? [];
   const messages = review.messages ?? [];
   const selectedFeedback =
@@ -220,6 +222,22 @@ export function ReviewClient({
     };
   });
 
+  function beginReviewMutation() {
+    let finished = false;
+    activeReviewMutationsRef.current += 1;
+    reviewMutationVersionRef.current += 1;
+
+    return () => {
+      if (finished) return;
+      finished = true;
+      activeReviewMutationsRef.current = Math.max(
+        0,
+        activeReviewMutationsRef.current - 1,
+      );
+      reviewMutationVersionRef.current += 1;
+    };
+  }
+
   useEffect(() => {
     if (experienceMode === "demo") {
       return;
@@ -227,57 +245,70 @@ export function ReviewClient({
 
     let cancelled = false;
 
-    const refresh = () =>
-      fetch(`/api/review/${encodeURIComponent(token)}`, { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as {
-            error?: string;
-          } | null;
-          const error = new Error(
-            payload?.error ?? "Cet espace de test est indisponible.",
-          );
-          if (response.status === 410) {
-            error.name = "ExpiredReview";
-          } else if ([401, 403, 404].includes(response.status)) {
-            error.name = "MissingReview";
-          } else {
-            error.name = "TemporaryReview";
-          }
-          throw error;
-        }
-        return (await response.json()) as ReviewPayload;
-      })
-      .then((payload) => {
-        if (!cancelled) {
-          if (
-            (payload.release.previewRevision ?? 0) >
-            loadedPreviewRevisionRef.current
-          ) {
-            setPreviewUpdateAvailable(true);
-          }
-          setReview(payload);
-          setAccessError(null);
-        }
-      })
-      .catch((error: Error) => {
-        if (!cancelled) {
-          if (error.name === "TemporaryReview") {
-            setToast(
-              "Connexion momentanément interrompue. Votre espace reste ouvert et une nouvelle tentative est en cours.",
-            );
-            return;
-          }
+    const refresh = () => {
+      const mutationVersion = reviewMutationVersionRef.current;
 
-          setAccessError({
-            title:
-              error.name === "ExpiredReview"
-                ? "Ce lien a expiré"
-                : "Cette version n’est pas disponible",
-            message: error.message,
-          });
-        }
-      });
+      return fetch(`/api/review/${encodeURIComponent(token)}`, {
+        cache: "no-store",
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            const payload = (await response.json().catch(() => null)) as {
+              error?: string;
+            } | null;
+            const error = new Error(
+              payload?.error ?? "Cet espace de test est indisponible.",
+            );
+            if (response.status === 410) {
+              error.name = "ExpiredReview";
+            } else if ([401, 403, 404].includes(response.status)) {
+              error.name = "MissingReview";
+            } else {
+              error.name = "TemporaryReview";
+            }
+            throw error;
+          }
+          return (await response.json()) as ReviewPayload;
+        })
+        .then((payload) => {
+          if (
+            !cancelled &&
+            mutationVersion === reviewMutationVersionRef.current &&
+            activeReviewMutationsRef.current === 0
+          ) {
+            if (
+              (payload.release.previewRevision ?? 0) >
+              loadedPreviewRevisionRef.current
+            ) {
+              setPreviewUpdateAvailable(true);
+            }
+            setReview(payload);
+            setAccessError(null);
+          }
+        })
+        .catch((error: Error) => {
+          if (
+            !cancelled &&
+            mutationVersion === reviewMutationVersionRef.current &&
+            activeReviewMutationsRef.current === 0
+          ) {
+            if (error.name === "TemporaryReview") {
+              setToast(
+                "Connexion momentanément interrompue. Votre espace reste ouvert et une nouvelle tentative est en cours.",
+              );
+              return;
+            }
+
+            setAccessError({
+              title:
+                error.name === "ExpiredReview"
+                  ? "Ce lien a expiré"
+                  : "Cette version n’est pas disponible",
+              message: error.message,
+            });
+          }
+        });
+    };
 
     refresh();
     const interval = window.setInterval(refresh, 5_000);
@@ -532,6 +563,8 @@ export function ReviewClient({
       return;
     }
 
+    const finishReviewMutation = beginReviewMutation();
+
     try {
       const response = await fetch(`/api/review/${encodeURIComponent(token)}`, {
         method: "POST",
@@ -553,6 +586,8 @@ export function ReviewClient({
           : [...current, testItemId],
       );
       setToast("Ce point n’a pas pu être enregistré. Réessayez.");
+    } finally {
+      finishReviewMutation();
     }
   }
 
@@ -571,7 +606,7 @@ export function ReviewClient({
         : null;
     setShowReservation(false);
     setShowFinishDialog(false);
-    setMode("comment");
+    setMode("browse");
     setComposer({
       x: null,
       y: null,
@@ -620,6 +655,8 @@ export function ReviewClient({
       return;
     }
 
+    const finishReviewMutation =
+      experienceMode === "live" ? beginReviewMutation() : () => undefined;
     setIsSubmitting(true);
 
     try {
@@ -699,6 +736,7 @@ export function ReviewClient({
           : "Le retour n’a pas encore pu être envoyé. Votre texte reste dans le formulaire.",
       );
     } finally {
+      finishReviewMutation();
       setIsSubmitting(false);
     }
   }
@@ -729,6 +767,8 @@ export function ReviewClient({
       return;
     }
 
+    const finishReviewMutation =
+      experienceMode === "live" ? beginReviewMutation() : () => undefined;
     setIsSubmitting(true);
     try {
       if (experienceMode === "demo") {
@@ -784,6 +824,7 @@ export function ReviewClient({
           : "Le message n’a pas pu être envoyé. Votre texte est conservé.",
       );
     } finally {
+      finishReviewMutation();
       setIsSubmitting(false);
     }
   }
@@ -796,6 +837,8 @@ export function ReviewClient({
       return;
     }
 
+    const finishReviewMutation =
+      experienceMode === "live" ? beginReviewMutation() : () => undefined;
     setIsSubmitting(true);
     try {
       if (experienceMode === "demo") {
@@ -852,6 +895,7 @@ export function ReviewClient({
           : "La décision n’a pas pu être enregistrée. Réessayez.",
       );
     } finally {
+      finishReviewMutation();
       setIsSubmitting(false);
     }
   }
@@ -864,6 +908,8 @@ export function ReviewClient({
       return;
     }
 
+    const finishReviewMutation =
+      experienceMode === "live" ? beginReviewMutation() : () => undefined;
     setIsSubmitting(true);
     try {
       if (experienceMode === "demo") {
@@ -918,6 +964,7 @@ export function ReviewClient({
           : "La mise à jour a échoué. Réessayez.",
       );
     } finally {
+      finishReviewMutation();
       setIsSubmitting(false);
     }
   }
@@ -931,6 +978,7 @@ export function ReviewClient({
       return;
     }
 
+    const finishReviewMutation = beginReviewMutation();
     setIsSubmitting(true);
 
     try {
@@ -950,8 +998,10 @@ export function ReviewClient({
         );
       }
 
+      finishReviewMutation();
       window.location.replace("/");
     } catch (error) {
+      finishReviewMutation();
       setToast(
         error instanceof Error
           ? error.message

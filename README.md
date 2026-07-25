@@ -21,13 +21,17 @@ reste valide.
 
 - compte développeur Revaloop par e-mail et mot de passe ;
 - mot de passe dérivé avec PBKDF2-SHA-256 Web Crypto, sel aléatoire et
-  600 000 itérations ;
+  100 000 itérations, soit le maximum accepté par le runtime Workers actuel ;
 - session développeur opaque, stockée hachée et portée par un cookie
   `HttpOnly`, `Secure` en production, `SameSite=Strict`, valable 30 jours ;
 - inscription ouverte uniquement pour initialiser la première identité de
   l’instance, puis fermée, sauf si `REVALOOP_ALLOW_REGISTRATION=true` ;
+- confirmation du mot de passe contrôlée dans le formulaire et à nouveau dans
+  l’API ;
 - espaces, projets et données isolés par organisation ;
 - création de projets et de versions de recette ;
+- consultation de l’historique des versions, retours, messages et décisions
+  depuis le dashboard ;
 - preview HTTPS externe affichée dans un viewport desktop, tablette ou mobile ;
 - exploration libre comme parcours principal ;
 - vérifications suggérées persistées mais entièrement optionnelles ;
@@ -87,13 +91,16 @@ reste valide.
   `NODE_OPTIONS`, l’inspection CLI et le chargement hors ASAR.
 
 Cette première alpha est un compagnon développeur, pas encore le tunnel. Elle
-n’appelle pas l’API Revaloop et ne stocke aucun credential. Le client continue
-d’utiliser le site sans rien installer.
+n’appelle pas encore l’API Revaloop, ne stocke aucun credential et n’affiche pas
+les retours dans sa fenêtre native. Les actions « connexion » et « retours »
+ouvrent l’instance web configurée dans le navigateur système. Le client
+continue d’utiliser le site sans rien installer.
 
-Le runtime Tauri 2 historique reste maintenu comme fallback explicite. Il
-partage la même interface et les mêmes invariants métier, mais `desktop:dev`
-lance désormais Electron afin d’accélérer la boucle locale sans installation ni
-réinstallation d’un binaire. Voir
+Le runtime Tauri 2 historique reste maintenu comme fallback de compatibilité
+pour la SPA, mais il n’offre pas encore l’autorité du chemin dans le processus
+principal ni la confirmation native à usage unique d’Electron. Utilisez
+`desktop:dev` pour lancer un projet ; ce chemin Electron accélère aussi la boucle
+locale sans installation ni réinstallation d’un binaire. Voir
 [ADR-0006](docs/adr/0006-electron-development-runtime.md).
 
 Le compagnon fournit `HOST=127.0.0.1` au processus, mais le script du projet
@@ -145,7 +152,7 @@ exporte la recette
 | `POST /api/auth/register` | bootstrap ou inscription activée | crée un compte et une session développeur |
 | `POST /api/auth/login` | public, même origine | ouvre une session développeur |
 | `POST /api/auth/logout` | session développeur | révoque la session et efface le cookie |
-| `GET /api/workspace` | développeur | charge l’espace et le projet actif |
+| `GET /api/workspace?project=…&release=…` | développeur | charge un projet et une version autorisés, avec leur historique |
 | `POST /api/projects` | développeur | crée un projet et sa première release |
 | `POST /api/projects/[id]/releases` | développeur | publie une release |
 | `DELETE /api/projects/[id]` | propriétaire | supprime le projet |
@@ -283,7 +290,7 @@ Compagnon desktop Electron
 └── ouverture du plan de revue dans le navigateur système
 
 Fallback Tauri 2
-└── même SPA et mêmes invariants métier, runtime alternatif maintenu
+└── même SPA, backend historique sans parité de sécurité avec Electron
 
 Preview HTTPS tierce
 └── chargée directement par le navigateur, jamais proxifiée par Revaloop
@@ -307,14 +314,28 @@ fermée. Pour une instance réellement multi-utilisateur, activez explicitement
 `REVALOOP_ALLOW_REGISTRATION=true` en connaissance du fait que toute personne
 qui atteint `/register` pourra alors créer son propre espace.
 
+Sur Sites, l’identité transmise par l’ingress n’est acceptée pour reprendre un
+espace historique que si le hostname de la requête correspond exactement à
+`REVALOOP_TRUSTED_SITES_HOSTNAME`. Sans variable, le dépôt utilise l’origine
+Sites officielle de cette instance comme valeur par défaut.
+
 Lors de la migration d’une instance 0.2 contenant déjà un espace, initialisez
 le credential avec l’adresse e-mail exacte du compte développeur historique.
-Revaloop refuse une autre adresse au lieu de créer silencieusement un second
+Si l’ancien compte porte un placeholder `@revaloop.local`, le déploiement Sites
+privé peut le reprendre avec l’adresse authentifiée de son propriétaire.
+Revaloop refuse les autres identités au lieu de créer silencieusement un second
 tenant vide. Gardez l’instance en accès propriétaire pendant cette reprise.
 
 Le binding D1 local se nomme `DB`. Le repository crée les tables manquantes
 pour le développement et les mêmes évolutions sont versionnées dans
 `drizzle/`.
+
+Pour un test d’intégration sans toucher à la base locale habituelle, choisissez
+un répertoire d’état jetable :
+
+```bash
+REVALOOP_LOCAL_STATE_PATH=.wrangler/test-state npm run dev
+```
 
 Commandes de validation :
 
@@ -347,12 +368,14 @@ changements du renderer suivent la boucle Vite sans installation d’application
 
 Dans la fenêtre Revaloop :
 
-1. choisissez le dossier du projet ;
+1. choisissez un dossier dont le `package.json` racine déclare un script
+   `dev` — il s’agit d’une sélection locale, pas d’un téléversement ;
 2. vérifiez le script affiché ;
 3. confirmez explicitement son exécution ;
 4. lancez le projet ;
 5. conservez `http://127.0.0.1:3000` ou indiquez son vrai port ;
-6. utilisez « Ouvrir mes retours » pour retrouver le site dans le navigateur.
+6. utilisez « Ouvrir le tableau de bord web » pour retrouver l’instance
+   configurée dans le navigateur et vous y connecter.
 
 Validation et build local :
 
@@ -370,14 +393,19 @@ conviennent à une vérification locale, pas à une distribution publique. La
 première préversion téléchargeable exige des pipelines de signature par OS et
 une notarisation macOS.
 
-Le runtime Tauri 2 reste disponible comme fallback. Il exige Rust stable, Cargo
-et les outils natifs de la plateforme :
+Le runtime Tauri 2 reste disponible pour la compatibilité et la comparaison de
+runtimes. Il exige Rust stable, Cargo et les outils natifs de la plateforme :
 
 ```bash
 npm run desktop:tauri:dev
 npm run desktop:tauri:check
 npm run desktop:tauri:build
 ```
+
+Ce backend historique relit bien `package.json` et borne la cible locale, mais
+le renderer lui transmet encore le chemin au lancement et aucune confirmation
+native indépendante n’est demandée. Ne l’utilisez pas pour exécuter un dépôt
+non fiable ; le chemin recommandé reste `npm run desktop:dev`.
 
 ## Sécurité et données
 

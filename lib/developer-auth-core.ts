@@ -1,7 +1,21 @@
 export const DEVELOPER_PASSWORD_MIN_LENGTH = 12;
 export const DEVELOPER_PASSWORD_MAX_LENGTH = 128;
-export const DEVELOPER_PASSWORD_ITERATIONS = 600_000;
+// Le runtime Web Crypto de Cloudflare Workers refuse actuellement les valeurs
+// supérieures à 100 000. Garder cette constante alignée sur le runtime réel
+// évite qu'une inscription valide en Node échoue une fois déployée.
+export const DEVELOPER_PASSWORD_ITERATIONS = 100_000;
 export const DEVELOPER_SESSION_DURATION_SECONDS = 30 * 24 * 60 * 60;
+export const SITES_AUTHENTICATED_EMAIL_HEADER =
+  "oai-authenticated-user-email";
+export const DEFAULT_REVALOOP_SITES_HOSTNAME =
+  "revaloop-rfielbal.moulbyte.chatgpt.site";
+
+export function trustedSitesHostname() {
+  return (
+    process.env.REVALOOP_TRUSTED_SITES_HOSTNAME?.trim().toLowerCase() ||
+    DEFAULT_REVALOOP_SITES_HOSTNAME
+  );
+}
 
 const LOCAL_COOKIE_NAME = "revaloop_developer";
 const PRODUCTION_COOKIE_NAME = "__Host-revaloop_developer";
@@ -42,6 +56,54 @@ export function normalizeDeveloperEmail(value: unknown) {
   return email;
 }
 
+export function canonicalRequestHostname(headers: Pick<Headers, "get">) {
+  const host = headers.get("host")?.trim().toLowerCase();
+
+  if (!host || /[\s,/@\\?#]/.test(host)) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(`https://${host}`);
+
+    if (
+      parsed.username ||
+      parsed.password ||
+      parsed.pathname !== "/" ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return "";
+    }
+
+    return parsed.hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+export function isLoopbackRequestHostname(hostname: string) {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname === "[::1]"
+  );
+}
+
+export function sitesAuthenticatedEmailFromHeaders(
+  headers: Pick<Headers, "get">,
+) {
+  if (canonicalRequestHostname(headers) !== trustedSitesHostname()) {
+    return null;
+  }
+
+  return (
+    normalizeDeveloperEmail(headers.get(SITES_AUTHENTICATED_EMAIL_HEADER)) ||
+    null
+  );
+}
+
 export function validateDeveloperPassword(value: unknown) {
   if (typeof value !== "string") {
     throw new DeveloperAuthError(
@@ -61,6 +123,24 @@ export function validateDeveloperPassword(value: unknown) {
   }
 
   return value;
+}
+
+export function validateDeveloperPasswordConfirmation(
+  password: unknown,
+  passwordConfirmation: unknown,
+) {
+  const validatedPassword = validateDeveloperPassword(password);
+
+  if (
+    typeof passwordConfirmation !== "string" ||
+    validatedPassword !== passwordConfirmation
+  ) {
+    throw new DeveloperAuthError(
+      "Les deux mots de passe ne correspondent pas.",
+    );
+  }
+
+  return validatedPassword;
 }
 
 export function safeAuthReturnPath(
@@ -195,7 +275,7 @@ export async function verifyDeveloperPassword(
     salt.length < 16 ||
     !Number.isInteger(stored.passwordIterations) ||
     stored.passwordIterations < 100_000 ||
-    stored.passwordIterations > 2_000_000
+    stored.passwordIterations > DEVELOPER_PASSWORD_ITERATIONS
   ) {
     return false;
   }

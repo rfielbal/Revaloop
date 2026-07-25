@@ -63,6 +63,45 @@ test("ne transmet ni n’affiche de catégorie imposée pour un retour client", 
   assert.doesNotMatch(dashboard, />\s*(?:Type|Importance)\s*</);
 });
 
+test("un retour général n’active pas le mode d’annotation visuelle", async () => {
+  const reviewClient = await source(
+    "../app/review/[token]/review-client.tsx",
+  );
+  const generalFeedbackHandler = between(
+    reviewClient,
+    "function openGeneralFeedback",
+    "async function togglePreviewExpansion",
+  );
+
+  assert.match(generalFeedbackHandler, /setMode\("browse"\)/);
+  assert.doesNotMatch(generalFeedbackHandler, /setMode\("comment"\)/);
+  assert.match(
+    generalFeedbackHandler,
+    /general:\s*true/,
+  );
+});
+
+test("le contrôle de visibilité du mot de passe reste hors de son libellé", async () => {
+  const authForm = await source("../app/auth/auth-form.tsx");
+  const passwordField = between(
+    authForm,
+    '<div className={styles.field}>',
+    "{isRegistration ? (",
+  );
+
+  assert.match(
+    passwordField,
+    /<label htmlFor="auth-password">Mot de passe<\/label>/,
+  );
+  assert.match(passwordField, /id="auth-password"/);
+  assert.match(passwordField, /aria-label=\{[\s\S]*Afficher le mot de passe/);
+  assert.ok(
+    passwordField.indexOf("</label>") <
+      passwordField.indexOf("<button"),
+    "Le libellé doit être fermé avant le bouton de visibilité.",
+  );
+});
+
 test("conserve les coordonnées de 0 à 100 avec une précision au centième", async () => {
   const [reviewClient, reviewerRoute] = await Promise.all([
     source("../app/review/[token]/review-client.tsx"),
@@ -171,16 +210,17 @@ test("désactive les actions développeur lorsque la release n’est plus active
   );
 });
 
-test("refuse de créer un nouveau tenant à côté d’un espace legacy", async () => {
-  const repository = await source("../db/repository.ts");
+test("ne reprend un espace legacy qu’avec une identité Sites vérifiée", async () => {
+  const [repository, registerRoute] = await Promise.all([
+    source("../db/repository.ts"),
+    source("../app/api/auth/register/route.ts"),
+  ]);
   const registration = between(
     repository,
     "export async function registerDeveloperCredential",
     "export async function createDeveloperSession",
   );
-  const guardStart = registration.indexOf(
-    "if (!input.allowAdditional && !existingUser)",
-  );
+  const guardStart = registration.indexOf("const credential = await db");
   const identityCreation = registration.indexOf("const identityDigest");
   const writes = registration.indexOf("const results = await db.batch");
 
@@ -191,23 +231,179 @@ test("refuse de créer un nouveau tenant à côté d’un espace legacy", async 
   );
   assert.match(
     registration,
-    /SELECT id FROM app_users WHERE email = \? LIMIT 1/,
+    /SELECT[\s\S]*app_users\.id,[\s\S]*app_users\.email,[\s\S]*AS has_membership[\s\S]*WHERE app_users\.email = \?/,
   );
 
   const legacyGuard = registration.slice(guardStart, identityCreation);
-  assert.match(
-    legacyGuard,
-    /FROM app_users[\s\S]*FROM organization_members[\s\S]*organization_members\.user_id = app_users\.id/,
-  );
-  assert.match(legacyGuard, /\(legacyUsers\?\.count \?\? 0\) > 0/);
+  assert.match(legacyGuard, /SELECT COUNT\(\*\) AS count FROM developer_credentials/);
+  assert.match(legacyGuard, /sitesAuthenticatedEmail === normalizedEmail/);
+  assert.match(legacyGuard, /isLegacyLocalEmail\(legacyUsers\.results\[0\]\.email\)/);
+  assert.match(legacyGuard, /legacyUsers\.results\.length === 1/);
+  assert.match(legacyGuard, /LIMIT 2/);
   assert.match(legacyGuard, /throw new ReviewConflictError/);
   assert.match(
-    legacyGuard,
-    /Utilisez l’adresse e-mail du compte développeur historique/,
+    registration,
+    /SET email = \?, display_name = \?, last_seen_at = \?[\s\S]*WHERE id = \?[\s\S]*AND email = \?/,
   );
-
   assert.match(
     registration,
     /INSERT INTO developer_credentials[\s\S]*WHERE app_users\.id = \?[\s\S]*AND app_users\.email = \?[\s\S]*EXISTS \([\s\S]*FROM organization_members/,
+  );
+  assert.match(
+    registerRoute,
+    /passwordConfirmation:[\s\S]*body\.passwordConfirmation/,
+  );
+  assert.match(
+    registerRoute,
+    /sitesAuthenticatedEmailFromHeaders\(\s*request\.headers/,
+  );
+});
+
+test("conserve et permet de consulter les retours de chaque version autorisée", async () => {
+  const [repository, workspaceRoute, dashboard, dashboardPage, reviewClient] =
+    await Promise.all([
+      source("../db/repository.ts"),
+      source("../app/api/workspace/route.ts"),
+      source("../app/dashboard/dashboard-client.tsx"),
+      source("../app/dashboard/page.tsx"),
+      source("../app/review/[token]/review-client.tsx"),
+    ]);
+  const workspaceRepository = between(
+    repository,
+    "export async function getDeveloperWorkspace",
+    "export type ReleaseInput",
+  );
+  const releaseHistoryQuery = between(
+    workspaceRepository,
+    "const releaseResult = await db",
+    "const release = preferredReleaseId",
+  );
+  const payloadLoader = between(
+    repository,
+    "async function loadReviewPayload",
+    "export async function getDeveloperWorkspace",
+  );
+  const releaseSubmission = between(
+    dashboard,
+    "async function submitRelease",
+    "async function submitInvitation",
+  );
+  const releaseCreation = between(
+    repository,
+    "export async function createRelease(",
+    "export async function createInvitation",
+  );
+  const invitationRevocation = between(
+    releaseCreation,
+    "`UPDATE review_invitations",
+    ".bind(now, projectId)",
+  );
+  const sessionRevocation = between(
+    releaseCreation,
+    "`UPDATE reviewer_sessions",
+    ".bind(now, projectId)",
+  );
+
+  assert.match(
+    workspaceRepository,
+    /preferredReleaseId\?: string \| null/,
+  );
+  assert.match(
+    releaseHistoryQuery,
+    /WHERE project_id = \?[\s\S]*ORDER BY created_at DESC, id DESC/,
+  );
+  assert.match(releaseHistoryQuery, /\.all<ReleaseRow>\(\)/);
+  assert.doesNotMatch(releaseHistoryQuery, /\bLIMIT 1\b/);
+  assert.match(
+    workspaceRepository,
+    /releaseResult\.results\.find\([\s\S]*candidate\.id === preferredReleaseId/,
+  );
+  assert.match(
+    workspaceRepository,
+    /preferredReleaseId && !release[\s\S]*throw new ReviewNotFoundError\("Version introuvable\."\)/,
+  );
+  assert.match(workspaceRepository, /\breleases,\s*\n\s*activeReview,/);
+
+  assert.match(
+    payloadLoader,
+    /FROM review_feedback[\s\S]*\.bind\(input\.release\.id\)/,
+  );
+  assert.match(
+    payloadLoader,
+    /FROM release_messages[\s\S]*\.bind\(input\.release\.id\)/,
+  );
+
+  assert.match(
+    workspaceRoute,
+    /searchParams\.get\("release"\)/,
+  );
+  assert.match(
+    workspaceRoute,
+    /releaseId !== null && !resourceIdPattern\.test\(releaseId\)/,
+  );
+  assert.match(
+    workspaceRoute,
+    /getDeveloperWorkspace\(\s*identity,\s*projectId,\s*releaseId,/,
+  );
+  assert.match(workspaceRoute, /repositoryErrorResponse\(error\)/);
+
+  assert.match(
+    dashboard,
+    /searchParams\.set\("release", requestedReleaseId\)/,
+  );
+  assert.match(
+    dashboard,
+    /async function selectRelease\(releaseId: string\)[\s\S]*refreshWorkspace\(releaseId\)/,
+  );
+  assert.match(
+    dashboard,
+    /id="release-selector"[\s\S]*value=\{review\.release\.id\}[\s\S]*workspace\.releases\.map/,
+  );
+  assert.match(
+    releaseSubmission,
+    /response\.json\(\)[\s\S]*releaseId: string[\s\S]*refreshWorkspace\(result\.releaseId\)/,
+  );
+
+  assert.match(invitationRevocation, /WHERE project_id = \?/);
+  assert.match(sessionRevocation, /WHERE project_id = \?/);
+  assert.doesNotMatch(
+    `${invitationRevocation}\n${sessionRevocation}`,
+    /status IN \('in_review', 'changes_requested'\)/,
+  );
+
+  assert.match(dashboard, /workspaceRequestSequenceRef = useRef\(0\)/);
+  assert.match(
+    dashboard,
+    /requestSequence !== workspaceRequestSequenceRef\.current[\s\S]*return null/,
+  );
+  assert.match(
+    dashboard,
+    /current\.activeReview\?\.release\.id === targetReleaseId[\s\S]*updated\.releaseId === targetReleaseId/,
+  );
+  assert.match(
+    dashboard,
+    /current\.activeReview\?\.release\.id !== targetReleaseId[\s\S]*message\.releaseId !== targetReleaseId/,
+  );
+  assert.match(dashboard, /window\.history\.pushState\(null, "", nextUrl\)/);
+  assert.match(dashboard, /addEventListener\("popstate"/);
+
+  assert.match(
+    dashboardPage,
+    /searchParams: Promise<\{ project\?: string; release\?: string \}>/,
+  );
+  assert.match(
+    dashboardPage,
+    /getDeveloperWorkspace\([\s\S]*project,\s*release,/,
+  );
+
+  assert.match(reviewClient, /reviewMutationVersionRef = useRef\(0\)/);
+  assert.match(reviewClient, /activeReviewMutationsRef = useRef\(0\)/);
+  assert.match(
+    reviewClient,
+    /const mutationVersion = reviewMutationVersionRef\.current[\s\S]*mutationVersion === reviewMutationVersionRef\.current[\s\S]*activeReviewMutationsRef\.current === 0/,
+  );
+  assert.match(
+    reviewClient,
+    /async function submitFeedback[\s\S]*beginReviewMutation\(\)[\s\S]*finishReviewMutation\(\)/,
   );
 });

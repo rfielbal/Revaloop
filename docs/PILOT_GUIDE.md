@@ -99,10 +99,15 @@ Si cette base provient de Revaloop 0.2 et contient déjà un espace, utilisez
 l’adresse e-mail exacte du compte développeur historique à l’étape 2. Une
 adresse différente est refusée afin de ne pas fermer le bootstrap sur un tenant
 vide. Effectuez toujours cette reprise tant que le Site reste globalement privé.
+Pour un compte placeholder `@revaloop.local`, vérifiez également que
+`REVALOOP_TRUSTED_SITES_HOSTNAME` correspond exactement au hostname du Site :
+l’adresse authentifiée par Sites remplacera le placeholder sans déplacer les
+projets.
 
 Revaloop dérive le mot de passe avec PBKDF2-SHA-256 Web Crypto, sel aléatoire
-et 600 000 itérations. La session opaque est stockée hachée et son cookie
-`HttpOnly`, `Secure`, `SameSite=Strict` expire après 30 jours.
+et 100 000 itérations, maximum accepté par le runtime Workers actuel. La
+session opaque est stockée hachée et son cookie `HttpOnly`, `Secure`,
+`SameSite=Strict` expire après 30 jours.
 
 Pour un pilote distant, l’instance doit être accessible publiquement tout en
 conservant :
@@ -221,9 +226,10 @@ puis la cliente peut transmettre un nouveau bilan et enfin approuver.
 
 Revaloop bloque la publication d’une nouvelle release tant que la release
 courante non expirée est `in_review` ou `changes_requested`. Une nouvelle
-version devient possible seulement après approbation ou expiration. Après
-expiration, la publication suivante révoque les anciens accès restants et
-classe cette release comme remplacée.
+version devient possible seulement après approbation ou expiration. La
+publication suivante révoque alors toutes les invitations et sessions des
+versions antérieures du projet. Une release approuvée reste dans l’historique
+développeur ; une release seulement expirée est classée comme remplacée.
 
 ## 8. Terminer
 

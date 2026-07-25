@@ -18,7 +18,7 @@ import {
   hashDeveloperPassword,
   normalizeDeveloperEmail,
   performDummyDeveloperPasswordCheck,
-  validateDeveloperPassword,
+  validateDeveloperPasswordConfirmation,
   verifyDeveloperPassword,
 } from "./developer-auth-core";
 import { generateSecret, parseCookies, sha256 } from "./security";
@@ -50,6 +50,9 @@ export async function registerDeveloper(input: {
   displayName: string;
   email: string;
   password: string;
+  passwordConfirmation: string;
+  sitesAuthenticatedEmail?: string | null;
+  allowLocalPlaceholderRecovery?: boolean;
 }) {
   if (!(await developerRegistrationIsOpen())) {
     throw new DeveloperAuthError(
@@ -72,13 +75,29 @@ export async function registerDeveloper(input: {
     throw new DeveloperAuthError("L’adresse e-mail n’est pas valide.");
   }
 
-  const password = validateDeveloperPassword(input.password);
+  const sitesAuthenticatedEmail = normalizeDeveloperEmail(
+    input.sitesAuthenticatedEmail,
+  );
+
+  if (sitesAuthenticatedEmail && sitesAuthenticatedEmail !== email) {
+    throw new DeveloperAuthError(
+      "Utilisez l’adresse e-mail confirmée par l’accès privé de cette instance.",
+    );
+  }
+
+  const password = validateDeveloperPasswordConfirmation(
+    input.password,
+    input.passwordConfirmation,
+  );
   const passwordRecord = await hashDeveloperPassword(password);
   const identity = await registerDeveloperCredential({
     email,
     displayName,
     ...passwordRecord,
     allowAdditional: process.env.REVALOOP_ALLOW_REGISTRATION === "true",
+    sitesAuthenticatedEmail: sitesAuthenticatedEmail || null,
+    allowLocalPlaceholderRecovery:
+      input.allowLocalPlaceholderRecovery === true,
   });
   const credential = await getDeveloperCredential(identity.email);
 

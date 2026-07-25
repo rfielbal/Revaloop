@@ -41,8 +41,9 @@ Objectifs de réponse, sans engagement de niveau de service :
 ### Développeur
 
 - authentification first-party Revaloop par e-mail et mot de passe ;
-- PBKDF2-SHA-256 via Web Crypto, sel aléatoire de 16 octets et 600 000
-  itérations pour les nouveaux mots de passe ;
+- PBKDF2-SHA-256 via Web Crypto, sel aléatoire de 16 octets et 100 000
+  itérations pour les nouveaux mots de passe, maximum actuellement compatible
+  avec le runtime Workers ;
 - mot de passe limité à 12–128 caractères ;
 - token de session opaque aléatoire, uniquement son SHA-256 en D1 ;
 - cookie `__Host-revaloop_developer` en production, `HttpOnly`, `Secure`,
@@ -53,8 +54,11 @@ Objectifs de réponse, sans engagement de niveau de service :
 - limites de débit par adresse réseau et par compte ;
 - inscription bootstrap ouverte uniquement tant qu’aucun credential
   développeur n’existe ;
+- reprise d’un compte de migration `@revaloop.local` uniquement lorsque
+  l’adresse soumise correspond à l’identité authentifiée par l’ingress Sites
+  et au hostname exact explicitement approuvé ;
 - réouverture volontaire possible avec
-  `REVALOOP_ALLOW_REGISTRATION=true` ;
+  `REVALOOP_ALLOW_REGISTRATION=true`, uniquement pour de nouveaux e-mails ;
 - création d’un espace isolé par identité ;
 - autorisation par organisation, projet, release et retour ;
 - aucune route développeur accessible sans session Revaloop valide ;
@@ -63,6 +67,20 @@ Objectifs de réponse, sans engagement de niveau de service :
 Le mot de passe brut et le token de session brut ne sont jamais stockés en D1.
 La session n’est pas glissante : elle expire au plus tard 30 jours après sa
 création.
+
+Le coût PBKDF2 est conservé avec chaque credential afin de permettre une future
+migration. La limite du runtime ne constitue pas, à elle seule, une cible
+souhaitable pour une disponibilité générale : passkeys, MFA ou un service
+d’identité géré restent à évaluer avant ce jalon.
+Un credential historique dérivé avec 600 000 itérations ne peut pas être
+vérifié par le runtime Workers actuel : il doit faire l’objet d’une migration
+opérateur avant déploiement, Revaloop ne réduisant jamais son coût en silence.
+
+L’en-tête `oai-authenticated-user-email` n’est jamais accepté sur un hostname
+arbitraire. Une instance Sites personnalisée doit définir
+`REVALOOP_TRUSTED_SITES_HOSTNAME` avec un seul hostname exact. Sur un autre
+hébergeur, cet en-tête reste ignoré et la reprise d’une base historique exige
+une procédure opérateur dédiée.
 
 ### Reviewer
 
@@ -75,7 +93,9 @@ création.
 - expiration et révocation vérifiées à chaque lecture et dans la mutation
   finale ;
 - auteur dérivé de la session, jamais fourni par le corps de la requête ;
-- fermeture explicite qui révoque aussi la session serveur.
+- fermeture explicite qui révoque aussi la session serveur ;
+- publication d’une nouvelle release qui révoque les invitations et sessions
+  de toutes les versions antérieures du projet.
 
 Le nom de session est saisi par le développeur lors de l’invitation puis recopié
 côté serveur comme auteur. Il reste déclaratif : Revaloop ne vérifie pas
@@ -117,7 +137,8 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 ### Compagnon desktop
 
 - Electron est le runtime principal de développement ; Tauri 2 reste un
-  fallback explicite, décrit dans
+  fallback de compatibilité sans parité complète des frontières de lancement,
+  décrit dans
   [l’ADR-0005 historique](docs/adr/0005-desktop-companion.md) et
   [l’ADR-0006](docs/adr/0006-electron-development-runtime.md) ;
 - assets React/Vite locaux ; un build empaqueté les sert en lecture seule par le
@@ -168,6 +189,13 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
   projet, logs et configuration ; la suite Tauri/Rust reste disponible pour le
   fallback.
 
+Les garanties d’autorité du chemin dans le processus principal et de
+confirmation native à usage unique décrites ci-dessus concernent Electron. Le
+backend Tauri historique reçoit encore le chemin du renderer au lancement et ne
+demande pas une seconde confirmation native. Il ne doit donc servir qu’à la
+compatibilité ou à des projets explicitement fiables tant que cette parité
+n’est pas implémentée.
+
 Le desktop n’est pas une sandbox pour le code du projet. Confirmer
 la commande reste indispensable : même si Revaloop démarre npm avec
 `shell: false`, npm exécute le contenu du script `dev` avec les droits de votre
@@ -214,8 +242,10 @@ macOS et vérification de provenance.
 - même avec le bridge, la position externe est approximative et ne suit pas le
   scroll interne ; sans bridge, le chemin ne suit pas non plus les navigations
   SPA ;
-- les anciennes releases ne sont pas encore navigables dans le dashboard ;
-  une nouvelle release est bloquée tant que la courante est active en
+- les anciennes releases restent navigables par le développeur autorisé, avec
+  leurs retours et messages ; leurs accès reviewer sont révoqués dès la
+  publication suivante ;
+- une nouvelle release est bloquée tant que la courante est active en
   `in_review` ou `changes_requested`, puis devient possible après approbation ou
   expiration ;
 - D1 reste une base partagée avec isolation logique, pas une base par tenant ;

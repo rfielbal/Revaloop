@@ -220,6 +220,17 @@
   gap: 8px;
 }
 
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field > label {
+  color: #e6efee;
+  font-size: 0.78rem;
+  font-weight: 680;
+}
+
 .form label > span:first-child {
   color: #e6efee;
   font-size: 0.78rem;

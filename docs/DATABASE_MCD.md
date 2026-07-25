@@ -220,7 +220,7 @@ sequenceDiagram
     participant DB as D1
 
     D->>API: nom, e-mail, mot de passe
-    API->>API: PBKDF2-SHA-256, sel aléatoire, 600 000 itérations
+    API->>API: PBKDF2-SHA-256, sel aléatoire, 100 000 itérations
     API->>DB: utilisateur + organisation + owner + credential
     API->>API: génère un token de session opaque
     API->>DB: SHA-256 du token + expiration
@@ -237,9 +237,11 @@ Le développeur authentifié crée le projet dans son organisation, sa première
 release, zéro à douze consignes facultatives et un événement d’audit.
 
 Une nouvelle release est refusée tant qu’une release non expirée reste
-`in_review` ou `changes_requested`. Après expiration, la publication suivante
-révoque les anciens accès, classe l’ancienne release `superseded`, puis crée la
-nouvelle version.
+`in_review` ou `changes_requested`. Toute publication suivante révoque les
+invitations et sessions de l’ensemble des releases antérieures du projet. Une
+release approuvée conserve son état et son historique développeur ; après
+expiration, une release encore active est classée `superseded` avant la
+création de la nouvelle version.
 
 ### Invitation et session reviewer
 

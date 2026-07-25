@@ -32,8 +32,11 @@ demande seulement de relancer la commande de développement.
 Tauri 2 reste un fallback explicite via les commandes `desktop:tauri:*`. Sa
 présence permet de comparer les runtimes et de revenir à une empreinte native
 plus petite si les coûts d’Electron dépassent le bénéfice de la boucle actuelle.
-Le choix d’Electron ne remet pas en cause la séparation du site, du compagnon et
-du tunnel décidée par l’ADR-0005.
+Ce backend historique ne possède toutefois pas encore l’autorité du chemin dans
+le processus principal ni la confirmation native à usage unique imposées à
+Electron. Il est réservé à la compatibilité et aux projets fiables tant que
+cette parité n’est pas implémentée. Le choix d’Electron ne remet pas en cause la
+séparation du site, du compagnon et du tunnel décidée par l’ADR-0005.
 
 ### Frontières obligatoires du runtime Electron
 

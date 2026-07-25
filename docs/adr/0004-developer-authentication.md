@@ -22,7 +22,8 @@ Revaloop gère un credential first-party par utilisateur :
 - adresse e-mail normalisée et nom affiché ;
 - mot de passe de 12 à 128 caractères ;
 - sel aléatoire de 16 octets ;
-- PBKDF2-SHA-256 avec Web Crypto et 600 000 itérations ;
+- PBKDF2-SHA-256 avec Web Crypto et 100 000 itérations, maximum accepté par le
+  runtime Workers utilisé par l’alpha ;
 - dérivé de 256 bits stocké avec le sel et le coût ;
 - aucun mot de passe brut conservé après la requête.
 
@@ -43,12 +44,15 @@ Le contrôle est refait dans l’écriture D1 qui crée utilisateur, organisatio
 membership propriétaire et credential.
 
 Sur une base issue de la version 0.2, un utilisateur et son organisation
-peuvent déjà exister sans credential first-party. Le bootstrap ne rattache le
-credential qu’à l’adresse historique correspondante. Une autre adresse est
-refusée au lieu de créer un tenant vide et de rendre l’espace historique
-inaccessible. La reprise doit se faire derrière l’accès propriétaire de
-l’hébergeur ; un changement d’adresse exigera plus tard un secret opérateur ou
-une procédure de migration dédiée.
+peuvent déjà exister sans credential first-party. Le bootstrap rattache le
+credential à l’adresse historique correspondante. Si cette adresse est un
+placeholder `@revaloop.local`, sa reprise n’est autorisée que lorsque l’ingress
+Sites a authentifié la même adresse que celle soumise au formulaire et que le
+hostname de la requête correspond exactement au hostname approuvé par
+`REVALOOP_TRUSTED_SITES_HOSTNAME` ; l’identité historique, l’organisation et
+les projets sont alors conservés. Toute autre tentative est refusée au lieu de
+permettre la prise de contrôle du tenant.
+Une migration opérateur dédiée reste nécessaire chez un autre hébergeur.
 
 L’opérateur peut autoriser des inscriptions supplémentaires avec :
 
@@ -71,6 +75,8 @@ désactivé.
 ## Coûts et risques
 
 - le premier accès à `/register` sur une base vide est sensible ;
+- l’en-tête d’identité de l’ingress n’est fiable que lorsqu’il est injecté et
+  nettoyé par l’hébergeur de confiance ;
 - perte du mot de passe sans procédure self-service de récupération ;
 - une adresse saisie n’est pas vérifiée ;
 - absence de MFA et d’alerte de connexion ;

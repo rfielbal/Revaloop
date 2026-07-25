@@ -3,9 +3,12 @@ import {
   repositoryErrorResponse,
 } from "../../../../db/repository";
 import {
+  canonicalRequestHostname,
   developerAuthErrorResponse,
+  isLoopbackRequestHostname,
   registerDeveloper,
   serializeDeveloperSessionCookie,
+  sitesAuthenticatedEmailFromHeaders,
 } from "../../../../lib/developer-auth";
 import {
   assertSameOrigin,
@@ -23,6 +26,16 @@ function clientAddress(request: Request) {
   ).slice(0, 128);
 }
 
+function isLocalDevelopmentRequest(request: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+
+  return isLoopbackRequestHostname(
+    canonicalRequestHostname(request.headers),
+  );
+}
+
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
@@ -38,6 +51,14 @@ export async function POST(request: Request) {
         typeof body.displayName === "string" ? body.displayName : "",
       email: typeof body.email === "string" ? body.email : "",
       password: typeof body.password === "string" ? body.password : "",
+      passwordConfirmation:
+        typeof body.passwordConfirmation === "string"
+          ? body.passwordConfirmation
+          : "",
+      sitesAuthenticatedEmail: sitesAuthenticatedEmailFromHeaders(
+        request.headers,
+      ),
+      allowLocalPlaceholderRecovery: isLocalDevelopmentRequest(request),
     });
     const secure = new URL(request.url).protocol === "https:";
 

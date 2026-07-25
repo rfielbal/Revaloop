@@ -10,6 +10,9 @@ type AuthFormProps = {
   mode: "login" | "register";
   returnTo: string;
   registrationOpen?: boolean;
+  suggestedEmail?: string;
+  sitesEmailVerified?: boolean;
+  showLocalLegacyHint?: boolean;
 };
 
 type AuthResponse = {
@@ -20,6 +23,9 @@ export function AuthForm({
   mode,
   returnTo,
   registrationOpen = true,
+  suggestedEmail,
+  sitesEmailVerified = false,
+  showLocalLegacyHint = false,
 }: AuthFormProps) {
   const isRegistration = mode === "register";
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -34,8 +40,18 @@ export function AuthForm({
     }
 
     setError("");
-    setIsSubmitting(true);
     const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") ?? "");
+    const passwordConfirmation = String(
+      form.get("passwordConfirmation") ?? "",
+    );
+
+    if (isRegistration && password !== passwordConfirmation) {
+      setError("Les deux mots de passe ne correspondent pas.");
+      return;
+    }
+
+    setIsSubmitting(true);
 
     try {
       const response = await fetch(
@@ -47,7 +63,8 @@ export function AuthForm({
           body: JSON.stringify({
             displayName: String(form.get("displayName") ?? ""),
             email: String(form.get("email") ?? ""),
-            password: String(form.get("password") ?? ""),
+            password,
+            passwordConfirmation,
           }),
         },
       );
@@ -106,7 +123,7 @@ export function AuthForm({
           <p>
             {isRegistration
               ? "Cette inscription initialise votre instance Revaloop. Les inscriptions suivantes seront fermées automatiquement."
-              : "Connectez-vous avec le compte propre à cette instance Revaloop. Aucun compte tiers n’est nécessaire."}
+              : "Connectez-vous avec le compte propre à cette instance Revaloop. L’éventuel contrôle d’accès de l’hébergeur reste une frontière séparée."}
           </p>
           <ul className={styles.assurances}>
             <li>
@@ -177,15 +194,34 @@ export function AuthForm({
                   inputMode="email"
                   autoComplete="email"
                   maxLength={254}
+                  defaultValue={isRegistration ? suggestedEmail : undefined}
+                  readOnly={isRegistration && sitesEmailVerified}
                   placeholder="vous@studio.fr"
                   required
                 />
               </label>
 
-              <label>
-                <span>Mot de passe</span>
+              {isRegistration && sitesEmailVerified ? (
+                <p className={styles.passwordHint}>
+                  Cette adresse a été confirmée par l’accès privé Sites. Elle
+                  permet de rattacher sans ambiguïté un éventuel espace
+                  historique.
+                </p>
+              ) : null}
+
+              {isRegistration && showLocalLegacyHint ? (
+                <p className={styles.passwordHint}>
+                  Une identité locale historique a été détectée. Pour conserver
+                  ses projets, utilisez son adresse de développement se
+                  terminant par <code>@revaloop.local</code>.
+                </p>
+              ) : null}
+
+              <div className={styles.field}>
+                <label htmlFor="auth-password">Mot de passe</label>
                 <span className={styles.passwordField}>
                   <input
+                    id="auth-password"
                     name="password"
                     type={passwordVisible ? "text" : "password"}
                     autoComplete={
@@ -205,8 +241,12 @@ export function AuthForm({
                     onClick={() => setPasswordVisible((visible) => !visible)}
                     aria-label={
                       passwordVisible
-                        ? "Masquer le mot de passe"
-                        : "Afficher le mot de passe"
+                        ? isRegistration
+                          ? "Masquer les deux mots de passe"
+                          : "Masquer le mot de passe"
+                        : isRegistration
+                          ? "Afficher les deux mots de passe"
+                          : "Afficher le mot de passe"
                     }
                   >
                     {passwordVisible ? (
@@ -216,7 +256,23 @@ export function AuthForm({
                     )}
                   </button>
                 </span>
-              </label>
+              </div>
+
+              {isRegistration ? (
+                <label htmlFor="auth-password-confirmation">
+                  <span>Confirmer le mot de passe</span>
+                  <input
+                    id="auth-password-confirmation"
+                    name="passwordConfirmation"
+                    type={passwordVisible ? "text" : "password"}
+                    autoComplete="new-password"
+                    minLength={12}
+                    maxLength={128}
+                    placeholder="Saisissez-le une seconde fois"
+                    required
+                  />
+                </label>
+              ) : null}
 
               {isRegistration ? (
                 <p className={styles.passwordHint}>

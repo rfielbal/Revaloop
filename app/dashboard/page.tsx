@@ -23,20 +23,24 @@ export const metadata: Metadata = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string }>;
+  searchParams: Promise<{ project?: string; release?: string }>;
 }) {
   const user = await requireDeveloperIdentity("/dashboard");
-  const { project } = await searchParams;
+  const { project, release } = await searchParams;
   const workspace = await getDeveloperWorkspace(
     {
       displayName: user.displayName,
       email: user.email,
     },
     project,
+    release,
   );
 
   return (
     <DashboardClient
+      key={`${workspace.activeReview?.project.id ?? "empty"}:${
+        workspace.activeReview?.release.id ?? "empty"
+      }`}
       initialWorkspace={workspace}
       renderedAt={new Date().toISOString()}
       signOutPath={developerLogoutPath("/")}

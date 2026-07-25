@@ -13,6 +13,10 @@ import type {
   SettingsInput,
 } from "../shared/contract.ts";
 import {
+  DEFAULT_CONTROL_PLANE_URL,
+  DEFAULT_PREVIEW_URL,
+} from "../shared/contract.ts";
+import {
   normalizeControlPlaneUrl,
   normalizeLoopbackUrl,
   parseSettingsInput,
@@ -20,13 +24,23 @@ import {
 
 const SETTINGS_FILENAME = "settings.json";
 const MAX_SETTINGS_BYTES = 64 * 1_024;
-const DEFAULT_SETTINGS: DesktopSettings = Object.freeze({
-  projectPath: null,
-  previewUrl: "http://127.0.0.1:3000/",
-  controlPlaneUrl: "http://127.0.0.1:3000/",
-});
 
-function parseStoredSettings(value: unknown): DesktopSettings {
+export function defaultDesktopSettings(
+  controlPlaneOverride = process.env.REVALOOP_CONTROL_PLANE_URL,
+): DesktopSettings {
+  return {
+    projectPath: null,
+    previewUrl: DEFAULT_PREVIEW_URL,
+    controlPlaneUrl: normalizeControlPlaneUrl(
+      controlPlaneOverride ?? DEFAULT_CONTROL_PLANE_URL,
+    ).toString(),
+  };
+}
+
+function parseStoredSettings(
+  value: unknown,
+  defaults: DesktopSettings,
+): { settings: DesktopSettings; migrated: boolean } {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("La configuration locale est illisible.");
   }
@@ -37,12 +51,23 @@ function parseStoredSettings(value: unknown): DesktopSettings {
   ) {
     throw new Error("Le chemin de projet mémorisé est invalide.");
   }
+  const previewUrl = normalizeLoopbackUrl(record.previewUrl).toString();
+  const storedControlPlaneUrl = normalizeControlPlaneUrl(
+    record.controlPlaneUrl,
+  ).toString();
+  const migrated =
+    previewUrl === DEFAULT_PREVIEW_URL &&
+    storedControlPlaneUrl === DEFAULT_PREVIEW_URL;
+
   return {
-    projectPath: record.projectPath,
-    previewUrl: normalizeLoopbackUrl(record.previewUrl).toString(),
-    controlPlaneUrl: normalizeControlPlaneUrl(
-      record.controlPlaneUrl,
-    ).toString(),
+    migrated,
+    settings: {
+      projectPath: record.projectPath,
+      previewUrl,
+      controlPlaneUrl: migrated
+        ? defaults.controlPlaneUrl
+        : storedControlPlaneUrl,
+    },
   };
 }
 
@@ -64,10 +89,29 @@ async function atomicWrite(path: string, contents: Uint8Array): Promise<void> {
 
 export class SettingsStore {
   readonly path: string;
+  readonly #defaults: DesktopSettings;
   #writeQueue: Promise<void> = Promise.resolve();
 
-  constructor(configDirectory: string) {
+  constructor(configDirectory: string, controlPlaneOverride?: string) {
     this.path = join(configDirectory, SETTINGS_FILENAME);
+    this.#defaults = defaultDesktopSettings(controlPlaneOverride);
+  }
+
+  async #persist(settings: DesktopSettings): Promise<void> {
+    const serialized = new TextEncoder().encode(
+      `${JSON.stringify(settings, null, 2)}\n`,
+    );
+    if (serialized.byteLength > MAX_SETTINGS_BYTES) {
+      throw new Error(
+        "La configuration locale dépasse la taille autorisée.",
+      );
+    }
+
+    const write = this.#writeQueue.then(() =>
+      atomicWrite(this.path, serialized),
+    );
+    this.#writeQueue = write.catch(() => undefined);
+    await write;
   }
 
   async read(): Promise<DesktopSettings> {
@@ -85,7 +129,7 @@ export class SettingsStore {
         "code" in error &&
         error.code === "ENOENT"
       ) {
-        return { ...DEFAULT_SETTINGS };
+        return { ...this.#defaults };
       }
       throw error;
     }
@@ -97,7 +141,11 @@ export class SettingsStore {
     } catch {
       throw new Error("La configuration locale est illisible.");
     }
-    return parseStoredSettings(parsed);
+    const result = parseStoredSettings(parsed, this.#defaults);
+    if (result.migrated) {
+      await this.#persist(result.settings);
+    }
+    return result.settings;
   }
 
   async save(
@@ -109,20 +157,7 @@ export class SettingsStore {
       projectPath,
       ...normalized,
     };
-    const serialized = new TextEncoder().encode(
-      `${JSON.stringify(next, null, 2)}\n`,
-    );
-    if (serialized.byteLength > MAX_SETTINGS_BYTES) {
-      throw new Error(
-        "La configuration locale dépasse la taille autorisée.",
-      );
-    }
-
-    const write = this.#writeQueue.then(() =>
-      atomicWrite(this.path, serialized),
-    );
-    this.#writeQueue = write.catch(() => undefined);
-    await write;
+    await this.#persist(next);
     return next;
   }
 }

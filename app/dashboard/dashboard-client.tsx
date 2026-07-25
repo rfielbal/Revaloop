@@ -47,6 +47,19 @@ import { Brand } from "../components/brand";
 type FeedbackFilter = "all" | "todo" | "to_review" | "resolved";
 type DialogName = "project" | "release" | "invitation" | null;
 type WorkspaceTab = "feedback" | "discussion";
+type DeveloperReleaseSummary = {
+  id: string;
+  projectId: string;
+  version: string;
+  title: string;
+  status: ReviewPayload["release"]["status"];
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+};
+type DashboardWorkspace = DeveloperWorkspace & {
+  releases: DeveloperReleaseSummary[];
+};
 
 const statusAction: Record<
   FeedbackStatus,
@@ -114,7 +127,7 @@ export function DashboardClient({
   renderedAt,
   signOutPath,
 }: {
-  initialWorkspace: DeveloperWorkspace;
+  initialWorkspace: DashboardWorkspace;
   renderedAt: string;
   signOutPath: string;
 }) {
@@ -129,6 +142,7 @@ export function DashboardClient({
   const [dialog, setDialog] = useState<DialogName>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isSelectingRelease, setIsSelectingRelease] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [messageBody, setMessageBody] = useState("");
   const [notice, setNotice] = useState("");
@@ -137,9 +151,15 @@ export function DashboardClient({
   const [inviteExpiresAt, setInviteExpiresAt] = useState("");
   const dialogTriggerRef = useRef<HTMLButtonElement>(null);
   const messageThreadRef = useRef<HTMLOListElement>(null);
+  const workspaceRequestSequenceRef = useRef(0);
+  const preferredReleaseIdRef = useRef(
+    initialWorkspace.activeReview?.release.id,
+  );
+  const releaseHistoryRef = useRef(initialWorkspace.releases);
 
   const review = workspace.activeReview;
   const activeProjectId = review?.project.id ?? workspace.projects[0]?.id;
+  const activeReleaseId = review?.release.id;
   const isReleaseExpired = review
     ? Date.parse(review.release.expiresAt) <= now
     : false;
@@ -148,23 +168,59 @@ export function DashboardClient({
       ["in_review", "changes_requested"].includes(review.release.status)
     : false;
   const canInvite = Boolean(review && isActiveRelease);
-  const canPublishRelease = Boolean(review && !isActiveRelease);
+  const hasActiveRelease = workspace.releases.some(
+    (release) =>
+      Date.parse(release.expiresAt) > now &&
+      ["in_review", "changes_requested"].includes(release.status),
+  );
+  const canPublishRelease = Boolean(activeProjectId && !hasActiveRelease);
 
-  const refreshWorkspace = useCallback(async () => {
-    const query = activeProjectId
-      ? `?project=${encodeURIComponent(activeProjectId)}`
-      : "";
-    const response = await fetch(`/api/workspace${query}`, {
-      cache: "no-store",
-    });
+  const refreshWorkspace = useCallback(
+    async (preferredReleaseId?: string) => {
+      const requestedReleaseId =
+        preferredReleaseId ?? preferredReleaseIdRef.current;
+      const requestSequence = ++workspaceRequestSequenceRef.current;
+      const searchParams = new URLSearchParams();
 
-    if (!response.ok) {
-      throw new Error("workspace unavailable");
-    }
+      if (activeProjectId) {
+        searchParams.set("project", activeProjectId);
+      }
 
-    const payload = (await response.json()) as DeveloperWorkspace;
-    setWorkspace(payload);
-  }, [activeProjectId]);
+      if (requestedReleaseId) {
+        searchParams.set("release", requestedReleaseId);
+      }
+
+      const query = searchParams.size ? `?${searchParams.toString()}` : "";
+      const response = await fetch(`/api/workspace${query}`, {
+        cache: "no-store",
+      });
+
+      if (requestSequence !== workspaceRequestSequenceRef.current) {
+        return null;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          await responseError(
+            response,
+            "L’espace développeur n’a pas pu être actualisé.",
+          ),
+        );
+      }
+
+      const payload = (await response.json()) as DashboardWorkspace;
+
+      if (requestSequence !== workspaceRequestSequenceRef.current) {
+        return null;
+      }
+
+      preferredReleaseIdRef.current = payload.activeReview?.release.id;
+      releaseHistoryRef.current = payload.releases;
+      setWorkspace(payload);
+      return payload;
+    },
+    [activeProjectId],
+  );
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -191,6 +247,54 @@ export function DashboardClient({
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [refreshWorkspace]);
+
+  useEffect(() => {
+    const restoreReleaseFromHistory = () => {
+      const searchParams = new URL(window.location.href).searchParams;
+      const requestedProjectId = searchParams.get("project");
+
+      if (
+        requestedProjectId &&
+        activeProjectId &&
+        requestedProjectId !== activeProjectId
+      ) {
+        window.location.reload();
+        return;
+      }
+
+      const requestedReleaseId =
+        searchParams.get("release") ?? releaseHistoryRef.current[0]?.id;
+
+      if (
+        !requestedReleaseId ||
+        !releaseHistoryRef.current.some(
+          (release) => release.id === requestedReleaseId,
+        ) ||
+        requestedReleaseId === preferredReleaseIdRef.current
+      ) {
+        return;
+      }
+
+      preferredReleaseIdRef.current = requestedReleaseId;
+      refreshWorkspace(requestedReleaseId)
+        .then((nextWorkspace) => {
+          if (!nextWorkspace) return;
+          setSelectedId(nextWorkspace.activeReview?.feedback[0]?.id);
+          setFilter("all");
+        })
+        .catch((error) => {
+          setNotice(
+            error instanceof Error
+              ? error.message
+              : "Cette version n’a pas pu être restaurée.",
+          );
+        });
+    };
+
+    window.addEventListener("popstate", restoreReleaseFromHistory);
+    return () =>
+      window.removeEventListener("popstate", restoreReleaseFromHistory);
+  }, [activeProjectId, refreshWorkspace]);
 
   useEffect(() => {
     if (!notice) return;
@@ -246,6 +350,24 @@ export function DashboardClient({
     window.requestAnimationFrame(() => dialogTriggerRef.current?.focus());
   }
 
+  function syncReleaseUrl(releaseId: string) {
+    const url = new URL(window.location.href);
+
+    if (activeProjectId) {
+      url.searchParams.set("project", activeProjectId);
+    }
+
+    url.searchParams.set("release", releaseId);
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+    if (nextUrl === currentUrl) {
+      return;
+    }
+
+    window.history.pushState(null, "", nextUrl);
+  }
+
   const filteredFeedback = useMemo(() => {
     const feedback = review?.feedback ?? [];
 
@@ -277,6 +399,47 @@ export function DashboardClient({
 
     return result;
   }, [review?.feedback]);
+
+  async function selectRelease(releaseId: string) {
+    if (
+      !releaseId ||
+      releaseId === activeReleaseId ||
+      isSelectingRelease
+    ) {
+      return;
+    }
+
+    setIsSelectingRelease(true);
+    preferredReleaseIdRef.current = releaseId;
+
+    try {
+      const nextWorkspace = await refreshWorkspace(releaseId);
+
+      if (preferredReleaseIdRef.current !== releaseId) {
+        return;
+      }
+
+      syncReleaseUrl(releaseId);
+
+      if (!nextWorkspace) {
+        return;
+      }
+
+      setSelectedId(nextWorkspace.activeReview?.feedback[0]?.id);
+      setFilter("all");
+      setNotice(
+        `Version ${nextWorkspace.activeReview?.release.version ?? ""} chargée.`,
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Cette version n’a pas pu être chargée.",
+      );
+    } finally {
+      setIsSelectingRelease(false);
+    }
+  }
 
   async function advanceFeedback(item: FeedbackItem) {
     const nextStatus = statusAction[item.status].next;
@@ -419,10 +582,13 @@ export function DashboardClient({
         );
       }
 
+      const result = (await response.json()) as { releaseId: string };
       closeDialog();
       setNotice("La nouvelle version est prête à recevoir une invitation.");
       try {
-        await refreshWorkspace();
+        preferredReleaseIdRef.current = result.releaseId;
+        await refreshWorkspace(result.releaseId);
+        syncReleaseUrl(result.releaseId);
       } catch {
         window.location.assign(
           `/dashboard?project=${encodeURIComponent(review.project.id)}`,
@@ -528,6 +694,7 @@ export function DashboardClient({
   async function signalPreviewUpdate() {
     if (!review || isUpdating || !isActiveRelease) return;
 
+    const targetReleaseId = review.release.id;
     setIsUpdating(true);
 
     try {
@@ -546,22 +713,26 @@ export function DashboardClient({
       }
 
       const updated = (await response.json()) as {
+        releaseId: string;
         previewRevision: number;
         updatedAt: string;
       };
-      setWorkspace((current) => ({
-        ...current,
-        activeReview: current.activeReview
+      setWorkspace((current) =>
+        current.activeReview?.release.id === targetReleaseId &&
+        updated.releaseId === targetReleaseId
           ? {
-              ...current.activeReview,
-              release: {
-                ...current.activeReview.release,
-                previewRevision: updated.previewRevision,
-                updatedAt: updated.updatedAt,
+              ...current,
+              activeReview: {
+                ...current.activeReview,
+                release: {
+                  ...current.activeReview.release,
+                  previewRevision: updated.previewRevision,
+                  updatedAt: updated.updatedAt,
+                },
               },
             }
-          : null,
-      }));
+          : current,
+      );
       setNotice(
         "Mise à jour signalée. Le client pourra demander le rechargement de la preview dans son espace.",
       );
@@ -582,6 +753,7 @@ export function DashboardClient({
     if (!review || isSendingMessage || !isActiveRelease) return;
 
     const body = messageBody.trim();
+    const targetReleaseId = review.release.id;
 
     if (!body) return;
 
@@ -604,19 +776,29 @@ export function DashboardClient({
       }
 
       const message = (await response.json()) as ReleaseMessage;
-      setWorkspace((current) => ({
-        ...current,
-        activeReview: current.activeReview
-          ? {
-              ...current.activeReview,
-              messages: [
-                ...(current.activeReview.messages ?? []),
-                message,
-              ],
-            }
-          : null,
-      }));
-      setMessageBody("");
+      setWorkspace((current) => {
+        if (
+          current.activeReview?.release.id !== targetReleaseId ||
+          message.releaseId !== targetReleaseId ||
+          current.activeReview.messages?.some(
+            (existing) => existing.id === message.id,
+          )
+        ) {
+          return current;
+        }
+
+        return {
+          ...current,
+          activeReview: {
+            ...current.activeReview,
+            messages: [
+              ...(current.activeReview.messages ?? []),
+              message,
+            ],
+          },
+        };
+      });
+      setMessageBody((current) => (current.trim() === body ? "" : current));
       setNotice("Message envoyé au client.");
     } catch (error) {
       setNotice(
@@ -886,12 +1068,33 @@ export function DashboardClient({
             <section className="release-strip release-summary">
               <div className="release-state">
                 <div>
-                  <span className="release-label">
-                    Version {review.release.version} ·{" "}
-                    {isReleaseExpired
-                      ? "Expirée"
-                      : releaseStatusLabel(review.release.status)}
-                  </span>
+                  <label
+                    className="release-label"
+                    htmlFor="release-selector"
+                  >
+                    Version consultée
+                  </label>
+                  <select
+                    id="release-selector"
+                    className="button button-ghost button-dashboard"
+                    value={review.release.id}
+                    disabled={
+                      isSelectingRelease || workspace.releases.length < 2
+                    }
+                    aria-busy={isSelectingRelease}
+                    onChange={(event) =>
+                      void selectRelease(event.currentTarget.value)
+                    }
+                  >
+                    {workspace.releases.map((release) => (
+                      <option key={release.id} value={release.id}>
+                        {release.version} ·{" "}
+                        {Date.parse(release.expiresAt) <= now
+                          ? "Expirée"
+                          : releaseStatusLabel(release.status)}
+                      </option>
+                    ))}
+                  </select>
                   <strong>{review.release.title}</strong>
                   <span>
                     Publiée {formatRelativeDate(review.release.createdAt)}

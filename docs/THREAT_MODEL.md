@@ -110,7 +110,7 @@ Hypothèses :
 ### Développeur
 
 - mot de passe de 12 à 128 caractères dérivé avec PBKDF2-SHA-256 Web Crypto,
-  sel aléatoire et 600 000 itérations ;
+  sel aléatoire et 100 000 itérations, maximum accepté par Workers ;
 - mot de passe brut jamais stocké ;
 - token de session opaque dont seul le SHA-256 est stocké ;
 - cookie développeur `HttpOnly`, `Secure` en production, `SameSite=Strict`,
@@ -139,7 +139,9 @@ Hypothèses :
 - fermeture de session côté serveur ;
 - rotation révoquant les anciens accès ;
 - nouvelle release interdite tant que la courante non expirée est
-  `in_review` ou `changes_requested`.
+  `in_review` ou `changes_requested` ;
+- publication suivante révoquant les invitations et sessions de toutes les
+  releases antérieures du projet, sans supprimer l’historique développeur.
 
 ### Autorisation métier
 
@@ -223,7 +225,9 @@ reviewer → token hash → session → invitation → release → ressource
 - fermeture de l’application déclenchant l’arrêt du processus géré ;
 - fuses de distribution : RunAsNode, `NODE_OPTIONS`, inspection CLI et
   chargement hors ASAR désactivés, intégrité ASAR activée ;
-- Tauri 2 maintenu comme fallback explicite sans devenir le runtime par défaut.
+- Tauri 2 maintenu comme fallback de compatibilité sans devenir le runtime par
+  défaut ; il reçoit encore le chemin du renderer et ne possède pas la
+  confirmation native à usage unique d’Electron.
 
 ## Registre des risques actuels
 
@@ -247,9 +251,9 @@ reviewer → token hash → session → invitation → release → ressource
 | T16 | rétention excessive | expiration, purge, suppression projet | pas de suppression compte/org self-service |
 | T17 | dépendance compromise | lockfile et revue | ajouter scans/provenance de release |
 | T18 | Site globalement privé | protège tout | cliente externe bloquée |
-| T19 | instance publique | dashboard protégé par cookie Revaloop et bootstrap fermé | aucune vérification e-mail, MFA ou récupération de compte |
+| T19 | instance publique ou usurpation du header d’ingress | dashboard protégé par cookie Revaloop, bootstrap fermé avant ouverture, identité Sites limitée à un hostname exact | aucune vérification e-mail, MFA ou récupération de compte |
 | T20 | décision prise pour un mauvais contenu | preview mutable | procès-verbal externe si enjeu contractuel |
-| T21 | force brute du login | PBKDF2 600k, réponse générique, limites compte/IP | pas de MFA ni alerte de connexion |
+| T21 | force brute du login | PBKDF2 100k compatible Workers, réponse générique, limites compte/IP | pas de MFA ni alerte de connexion ; coût inférieur à la cible historique |
 | T22 | vol session développeur | token opaque haché, cookie Host/HttpOnly/Secure/Strict, expiration et révocation | pas d’écran pour révoquer toutes les sessions |
 | T23 | faux signal de correctif | incrément autorisé de `preview_revision` | ne prouve ni déploiement, ni commit, ni contenu servi |
 | T24 | message attribué au mauvais acteur | auteur dérivé de la session et release autorisée | nom reviewer déclaratif, pas d’identité forte |
@@ -260,6 +264,7 @@ reviewer → token hash → session → invitation → release → ressource
 | T29 | persistance locale excessive | chemin et URL non secrètes uniquement, permissions compte | le chemin peut révéler un nom de client à un autre processus du même compte |
 | T30 | binaire desktop altéré | aucun artefact public annoncé, fuses configurés pour le packaging local | signature, notarisation, provenance, validation des fuses et updater signé requis avant distribution |
 | T31 | affaiblissement de l’auth pour le natif | aucune API native actuelle, cookies confinés au navigateur | implémenter PKCE, tokens appareils et révocation avant tout accès API desktop |
+| T32 | renderer compromis dans le fallback Tauri | manifeste relu, commande `dev` fixe et cible loopback | chemin fourni par le renderer et absence de confirmation native indépendante ; réserver ce runtime aux projets fiables |
 
 T01, T02, T06, T07, T19, T21 et T22 demandent une validation d’intégration avant une
 publication générale.

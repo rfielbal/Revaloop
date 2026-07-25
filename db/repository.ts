@@ -42,6 +42,17 @@ export type ReleaseWithRevision = Release & {
   previewRevision: number;
 };
 
+export type DeveloperReleaseSummary = {
+  id: string;
+  projectId: string;
+  version: string;
+  title: string;
+  status: Release["status"];
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+};
+
 export type ReviewPayloadWithMessages = Omit<
   ReviewPayload,
   "release" | "messages"
@@ -667,6 +678,44 @@ export async function countDeveloperCredentials(): Promise<number> {
   return row?.count ?? 0;
 }
 
+function isLegacyLocalEmail(email: string) {
+  return /^[^\s@]+@revaloop\.local$/i.test(email);
+}
+
+export async function getRecoverableLocalDeveloperPlaceholderEmail() {
+  await ensureDatabase();
+  const db = database();
+  const credential = await db
+    .prepare("SELECT COUNT(*) AS count FROM developer_credentials")
+    .first<{ count: number }>();
+
+  if ((credential?.count ?? 0) !== 0) {
+    return null;
+  }
+
+  const legacyUsers = await db
+    .prepare(
+      `SELECT app_users.email
+       FROM app_users
+       WHERE EXISTS (
+         SELECT 1 FROM organization_members
+         WHERE organization_members.user_id = app_users.id
+       )
+         AND NOT EXISTS (
+           SELECT 1 FROM developer_credentials
+           WHERE developer_credentials.user_id = app_users.id
+         )
+       ORDER BY app_users.created_at ASC
+       LIMIT 2`,
+    )
+    .all<{ email: string }>();
+
+  return legacyUsers.results.length === 1 &&
+    isLegacyLocalEmail(legacyUsers.results[0].email)
+    ? legacyUsers.results[0].email
+    : null;
+}
+
 export async function getDeveloperCredential(
   email: string,
 ): Promise<DeveloperCredentialRecord | null> {
@@ -718,6 +767,8 @@ export async function registerDeveloperCredential(input: {
   passwordSalt: string;
   passwordIterations: number;
   allowAdditional?: boolean;
+  sitesAuthenticatedEmail?: string | null;
+  allowLocalPlaceholderRecovery?: boolean;
 }): Promise<DeveloperIdentity> {
   await ensureDatabase();
   const db = database();
@@ -736,27 +787,108 @@ export async function registerDeveloperCredential(input: {
     );
   }
 
-  const existingUser = await db
-    .prepare("SELECT id FROM app_users WHERE email = ? LIMIT 1")
+  let existingUser = await db
+    .prepare(
+      `SELECT
+         app_users.id,
+         app_users.email,
+         EXISTS (
+           SELECT 1 FROM organization_members
+           WHERE organization_members.user_id = app_users.id
+         ) AS has_membership,
+         EXISTS (
+           SELECT 1 FROM developer_credentials
+           WHERE developer_credentials.user_id = app_users.id
+         ) AS has_credential
+       FROM app_users
+       WHERE app_users.email = ?
+       LIMIT 1`,
+    )
     .bind(normalizedEmail)
-    .first<{ id: string }>();
+    .first<{
+      id: string;
+      email: string;
+      has_membership: number;
+      has_credential: number;
+    }>();
+  const credential = await db
+    .prepare("SELECT COUNT(*) AS count FROM developer_credentials")
+    .first<{ count: number }>();
+  const hasAnyCredential = (credential?.count ?? 0) !== 0;
+  const sitesAuthenticatedEmail = input.sitesAuthenticatedEmail
+    ?.trim()
+    .toLowerCase();
+  const sitesRecoveryAuthorized =
+    Boolean(sitesAuthenticatedEmail) &&
+    sitesAuthenticatedEmail === normalizedEmail;
+  let originalUserEmail = normalizedEmail;
+
+  if (!input.allowAdditional && hasAnyCredential) {
+    throw new ReviewConflictError(
+      "Cette instance est déjà initialisée. Les nouvelles inscriptions sont fermées.",
+    );
+  }
+
+  if (existingUser) {
+    const localRecoveryAuthorized =
+      input.allowLocalPlaceholderRecovery === true &&
+      isLegacyLocalEmail(existingUser.email) &&
+      existingUser.email === normalizedEmail;
+
+    if (
+      existingUser.has_credential === 1 ||
+      existingUser.has_membership !== 1 ||
+      (!sitesRecoveryAuthorized && !localRecoveryAuthorized)
+    ) {
+      throw new ReviewConflictError(
+        "Cet espace existant ne peut être repris qu’avec l’adresse confirmée par l’accès privé de l’instance.",
+      );
+    }
+
+    originalUserEmail = existingUser.email;
+  }
 
   if (!input.allowAdditional && !existingUser) {
     const legacyUsers = await db
       .prepare(
-        `SELECT COUNT(*) AS count
+        `SELECT
+           app_users.id,
+           app_users.email,
+           1 AS has_membership,
+           0 AS has_credential
          FROM app_users
          WHERE EXISTS (
            SELECT 1 FROM organization_members
            WHERE organization_members.user_id = app_users.id
-         )`,
+         )
+           AND NOT EXISTS (
+             SELECT 1 FROM developer_credentials
+             WHERE developer_credentials.user_id = app_users.id
+           )
+         ORDER BY app_users.created_at ASC
+         LIMIT 2`,
       )
-      .first<{ count: number }>();
+      .all<{
+        id: string;
+        email: string;
+        has_membership: number;
+        has_credential: number;
+      }>();
+    if (legacyUsers.results.length > 0) {
+      const legacyCandidate =
+        legacyUsers.results.length === 1 &&
+        isLegacyLocalEmail(legacyUsers.results[0].email)
+          ? legacyUsers.results[0]
+          : null;
 
-    if ((legacyUsers?.count ?? 0) > 0) {
-      throw new ReviewConflictError(
-        "Cette instance contient déjà un espace à reprendre. Utilisez l’adresse e-mail du compte développeur historique avant d’ouvrir l’accès public.",
-      );
+      if (!legacyCandidate || !sitesRecoveryAuthorized) {
+        throw new ReviewConflictError(
+          "Cette instance contient déjà un espace qui ne peut pas être repris avec cette identité.",
+        );
+      }
+
+      existingUser = legacyCandidate;
+      originalUserEmail = legacyCandidate.email;
     }
   }
 
@@ -769,6 +901,8 @@ export async function registerDeveloperCredential(input: {
   const memberId = `member_${identityDigest.slice(0, 32)}`;
   const now = new Date().toISOString();
   const allowAdditional = input.allowAdditional ? 1 : 0;
+  const createNewUser = existingUser ? 0 : 1;
+  const recoverExistingUser = existingUser ? 1 : 0;
   const results = await db.batch([
     db
       .prepare(
@@ -781,7 +915,8 @@ export async function registerDeveloperCredential(input: {
            AND (
              ? = 1
              OR NOT EXISTS (SELECT 1 FROM developer_credentials)
-           )`,
+           )
+           AND ? = 1`,
       )
       .bind(
         userId,
@@ -791,24 +926,33 @@ export async function registerDeveloperCredential(input: {
         now,
         normalizedEmail,
         allowAdditional,
+        createNewUser,
       ),
     db
       .prepare(
         `UPDATE app_users
-         SET display_name = ?, last_seen_at = ?
+         SET email = ?, display_name = ?, last_seen_at = ?
          WHERE id = ?
            AND email = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM developer_credentials
+             WHERE developer_credentials.user_id = ?
+           )
            AND (
              ? = 1
              OR NOT EXISTS (SELECT 1 FROM developer_credentials)
-           )`,
+           )
+           AND ? = 1`,
       )
       .bind(
+        normalizedEmail,
         displayName,
         now,
         userId,
-        normalizedEmail,
+        originalUserEmail,
+        userId,
         allowAdditional,
+        recoverExistingUser,
       ),
     db
       .prepare(
@@ -819,15 +963,22 @@ export async function registerDeveloperCredential(input: {
            FROM organization_members
            WHERE user_id = ? AND role = 'owner'
          )
+           AND NOT EXISTS (
+             SELECT 1 FROM developer_credentials
+             WHERE developer_credentials.user_id = ?
+           )
            AND (
              ? = 1
              OR NOT EXISTS (SELECT 1 FROM developer_credentials)
-           )`,
+           )
+           AND ? = 1`,
       )
       .bind(
         organizationName,
         userId,
+        userId,
         allowAdditional,
+        recoverExistingUser,
       ),
     db
       .prepare(
@@ -839,7 +990,8 @@ export async function registerDeveloperCredential(input: {
            AND (
              ? = 1
              OR NOT EXISTS (SELECT 1 FROM developer_credentials)
-           )`,
+           )
+           AND ? = 1`,
       )
       .bind(
         organizationId,
@@ -848,6 +1000,7 @@ export async function registerDeveloperCredential(input: {
         now,
         userId,
         allowAdditional,
+        createNewUser,
       ),
     db
       .prepare(
@@ -864,7 +1017,8 @@ export async function registerDeveloperCredential(input: {
            AND (
              ? = 1
              OR NOT EXISTS (SELECT 1 FROM developer_credentials)
-           )`,
+           )
+           AND ? = 1`,
       )
       .bind(
         memberId,
@@ -874,6 +1028,7 @@ export async function registerDeveloperCredential(input: {
         userId,
         normalizedEmail,
         allowAdditional,
+        createNewUser,
       ),
     db
       .prepare(
@@ -1290,8 +1445,12 @@ async function loadReviewPayload(input: {
 export async function getDeveloperWorkspace(
   identity: DeveloperIdentity,
   preferredProjectId?: string | null,
+  preferredReleaseId?: string | null,
 ): Promise<
-  DeveloperWorkspace & { activeReview: ReviewPayloadWithMessages | null }
+  DeveloperWorkspace & {
+    releases: DeveloperReleaseSummary[];
+    activeReview: ReviewPayloadWithMessages | null;
+  }
 > {
   const member = await provisionDeveloper(identity);
   const db = database();
@@ -1348,22 +1507,48 @@ export async function getDeveloperWorkspace(
     }),
   );
 
-  const activeProjectId =
-    projects.find((project) => project.id === preferredProjectId)?.id ??
-    projects[0]?.id;
+  const preferredProject = preferredProjectId
+    ? projects.find((project) => project.id === preferredProjectId)
+    : undefined;
+
+  if (preferredProjectId && !preferredProject) {
+    throw new ReviewNotFoundError("Projet introuvable.");
+  }
+
+  const activeProjectId = preferredProject?.id ?? projects[0]?.id;
+  let releases: DeveloperReleaseSummary[] = [];
   let activeReview: ReviewPayloadWithMessages | null = null;
 
   if (activeProjectId) {
     const project = await getAuthorizedProject(member, activeProjectId);
-    const release = await db
+    const releaseResult = await db
       .prepare(
         `SELECT * FROM review_releases
          WHERE project_id = ?
-         ORDER BY created_at DESC
-         LIMIT 1`,
+         ORDER BY created_at DESC, id DESC`,
       )
       .bind(project.id)
-      .first<ReleaseRow>();
+      .all<ReleaseRow>();
+    releases = releaseResult.results.map((release) => ({
+      id: release.id,
+      projectId: release.project_id,
+      version: release.version,
+      title: release.title,
+      status: release.status,
+      createdAt: release.created_at,
+      updatedAt: release.updated_at,
+      expiresAt: release.expires_at,
+    }));
+
+    const release = preferredReleaseId
+      ? releaseResult.results.find(
+          (candidate) => candidate.id === preferredReleaseId,
+        )
+      : releaseResult.results[0];
+
+    if (preferredReleaseId && !release) {
+      throw new ReviewNotFoundError("Version introuvable.");
+    }
 
     if (release) {
       const invitation = await db
@@ -1383,6 +1568,8 @@ export async function getDeveloperWorkspace(
         reviewerName: invitation?.reviewer_name,
       });
     }
+  } else if (preferredReleaseId) {
+    throw new ReviewNotFoundError("Version introuvable.");
   }
 
   return {
@@ -1396,6 +1583,7 @@ export async function getDeveloperWorkspace(
       name: member.organizationName,
     },
     projects,
+    releases,
     activeReview,
   };
 }
@@ -1576,7 +1764,6 @@ export async function createRelease(
              AND release_id IN (
                SELECT id FROM review_releases
                WHERE project_id = ?
-                 AND status IN ('in_review', 'changes_requested')
              )`,
         )
         .bind(now, projectId),
@@ -1588,7 +1775,6 @@ export async function createRelease(
              AND release_id IN (
                SELECT id FROM review_releases
                WHERE project_id = ?
-                 AND status IN ('in_review', 'changes_requested')
              )`,
         )
         .bind(now, projectId),

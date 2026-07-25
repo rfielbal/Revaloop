@@ -4,6 +4,10 @@ export type DesktopSettings = {
   controlPlaneUrl: string;
 };
 
+export const DEFAULT_PREVIEW_URL = "http://127.0.0.1:3000/";
+export const DEFAULT_CONTROL_PLANE_URL =
+  "https://revaloop-rfielbal.moulbyte.chatgpt.site/";
+
 export type SettingsInput = Pick<
   DesktopSettings,
   "previewUrl" | "controlPlaneUrl"

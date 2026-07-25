@@ -65,8 +65,8 @@ Le plugin de build copie la configuration Sites et les migrations dans
 
 Le dossier `desktop/` contient une SPA React/Vite partagée par deux runtimes. Le
 runtime principal de développement est Electron ; le backend Tauri 2/Rust
-historique reste maintenu comme fallback explicite. Aucun des deux n’embarque le
-Worker vinext ou D1.
+historique reste maintenu comme fallback de compatibilité, sans parité complète
+des frontières de lancement. Aucun des deux n’embarque le Worker vinext ou D1.
 
 ```mermaid
 flowchart LR
@@ -147,9 +147,11 @@ Electron agrandit la surface de dépendances par rapport à Tauri, mais raccourc
 la boucle locale : `npm run desktop:dev` démarre directement l’app depuis le
 dépôt sans installer puis réinstaller un binaire. Cette décision temporaire est
 encadrée par [ADR-0006](adr/0006-electron-development-runtime.md). Tauri reste
-disponible via les commandes `desktop:tauri:*`. Aucune distribution publique
-n’est prévue avant signature des artefacts, notarisation macOS et provenance
-vérifiable.
+disponible via les commandes `desktop:tauri:*`, mais son backend reçoit encore
+le chemin du renderer et ne possède pas la confirmation native à usage unique
+d’Electron. Il est réservé à la compatibilité et aux projets fiables. Aucune
+distribution publique n’est prévue avant signature des artefacts, notarisation
+macOS et provenance vérifiable.
 
 ### Routes
 
@@ -176,8 +178,9 @@ vérifiable.
 
 Revaloop gère directement le compte développeur. Le mot de passe, entre 12 et
 128 caractères, est dérivé dans Web Crypto avec PBKDF2-SHA-256, un sel
-aléatoire de 16 octets et 600 000 itérations. D1 conserve le dérivé, le sel et
-le coût, jamais le mot de passe.
+aléatoire de 16 octets et 100 000 itérations, maximum accepté par le runtime
+Workers actuel. D1 conserve le dérivé, le sel et le coût, jamais le mot de
+passe.
 
 Une connexion valide émet un token opaque aléatoire. Seul son SHA-256 est
 stocké dans `developer_sessions`. En production, le token brut est porté par le
@@ -295,16 +298,19 @@ décision courante est remplacée.
 
 ### Publication d’une nouvelle release
 
-Une seule release courante est exposée dans l’interface alpha. Le serveur refuse
-une nouvelle publication tant qu’une release non expirée est `in_review` ou
-`changes_requested`. Le développeur poursuit donc corrections et revalidations
-sur la même release jusqu’à son approbation ou son expiration.
+Une seule release peut rester active, mais l’interface alpha expose l’historique
+des versions du projet et recharge leurs retours, messages et décisions après
+contrôle d’appartenance. Le serveur refuse une nouvelle publication tant qu’une
+release non expirée est `in_review` ou `changes_requested`. Le développeur
+poursuit donc corrections et revalidations sur la même release jusqu’à son
+approbation ou son expiration.
 
-Après approbation, une nouvelle release peut être insérée et l’ancienne conserve
-son état `approved`. Après expiration, le batch de publication révoque les
-invitations et sessions encore présentes, passe l’ancienne release active à
-`superseded`, puis insère la nouvelle release et ses consignes. L’historique
-navigable viendra dans une version ultérieure.
+Lors de toute nouvelle publication, le batch révoque les invitations et
+sessions de toutes les releases antérieures du projet avant d’insérer la
+nouvelle version. Une release approuvée conserve son état `approved` et reste
+consultable par le développeur ; une ancienne release encore active après son
+expiration passe à `superseded`. L’historique, ses retours et ses messages
+restent accessibles uniquement depuis le dashboard développeur autorisé.
 
 ## Modèle D1
 

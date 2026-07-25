@@ -17,7 +17,8 @@
 
 - ✅ landing et démo cliente fictive ;
 - ✅ compte développeur Revaloop par e-mail et mot de passe ;
-- ✅ PBKDF2-SHA-256 Web Crypto à 600 000 itérations et session opaque hachée ;
+- ✅ PBKDF2-SHA-256 Web Crypto à 100 000 itérations, maximum compatible avec
+  Workers, et session opaque hachée ;
 - ✅ inscription bootstrap fermée après le premier compte, sauf activation
   explicite de `REVALOOP_ALLOW_REGISTRATION` ;
 - ✅ utilisateurs, organisations, membres et autorisation par projet ;
@@ -67,16 +68,16 @@
 - ✅ aucune API, aucun token natif et aucun cookie web dans l’app ;
 - ✅ fuses Electron durcis pour les artefacts empaquetés ;
 - ✅ tests TypeScript/Node et build Electron/Vite ;
-- ✅ runtime Tauri 2 maintenu comme fallback explicite et tests Rust conservés ;
+- 🧪 runtime Tauri 2 conservé pour compatibilité et tests Rust, sans parité
+  actuelle sur l’autorité du chemin et la confirmation native ;
 - 🧪 artefacts Electron locaux non signés, non destinés au téléchargement.
 
 ### Limites de l’alpha
 
-- une seule release courante est exposée dans le dashboard ;
-- après approbation, la release reste approuvée mais n’est plus navigable depuis
-  le dashboard dès qu’une nouvelle version existe ;
-- après expiration, publier une nouvelle release révoque les anciens accès et
-  passe la précédente à `superseded` ;
+- une seule release peut rester active, mais les anciennes versions, leurs
+  retours et leurs messages sont consultables depuis le dashboard ;
+- publier une nouvelle release révoque tous les accès reviewer antérieurs du
+  projet ; une précédente release expirée passe à `superseded` ;
 - l’origine de preview n’est pas limitée par allowlist globale ;
 - aucun reset de mot de passe, vérification d’e-mail ou MFA ;
 - l’inscription bootstrap doit être terminée avant l’ouverture publique ;
@@ -90,6 +91,8 @@
 - aucune capture ou pièce jointe ;
 - aucun e-mail n’est envoyé ;
 - aucun tunnel local ni synchronisation API native ;
+- le compagnon desktop ne possède pas encore de session Revaloop et ouvre
+  connexion, dashboard et retours dans le navigateur système ;
 - aucune distribution desktop signée ou notariée.
 
 ## Jalon 0.2.1 — fiabiliser le pilote
@@ -105,7 +108,7 @@
 - ⏳ confirmation de suppression renforcée ;
 - ⏳ quotas par organisation ;
 - ⏳ allowlist/invitation développeur pour alpha fermée ;
-- ⏳ historique et sélection de releases.
+- ✅ historique et sélection de releases dans le projet actif.
 
 ### Porte de sortie
 
@@ -164,8 +167,8 @@ hors périmètre.
 
 Objectif : rendre enfin possible `revaloop share 3000`.
 
-- ✅ socle Electron local, fallback Tauri et contrôle explicite du script
-  `dev` ;
+- ✅ socle Electron local et contrôle explicite du script `dev` ;
+- 🧪 fallback Tauri conservé sans parité complète des frontières de lancement ;
 - ✅ cible loopback et port explicitement autorisés dans le compagnon ;
 - ⏳ CLI `revaloop share` et agent de tunnel ;
 - ⏳ authentification d’appareil ;

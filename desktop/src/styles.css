@@ -340,6 +340,12 @@ button:disabled {
     0 0 0 116px rgba(36, 95, 98, 0.018);
 }
 
+#overview,
+#project,
+#workspace {
+  scroll-margin-top: 24px;
+}
+
 .desktop-topbar {
   display: flex;
   max-width: 1440px;
@@ -658,6 +664,43 @@ button:disabled {
   font-weight: 640;
   letter-spacing: -0.045em;
   line-height: 1.08;
+}
+
+.project-contract {
+  display: grid;
+  margin: -4px 0 18px;
+  padding: 14px 15px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  color: var(--petrol-deep);
+  border: 1px solid rgba(36, 95, 98, 0.17);
+  border-radius: 18px 18px 6px 18px;
+  background: var(--petrol-pale);
+}
+
+.project-contract > svg {
+  width: 19px;
+  margin: 1px auto 0;
+}
+
+.project-contract strong {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 760;
+}
+
+.project-contract p {
+  margin: 4px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.project-contract code {
+  color: var(--ink);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.94em;
 }
 
 .icon-button,
@@ -1163,6 +1206,39 @@ button:disabled {
   line-height: 1.65;
 }
 
+.workspace-boundary {
+  display: grid;
+  max-width: 610px;
+  margin: 0 0 23px;
+  padding: 14px 15px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px 18px 6px 18px;
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.workspace-boundary > svg {
+  width: 19px;
+  margin: 1px auto 0;
+  color: #f3c3b8;
+}
+
+.workspace-boundary strong {
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 760;
+}
+
+.workspace-boundary p {
+  margin: 4px 0 0;
+  color: #c6d6d6;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
 .workspace-copy .field-label {
   color: #d9e6e5;
 }
@@ -1180,6 +1256,14 @@ button:disabled {
 
 .url-field-light input {
   color: white;
+}
+
+.workspace-instance-help {
+  max-width: 560px !important;
+  margin: 8px 2px 0 !important;
+  color: #bed0cf !important;
+  font-size: 0.66rem !important;
+  line-height: 1.5 !important;
 }
 
 .url-field-light.url-field-error {
@@ -1569,6 +1653,12 @@ button:disabled {
   .desktop-main {
     padding: 26px 20px;
     overflow: visible;
+  }
+
+  #overview,
+  #project,
+  #workspace {
+    scroll-margin-top: 82px;
   }
 
   .desktop-topbar {

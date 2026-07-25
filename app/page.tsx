@@ -323,12 +323,14 @@ export default function Home() {
       <section className="flow-desktop-section" id="desktop">
         <div className="desktop-copy">
           <span>Compagnon local · Electron</span>
-          <h2>Votre projet local, prêt à être revu.</h2>
+          <h2>Votre projet local, prêt à être lancé.</h2>
           <p>
             L’application Electron peut déjà être lancée depuis le dépôt, sans
             réinstaller une nouvelle version à chaque évolution. Elle vous aide
             à choisir le projet, confirme la commande à exécuter puis ouvre
-            Revaloop dans le navigateur.
+            Revaloop dans le navigateur. Cette alpha ne téléverse pas le code,
+            ne crée pas de tunnel et ne lit pas encore les retours dans
+            l’application native.
           </p>
           <div className="desktop-actions">
             <a

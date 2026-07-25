@@ -7,7 +7,8 @@ use url::{Host, Url};
 
 const SETTINGS_FILENAME: &str = "settings.json";
 const DEFAULT_PREVIEW_URL: &str = "http://127.0.0.1:3000/";
-const DEFAULT_CONTROL_PLANE_URL: &str = "http://127.0.0.1:3000/";
+const LEGACY_DEFAULT_CONTROL_PLANE_URL: &str = "http://127.0.0.1:3000/";
+const DEFAULT_CONTROL_PLANE_URL: &str = "https://revaloop-rfielbal.moulbyte.chatgpt.site/";
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,6 +87,15 @@ fn validate(mut settings: DesktopSettings) -> Result<DesktopSettings, String> {
     Ok(settings)
 }
 
+fn migrate_legacy_defaults(mut settings: DesktopSettings) -> (DesktopSettings, bool) {
+    let should_migrate = settings.preview_url == DEFAULT_PREVIEW_URL
+        && settings.control_plane_url == LEGACY_DEFAULT_CONTROL_PLANE_URL;
+    if should_migrate {
+        settings.control_plane_url = DEFAULT_CONTROL_PLANE_URL.into();
+    }
+    (settings, should_migrate)
+}
+
 pub fn read(app: &AppHandle) -> Result<DesktopSettings, String> {
     let path = settings_path(app)?;
     if !path.exists() {
@@ -98,7 +108,14 @@ pub fn read(app: &AppHandle) -> Result<DesktopSettings, String> {
     }
     let settings: DesktopSettings = serde_json::from_slice(&bytes)
         .map_err(|_| "La configuration locale est illisible.".to_string())?;
-    validate(settings)
+    let validated = validate(settings)?;
+    let (migrated, changed) = migrate_legacy_defaults(validated);
+    if changed {
+        let serialized = serde_json::to_vec_pretty(&migrated)
+            .map_err(|_| "Impossible de préparer la configuration locale.".to_string())?;
+        write_file(&path, &serialized)?;
+    }
+    Ok(migrated)
 }
 
 fn write_file(path: &Path, contents: &[u8]) -> Result<(), String> {
@@ -145,7 +162,10 @@ pub fn save_settings(app: AppHandle, settings: DesktopSettings) -> Result<Deskto
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_control_plane_url;
+    use super::{
+        migrate_legacy_defaults, normalize_control_plane_url, DesktopSettings,
+        DEFAULT_CONTROL_PLANE_URL, DEFAULT_PREVIEW_URL, LEGACY_DEFAULT_CONTROL_PLANE_URL,
+    };
 
     #[test]
     fn allows_https_and_loopback_http_control_planes() {
@@ -157,5 +177,40 @@ mod tests {
     fn rejects_insecure_remote_control_planes() {
         assert!(normalize_control_plane_url("http://revaloop.example").is_err());
         assert!(normalize_control_plane_url("https://revaloop.example/path").is_err());
+    }
+
+    #[test]
+    fn uses_the_remote_control_plane_by_default() {
+        let settings = DesktopSettings::default();
+        assert_eq!(settings.preview_url, DEFAULT_PREVIEW_URL);
+        assert_eq!(settings.control_plane_url, DEFAULT_CONTROL_PLANE_URL);
+    }
+
+    #[test]
+    fn migrates_only_the_legacy_ambiguous_pair() {
+        let legacy = DesktopSettings {
+            project_path: Some("/projets/site-client".into()),
+            preview_url: DEFAULT_PREVIEW_URL.into(),
+            control_plane_url: LEGACY_DEFAULT_CONTROL_PLANE_URL.into(),
+        };
+        let (migrated, changed) = migrate_legacy_defaults(legacy);
+        assert!(changed);
+        assert_eq!(migrated.control_plane_url, DEFAULT_CONTROL_PLANE_URL);
+        assert_eq!(
+            migrated.project_path.as_deref(),
+            Some("/projets/site-client")
+        );
+
+        let custom = DesktopSettings {
+            project_path: None,
+            preview_url: "http://127.0.0.1:4173/".into(),
+            control_plane_url: LEGACY_DEFAULT_CONTROL_PLANE_URL.into(),
+        };
+        let (preserved, changed) = migrate_legacy_defaults(custom);
+        assert!(!changed);
+        assert_eq!(
+            preserved.control_plane_url,
+            LEGACY_DEFAULT_CONTROL_PLANE_URL
+        );
     }
 }

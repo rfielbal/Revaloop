@@ -29,6 +29,9 @@ class TestD1Statement {
     if (/SELECT COUNT\\(\\*\\) AS count FROM developer_credentials/i.test(this.sql)) {
       return { count: 0 };
     }
+    if (/INSERT INTO rate_limit_buckets/i.test(this.sql)) {
+      return { count: 1 };
+    }
 
     return null;
   }
@@ -76,10 +79,14 @@ function getWorker() {
   return workerPromise;
 }
 
-async function render(pathname, headers = {}) {
+async function render(
+  pathname,
+  headers = {},
+  origin = "https://revaloop.test",
+) {
   const worker = await getWorker();
   const response = await worker.fetch(
-    new Request(`https://revaloop.test${pathname}`, {
+    new Request(`${origin}${pathname}`, {
       headers: {
         accept: "text/html",
         ...headers,
@@ -319,8 +326,83 @@ test("rend l’initialisation sécurisée du premier compte", async () => {
     html,
     /<input\b(?=[^>]*\bname=["']password["'])(?=[^>]*\bminlength=["']12["'])[^>]*>/i,
   );
+  assert.match(
+    html,
+    /<input\b(?=[^>]*\bname=["']passwordConfirmation["'])(?=[^>]*\bminlength=["']12["'])[^>]*>/i,
+  );
+  assert.match(html, /aria-label=["']Afficher les deux mots de passe["']/i);
   assertInternalLink(html, "/login?return_to=%2Fdashboard");
   assertNoDemoIdentity(html);
+});
+
+test("préremplit sans ambiguïté l’adresse authentifiée par Sites", async () => {
+  const { response, html } = await render(
+    "/register?return_to=%2Fdashboard",
+    {
+      "oai-authenticated-user-email": "  Owner@Example.TEST ",
+      host: "revaloop-rfielbal.moulbyte.chatgpt.site",
+    },
+    "https://revaloop-rfielbal.moulbyte.chatgpt.site",
+  );
+  const text = visibleText(html);
+
+  assertHtmlResponse(response);
+  assert.match(
+    html,
+    /<input\b(?=[^>]*\bname=["']email["'])(?=[^>]*\bvalue=["']owner@example\.test["'])(?=[^>]*\breadonly(?:=["'][^"']*["'])?)[^>]*>/i,
+  );
+  assert.match(text, /adresse a été confirmée par l’accès privé Sites/i);
+});
+
+test("n’annonce pas une identité Sites sur la seule foi du proxy", async () => {
+  const { response, html } = await render(
+    "/register?return_to=%2Fdashboard",
+    {
+      host: "revaloop.test",
+      "x-forwarded-host": "revaloop-rfielbal.moulbyte.chatgpt.site",
+      "oai-authenticated-user-email": "owner@example.test",
+    },
+  );
+  const text = visibleText(html);
+
+  assertHtmlResponse(response);
+  assert.doesNotMatch(
+    html,
+    /<input\b(?=[^>]*\bname=["']email["'])(?=[^>]*\breadonly)[^>]*>/i,
+  );
+  assert.doesNotMatch(text, /adresse a été confirmée par l’accès privé Sites/i);
+});
+
+test("refuse une confirmation de mot de passe différente dans l’API", async () => {
+  const worker = await getWorker();
+  const response = await worker.fetch(
+    new Request("https://revaloop.test/api/auth/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://revaloop.test",
+      },
+      body: JSON.stringify({
+        displayName: "Studio",
+        email: "owner@example.test",
+        password: "une phrase de passe",
+        passwordConfirmation: "une autre phrase",
+      }),
+    }),
+    {
+      ASSETS: {
+        fetch: async () => new Response("Not found", { status: 404 }),
+      },
+    },
+    {
+      waitUntil() {},
+      passThroughOnException() {},
+    },
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(payload.error, /ne correspondent pas/);
 });
 
 test("versionne les vingt tables D1 et les migrations de sécurité", async () => {
