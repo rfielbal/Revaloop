@@ -356,6 +356,11 @@ export const reviewFeedback = sqliteTable(
       () => reviewerSessions.id,
       { onDelete: "set null" },
     ),
+    authorType: text("author_type", {
+      enum: ["developer", "reviewer"],
+    })
+      .notNull()
+      .default("reviewer"),
     sequence: integer("sequence").notNull(),
     type: text("type", {
       enum: ["visual", "functional", "copy"],

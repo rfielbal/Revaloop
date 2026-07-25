@@ -83,6 +83,7 @@ type FeedbackRow = {
   id: string;
   release_id: string;
   author_session_id: string | null;
+  author_type: "developer" | "reviewer";
   sequence: number;
   type: FeedbackType;
   title: string;
@@ -313,6 +314,7 @@ const schemaStatements = [
     id TEXT PRIMARY KEY NOT NULL,
     release_id TEXT NOT NULL,
     author_session_id TEXT,
+    author_type TEXT NOT NULL DEFAULT 'reviewer',
     sequence INTEGER NOT NULL,
     type TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -601,6 +603,7 @@ function mapFeedback(row: FeedbackRow): FeedbackItem {
   return {
     id: row.id,
     releaseId: row.release_id,
+    authorRole: row.author_type,
     sequence: row.sequence,
     type: row.type,
     title: row.title,
@@ -2436,10 +2439,10 @@ export async function createFeedbackAsReviewer(
     db
       .prepare(
         `INSERT INTO review_feedback
-          (id, release_id, author_session_id, sequence, type, title, body,
+          (id, release_id, author_session_id, author_type, sequence, type, title, body,
            status, priority, page_path, page_title, viewport, position_x,
            position_y, author_name, created_at, updated_at)
-         SELECT ?, review_releases.id, ?, review_releases.feedback_sequence,
+         SELECT ?, review_releases.id, ?, 'reviewer', review_releases.feedback_sequence,
                 ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?
          FROM review_releases
          WHERE review_releases.id = ?

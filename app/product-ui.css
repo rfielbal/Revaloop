@@ -7185,3 +7185,177 @@
     justify-content: center;
   }
 }
+
+/* ------------------------------------------------------------------------- */
+/* Vue de revue fixe : un seul scroll, un seul contour, des rôles explicites */
+/* ------------------------------------------------------------------------- */
+
+html:has(.review-flow),
+body:has(.review-flow) {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.review-flow {
+  height: 100dvh;
+  inset: 0;
+  max-width: 100vw;
+  min-height: 0;
+  overscroll-behavior: none;
+  position: fixed;
+  width: 100%;
+}
+
+.review-flow .review-stage,
+.review-flow .preview-area,
+.review-flow .preview-frame {
+  min-height: 0;
+}
+
+.review-flow .review-stage,
+.review-flow .preview-area {
+  overflow: hidden;
+}
+
+.review-flow .preview-area {
+  padding: 18px 18px 80px;
+}
+
+.review-flow .preview-area:has(.external-preview-bar) {
+  padding-top: 62px;
+}
+
+.review-flow .preview-frame {
+  max-height: none;
+}
+
+.review-flow .client-preview {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.review-flow .client-preview:has(.external-preview-frame) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+.review-flow .client-preview.is-commenting::after {
+  content: none;
+  display: none;
+}
+
+.review-flow .preview-frame.is-commenting {
+  border-color: var(--rv-color-success);
+  box-shadow:
+    0 0 0 3px rgba(47, 105, 79, 0.2),
+    var(--flow-shadow);
+}
+
+.review-flow .review-pin-reviewer::before {
+  background: var(--rv-color-success);
+  box-shadow: 0 7px 20px rgba(31, 73, 55, 0.3);
+}
+
+.review-flow .review-pin-reviewer.active::before {
+  background: #214f3b;
+  box-shadow: 0 0 0 7px rgba(47, 105, 79, 0.24);
+}
+
+.review-flow .review-pin-developer::before {
+  background: #aa503e;
+  box-shadow: 0 7px 20px rgba(125, 52, 38, 0.3);
+}
+
+.review-flow .review-pin-developer.active::before {
+  background: #863b2c;
+  box-shadow: 0 0 0 7px rgba(170, 80, 62, 0.24);
+}
+
+.review-flow .review-pin-draft::before {
+  background: var(--rv-color-surface);
+  border-color: var(--rv-color-success);
+  box-shadow: 0 7px 20px rgba(31, 73, 55, 0.18);
+}
+
+.review-flow .composer-privacy {
+  margin: 16px 0 18px;
+}
+
+.review-flow .review-fullscreen-toggle {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.review-flow .review-fullscreen-toggle:hover,
+.review-flow .review-fullscreen-toggle[aria-pressed="true"] {
+  color: #fff;
+}
+
+.review-flow.is-preview-expanded .review-topbar {
+  display: none;
+}
+
+.review-flow.is-preview-expanded .review-stage {
+  height: 100dvh;
+  padding: 8px;
+}
+
+.review-flow.is-preview-expanded .preview-area {
+  border-radius: 26px 38px 26px 32px;
+  padding: 8px 8px 78px;
+}
+
+.review-flow.is-preview-expanded .preview-area:has(.external-preview-bar) {
+  padding-top: 58px;
+}
+
+.review-flow.is-preview-expanded .preview-desktop {
+  max-width: none;
+}
+
+.review-flow.is-preview-expanded .review-sidepanel {
+  bottom: 0;
+  right: 0;
+}
+
+.review-flow:fullscreen {
+  background: var(--flow-cloud);
+}
+
+@media (max-width: 1020px) {
+  .review-flow .preview-area {
+    padding: 12px 10px 78px;
+  }
+
+  .review-flow .preview-area:has(.external-preview-bar) {
+    padding-top: 56px;
+  }
+
+  .review-flow.is-preview-expanded .preview-area {
+    padding: 7px 7px 76px;
+  }
+
+  .review-flow.is-preview-expanded .preview-area:has(.external-preview-bar) {
+    padding-top: 54px;
+  }
+}
+
+@media (max-width: 560px) {
+  .review-flow .review-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 48px;
+  }
+
+  .review-flow .review-fullscreen-toggle {
+    padding-inline: 0;
+  }
+
+  .review-flow .review-fullscreen-label {
+    clip: rect(0 0 0 0);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    width: 1px;
+  }
+}

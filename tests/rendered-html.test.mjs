@@ -324,8 +324,15 @@ test("rend l’initialisation sécurisée du premier compte", async () => {
 });
 
 test("versionne les vingt tables D1 et les migrations de sécurité", async () => {
-  const [schema, legacy, secure, privacy, collaboration, hosting] =
-    await Promise.all([
+  const [
+    schema,
+    legacy,
+    secure,
+    privacy,
+    collaboration,
+    feedbackAuthors,
+    hosting,
+  ] = await Promise.all([
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(
       new URL("../drizzle/0000_redundant_vance_astro.sql", import.meta.url),
@@ -343,8 +350,12 @@ test("versionne les vingt tables D1 et les migrations de sécurité", async () =
       new URL("../drizzle/0003_sparkling_wrecker.sql", import.meta.url),
       "utf8",
     ),
+    readFile(
+      new URL("../drizzle/0004_new_ben_parker.sql", import.meta.url),
+      "utf8",
+    ),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
-    ]);
+  ]);
 
   const schemaTables = [
     ...schema.matchAll(/sqliteTable\(\s*["']([^"']+)["']/g),
@@ -387,6 +398,10 @@ test("versionne les vingt tables D1 et les migrations de sécurité", async () =
   assert.match(
     collaboration,
     /FOREIGN KEY \(`author_session_id`\) REFERENCES `reviewer_sessions`\(`id`\).*ON DELETE set null/,
+  );
+  assert.match(
+    feedbackAuthors,
+    /ADD `author_type` text DEFAULT 'reviewer' NOT NULL/,
   );
 
   const hostingConfig = JSON.parse(hosting);

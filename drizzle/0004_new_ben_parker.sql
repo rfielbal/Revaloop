@@ -1,0 +1,1 @@
+ALTER TABLE `review_feedback` ADD `author_type` text DEFAULT 'reviewer' NOT NULL;

@@ -10,7 +10,9 @@ import {
   ClipboardCheck,
   Link2,
   LogOut,
+  Maximize2,
   MessageCirclePlus,
+  Minimize2,
   Monitor,
   MousePointer2,
   PanelRightClose,
@@ -169,6 +171,7 @@ export function ReviewClient({
   const [previewHelpVisible, setPreviewHelpVisible] = useState(false);
   const [previewUpdateAvailable, setPreviewUpdateAvailable] = useState(false);
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
+  const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [messageBody, setMessageBody] = useState("");
@@ -182,6 +185,9 @@ export function ReviewClient({
   });
   const previewRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const pageRef = useRef<HTMLElement>(null);
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+  const nativeFullscreenActiveRef = useRef(false);
   const finishButtonRef = useRef<HTMLButtonElement>(null);
   const composerTriggerRef = useRef<HTMLElement | null>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
@@ -395,6 +401,28 @@ export function ReviewClient({
   }, [toast]);
 
   useEffect(() => {
+    function handleFullscreenChange() {
+      const active = document.fullscreenElement === pageRef.current;
+
+      if (active) {
+        nativeFullscreenActiveRef.current = true;
+        setIsPreviewExpanded(true);
+        return;
+      }
+
+      if (nativeFullscreenActiveRef.current) {
+        nativeFullscreenActiveRef.current = false;
+        setIsPreviewExpanded(false);
+        window.requestAnimationFrame(() => fullscreenButtonRef.current?.focus());
+      }
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") {
         return;
@@ -408,12 +436,21 @@ export function ReviewClient({
         window.requestAnimationFrame(() => composerTriggerRef.current?.focus());
       } else if (showReservation) {
         setShowReservation(false);
+      } else if (isPreviewExpanded) {
+        if (document.fullscreenElement === pageRef.current) {
+          void document.exitFullscreen();
+        } else {
+          setIsPreviewExpanded(false);
+          window.requestAnimationFrame(() =>
+            fullscreenButtonRef.current?.focus(),
+          );
+        }
       }
     }
 
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [composer, showFinishDialog, showReservation]);
+  }, [composer, isPreviewExpanded, showFinishDialog, showReservation]);
 
   const visiblePins = useMemo(
     () =>
@@ -544,6 +581,38 @@ export function ReviewClient({
     });
   }
 
+  async function togglePreviewExpansion() {
+    setComposer(null);
+    setShowReservation(false);
+
+    if (isPreviewExpanded) {
+      setIsPreviewExpanded(false);
+      if (document.fullscreenElement === pageRef.current) {
+        await document.exitFullscreen().catch(() => undefined);
+      }
+      window.requestAnimationFrame(() => fullscreenButtonRef.current?.focus());
+      return;
+    }
+
+    setIsPreviewExpanded(true);
+    setSidePanelOpen(false);
+
+    if (!pageRef.current?.requestFullscreen) {
+      setToast(
+        "L’aperçu est agrandi dans la fenêtre. Le plein écran natif n’est pas disponible dans ce navigateur.",
+      );
+      return;
+    }
+
+    try {
+      await pageRef.current.requestFullscreen();
+    } catch {
+      setToast(
+        "L’aperçu est agrandi dans la fenêtre. Le navigateur a refusé le plein écran natif.",
+      );
+    }
+  }
+
   async function submitFeedback(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -567,6 +636,7 @@ export function ReviewClient({
         const item: FeedbackItem = {
           id: `demo_${crypto.randomUUID()}`,
           releaseId: review.release.id,
+          authorRole: "reviewer",
           sequence:
             Math.max(0, ...review.feedback.map((feedback) => feedback.sequence)) +
             1,
@@ -927,7 +997,12 @@ export function ReviewClient({
   }
 
   return (
-    <main className="review-page review-flow">
+    <main
+      ref={pageRef}
+      className={`review-page review-flow ${
+        isPreviewExpanded ? "is-preview-expanded" : ""
+      }`}
+    >
       <header
         className="review-topbar"
         inert={composer || showFinishDialog ? true : undefined}
@@ -1263,7 +1338,7 @@ export function ReviewClient({
 
               {visiblePins.map((item) => (
                 <button
-                  className={`review-pin ${
+                  className={`review-pin review-pin-${item.authorRole} ${
                     selectedFeedback?.id === item.id ? "active" : ""
                   }`}
                   key={item.id}
@@ -1279,7 +1354,11 @@ export function ReviewClient({
                     setPanelTab("feedback");
                     setSidePanelOpen(true);
                   }}
-                  aria-label={`Voir le retour ${item.sequence} : ${item.title}`}
+                  aria-label={`Voir le retour ${item.sequence} ${
+                    item.authorRole === "developer"
+                      ? "du développeur"
+                      : "de votre part"
+                  } : ${item.title}`}
                 >
                   <span aria-hidden="true">{item.sequence}</span>
                 </button>
@@ -1721,6 +1800,22 @@ export function ReviewClient({
         >
           <CircleDotDashed aria-hidden="true" />
           Retour général
+        </button>
+        <button
+          ref={fullscreenButtonRef}
+          className="review-fullscreen-toggle"
+          type="button"
+          aria-pressed={isPreviewExpanded}
+          onClick={togglePreviewExpansion}
+        >
+          {isPreviewExpanded ? (
+            <Minimize2 aria-hidden="true" />
+          ) : (
+            <Maximize2 aria-hidden="true" />
+          )}
+          <span className="review-fullscreen-label">
+            {isPreviewExpanded ? "Réduire" : "Plein écran"}
+          </span>
         </button>
       </div>
 

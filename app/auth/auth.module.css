@@ -278,6 +278,8 @@
   background: transparent;
   color: #b9cecc;
   cursor: pointer;
+  padding: 0;
+  transform: translateY(-50%);
 }
 
 .passwordField button:hover {

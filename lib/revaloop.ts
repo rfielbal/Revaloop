@@ -17,6 +17,7 @@ export type FeedbackPriority = "low" | "normal" | "high";
 export interface FeedbackItem {
   id: string;
   releaseId: string;
+  authorRole: "developer" | "reviewer";
   sequence: number;
   type: FeedbackType;
   title: string;
@@ -189,6 +190,7 @@ export const demoFeedback: FeedbackItem[] = [
   {
     id: "feedback_001",
     releaseId: demoRelease.id,
+    authorRole: "developer",
     sequence: 1,
     type: "visual",
     title: "Le bouton de réservation manque de contraste",
@@ -199,13 +201,14 @@ export const demoFeedback: FeedbackItem[] = [
     viewport: "desktop · 1440 × 900",
     positionX: 77,
     positionY: 25,
-    authorName: "Client invité",
+    authorName: "Équipe projet",
     createdAt: "2026-07-23T15:02:00.000Z",
     updatedAt: "2026-07-24T08:42:00.000Z",
   },
   {
     id: "feedback_002",
     releaseId: demoRelease.id,
+    authorRole: "reviewer",
     sequence: 2,
     type: "copy",
     title: "Remplacer « Notre table »",
@@ -223,6 +226,7 @@ export const demoFeedback: FeedbackItem[] = [
   {
     id: "feedback_003",
     releaseId: demoRelease.id,
+    authorRole: "reviewer",
     sequence: 3,
     type: "functional",
     title: "Proposer un horaire alternatif",
@@ -240,6 +244,7 @@ export const demoFeedback: FeedbackItem[] = [
   {
     id: "feedback_004",
     releaseId: demoRelease.id,
+    authorRole: "reviewer",
     sequence: 4,
     type: "visual",
     title: "Photo du dessert validée",
