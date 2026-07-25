@@ -3,8 +3,49 @@ import { readFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
 import test from "node:test";
 
-const cloudflareWorkersModule =
-  "data:text/javascript,export%20const%20env%20%3D%20%7B%7D%3B";
+const cloudflareWorkersModule = `data:text/javascript,${encodeURIComponent(`
+class TestD1Statement {
+  constructor(sql) {
+    this.sql = sql;
+  }
+
+  bind() {
+    return this;
+  }
+
+  async run() {
+    return { meta: { changes: 0 } };
+  }
+
+  async all() {
+    if (/PRAGMA table_info\\(review_releases\\)/i.test(this.sql)) {
+      return { results: [{ name: "preview_revision" }] };
+    }
+
+    return { results: [] };
+  }
+
+  async first() {
+    if (/SELECT COUNT\\(\\*\\) AS count FROM developer_credentials/i.test(this.sql)) {
+      return { count: 0 };
+    }
+
+    return null;
+  }
+}
+
+class TestD1Database {
+  prepare(sql) {
+    return new TestD1Statement(sql);
+  }
+
+  async batch(statements) {
+    return statements.map(() => ({ meta: { changes: 0 } }));
+  }
+}
+
+export const env = { DB: new TestD1Database() };
+`)}`;
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -109,6 +150,13 @@ function assertInternalLink(html, href) {
   assert.match(html, new RegExp(`<a\\b[^>]*href=["']${escaped}["']`, "i"));
 }
 
+function assertNoDemoIdentity(html) {
+  assert.doesNotMatch(
+    visibleText(html),
+    /\b(?:Claire|Rapha(?:e|ë)l|ChatGPT)\b/iu,
+  );
+}
+
 function assertSecurityHeaders(response) {
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("referrer-policy"), "no-referrer");
@@ -153,9 +201,10 @@ test("rend une démonstration cliente publique mais non indexable", async () => 
   assertNamedMeta(html, "robots", "noindex, nofollow, noarchive, nosnippet");
   assertAccessibleStructure(html);
   assert.match(text, /Maison Matisse/);
-  assert.match(text, /Parcours suggéré/);
+  assert.match(text, /Repères facultatifs/);
   assert.match(text, /Environnement de test/);
   assert.match(text, /Ajouter un retour/);
+  assertNoDemoIdentity(html);
   assert.doesNotMatch(html, forbiddenStarterContent);
 });
 
@@ -217,13 +266,13 @@ test("autorise uniquement le bridge public à être chargé en cross-origin", as
   );
 });
 
-test("protège le dashboard par Sign in with ChatGPT en production", async () => {
+test("protège le dashboard par la connexion Revaloop en production", async () => {
   const { response } = await render("/dashboard");
 
   assert.ok([303, 307, 308].includes(response.status));
   assert.match(
     response.headers.get("location") ?? "",
-    /^(?:https:\/\/revaloop\.test)?\/signin-with-chatgpt\?return_to=%2Fdashboard$/,
+    /^(?:https:\/\/revaloop\.test)?\/login\?return_to=%2Fdashboard$/,
   );
   assertSecurityHeaders(response);
   assert.equal(
@@ -232,8 +281,51 @@ test("protège le dashboard par Sign in with ChatGPT en production", async () =>
   );
 });
 
-test("versionne toutes les tables D1 et la migration de confidentialité", async () => {
-  const [schema, legacy, secure, privacy, hosting] = await Promise.all([
+test("rend la connexion propriétaire sans dépendre d’un compte tiers", async () => {
+  const { response, html } = await render(
+    "/login?return_to=%2Fdashboard",
+  );
+  const text = visibleText(html);
+
+  assertHtmlResponse(response);
+  assertSecurityHeaders(response);
+  assertTitle(html, "Connexion · Revaloop");
+  assertNamedMeta(html, "robots", "noindex, nofollow");
+  assertAccessibleStructure(html);
+  assert.match(text, /Espace développeur protégé/);
+  assert.match(text, /Saisissez vos identifiants Revaloop/);
+  assert.match(html, /name=["']email["']/i);
+  assert.match(html, /name=["']password["']/i);
+  assertInternalLink(html, "/register?return_to=%2Fdashboard");
+  assertNoDemoIdentity(html);
+});
+
+test("rend l’initialisation sécurisée du premier compte", async () => {
+  const { response, html } = await render(
+    "/register?return_to=%2Fdashboard",
+  );
+  const text = visibleText(html);
+
+  assertHtmlResponse(response);
+  assertSecurityHeaders(response);
+  assertTitle(html, "Initialiser l’instance · Revaloop");
+  assertNamedMeta(html, "robots", "noindex, nofollow");
+  assertAccessibleStructure(html);
+  assert.match(text, /Créez le premier compte/);
+  assert.match(text, /inscriptions suivantes seront fermées automatiquement/);
+  assert.match(html, /name=["']displayName["']/i);
+  assert.match(html, /name=["']email["']/i);
+  assert.match(
+    html,
+    /<input\b(?=[^>]*\bname=["']password["'])(?=[^>]*\bminlength=["']12["'])[^>]*>/i,
+  );
+  assertInternalLink(html, "/login?return_to=%2Fdashboard");
+  assertNoDemoIdentity(html);
+});
+
+test("versionne les vingt tables D1 et les migrations de sécurité", async () => {
+  const [schema, legacy, secure, privacy, collaboration, hosting] =
+    await Promise.all([
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(
       new URL("../drizzle/0000_redundant_vance_astro.sql", import.meta.url),
@@ -247,17 +339,21 @@ test("versionne toutes les tables D1 et la migration de confidentialité", async
       new URL("../drizzle/0002_sticky_mystique.sql", import.meta.url),
       "utf8",
     ),
+    readFile(
+      new URL("../drizzle/0003_sparkling_wrecker.sql", import.meta.url),
+      "utf8",
+    ),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
-  ]);
+    ]);
 
   const schemaTables = [
     ...schema.matchAll(/sqliteTable\(\s*["']([^"']+)["']/g),
   ].map((match) => match[1]);
-  const migratedTables = [legacy, secure]
+  const migratedTables = [legacy, secure, collaboration]
     .flatMap((sql) => [...sql.matchAll(/CREATE TABLE `([^`]+)`/g)])
     .map((match) => match[1]);
 
-  assert.equal(schemaTables.length, 17);
+  assert.equal(schemaTables.length, 20);
   assert.deepEqual(
     [...new Set(migratedTables)].sort(),
     [...schemaTables].sort(),
@@ -277,8 +373,75 @@ test("versionne toutes les tables D1 et la migration de confidentialité", async
   assert.match(privacy, /ON DELETE set null/);
   assert.match(privacy, /PRAGMA defer_foreign_keys=ON/);
   assert.doesNotMatch(privacy, /PRAGMA foreign_keys=OFF/);
+  assert.match(collaboration, /CREATE TABLE `developer_credentials`/);
+  assert.match(collaboration, /CREATE TABLE `developer_sessions`/);
+  assert.match(collaboration, /CREATE TABLE `release_messages`/);
+  assert.match(
+    collaboration,
+    /ALTER TABLE `review_releases` ADD `preview_revision` integer DEFAULT 0 NOT NULL/,
+  );
+  assert.match(
+    collaboration,
+    /CREATE UNIQUE INDEX `developer_sessions_token_hash_unique`/,
+  );
+  assert.match(
+    collaboration,
+    /FOREIGN KEY \(`author_session_id`\) REFERENCES `reviewer_sessions`\(`id`\).*ON DELETE set null/,
+  );
 
   const hostingConfig = JSON.parse(hosting);
   assert.equal(hostingConfig.d1, "DB");
   assert.equal(hostingConfig.r2, null);
+});
+
+test("garde les messages, la preview et les vérifications optionnelles câblés", async () => {
+  const [
+    developerMessages,
+    reviewerMutations,
+    previewUpdates,
+    releaseCreation,
+    dashboard,
+  ] = await Promise.all([
+    readFile(
+      new URL("../app/api/releases/[id]/messages/route.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../app/api/review/[token]/route.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../app/api/releases/[id]/preview/route.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL(
+        "../app/api/projects/[id]/releases/route.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+    readFile(
+      new URL("../app/dashboard/dashboard-client.tsx", import.meta.url),
+      "utf8",
+    ),
+  ]);
+
+  assert.match(developerMessages, /createReleaseMessageAsDeveloper/);
+  assert.match(developerMessages, /assertSameOrigin\(request\)/);
+  assert.match(developerMessages, /namespace:\s*"developer-message"/);
+  assert.match(reviewerMutations, /body\.kind === "message"/);
+  assert.match(reviewerMutations, /createReleaseMessageAsReviewer/);
+  assert.match(previewUpdates, /incrementPreviewRevision/);
+  assert.match(previewUpdates, /assertSameOrigin\(request\)/);
+  assert.match(previewUpdates, /namespace:\s*"developer-preview-update"/);
+
+  assert.match(releaseCreation, /Array\.isArray\(body\.testItems\)/);
+  assert.match(releaseCreation, /:\s*\[\];/);
+  assert.doesNotMatch(
+    releaseCreation,
+    /Vérifier le parcours principal|testItems\.length\s*\?\s*testItems/,
+  );
+  assert.match(dashboard, /Vérifications suggérées · optionnel/);
+  assert.doesNotMatch(dashboard, /defaultValue=["']Vérifier le parcours principal/);
 });

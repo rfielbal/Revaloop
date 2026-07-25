@@ -2454,7 +2454,7 @@
 
 .workspace-flow .feedback-table-head,
 .workspace-flow .feedback-row {
-  grid-template-columns: minmax(230px, 1.45fr) 0.6fr 0.72fr 0.72fr;
+  grid-template-columns: minmax(230px, 1.6fr) 0.72fr 0.72fr;
 }
 
 .workspace-flow .feedback-table-head {
@@ -6442,5 +6442,746 @@
 @media (prefers-reduced-motion: reduce) {
   .join-spinner {
     animation-duration: 1.5s !important;
+  }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Revue cliente : exploration, annotations et discussion                    */
+/* ------------------------------------------------------------------------- */
+
+.review-flow summary:focus-visible {
+  box-shadow: 0 0 0 6px var(--flow-wine);
+  outline: 3px solid var(--flow-paper);
+  outline-offset: 2px;
+}
+
+.review-flow .preview-frame.is-commenting {
+  border-color: var(--rv-color-success);
+  box-shadow:
+    0 0 0 4px rgba(47, 105, 79, 0.2),
+    var(--flow-shadow);
+}
+
+.review-flow .client-preview.is-commenting::after {
+  border: 3px solid var(--rv-color-success);
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 2px rgba(255, 253, 249, 0.72);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 20;
+}
+
+.review-flow .review-pin {
+  color: #fff;
+  transform: translate(-50%, -50%);
+}
+
+.review-flow .review-pin::before {
+  background: var(--rv-color-success);
+  border-color: var(--rv-color-surface);
+  box-shadow: 0 7px 20px rgba(31, 73, 55, 0.3);
+  inset: 5px;
+}
+
+.review-flow .review-pin > span,
+.review-flow .review-pin > svg {
+  position: relative;
+  z-index: 1;
+}
+
+.review-flow .review-pin.active::before {
+  background: #214f3b;
+  box-shadow: 0 0 0 7px rgba(47, 105, 79, 0.24);
+}
+
+.review-flow .review-pin-draft {
+  color: var(--rv-color-success);
+  pointer-events: none;
+}
+
+.review-flow .review-pin-draft::before {
+  background: var(--rv-color-surface);
+  border: 2px dashed var(--rv-color-success);
+  box-shadow: 0 7px 20px rgba(31, 73, 55, 0.18);
+  inset: 4px;
+}
+
+.review-flow .review-sidepanel:not(.open) {
+  transform: translateX(100%);
+}
+
+.review-flow .review-sidepanel:not(.open) .sidepanel-toggle {
+  border-radius: 18px 0 0 18px;
+  left: -136px;
+  width: 136px;
+}
+
+.review-flow .review-panel-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding-inline: 22px;
+}
+
+.review-flow .review-panel-tabs button {
+  font-size: 13px;
+  justify-content: center;
+  min-width: 0;
+}
+
+.review-flow .brief-panel,
+.review-flow .review-feedback-panel,
+.review-flow .review-discussion-panel {
+  height: calc(100% - 172px);
+  overflow: auto;
+  padding: 26px 26px 116px 32px;
+}
+
+.review-flow .free-explore {
+  align-items: flex-start;
+  background: rgba(47, 105, 79, 0.08);
+  border: 1px solid rgba(47, 105, 79, 0.18);
+  border-radius: 22px 30px 22px 8px;
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 16px;
+}
+
+.review-flow .free-explore > svg {
+  color: var(--rv-color-success);
+  flex: 0 0 auto;
+  height: 20px;
+  margin-top: 2px;
+  width: 20px;
+}
+
+.review-flow .free-explore strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.review-flow .free-explore p {
+  color: var(--rv-color-content-secondary);
+  font-size: 13px;
+  line-height: 1.52;
+  margin: 5px 0 0;
+}
+
+.review-flow .test-points {
+  border-bottom: 1px solid var(--rv-color-border);
+  border-top: 1px solid var(--rv-color-border);
+  margin-top: 24px;
+  padding: 5px 0;
+}
+
+.review-flow .test-points-heading {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 0;
+  min-height: 58px;
+  padding: 8px 4px;
+}
+
+.review-flow .test-points-heading::-webkit-details-marker {
+  display: none;
+}
+
+.review-flow .test-points-heading::after {
+  color: var(--rv-color-action);
+  content: "+";
+  font-size: 22px;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  line-height: 1;
+}
+
+.review-flow .test-points[open] .test-points-heading::after {
+  content: "−";
+}
+
+.review-flow .test-points-heading strong {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.review-flow .test-points-heading span {
+  font-size: 11px;
+}
+
+.review-flow .test-points > button {
+  border-top: 1px solid rgba(36, 52, 58, 0.08);
+  border-radius: 16px;
+  min-height: 70px;
+  padding-block: 10px;
+}
+
+.review-flow .review-discussion-panel {
+  display: grid;
+  gap: 18px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  padding-bottom: 24px;
+}
+
+.review-flow .discussion-heading strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 25px;
+  font-weight: 400;
+}
+
+.review-flow .discussion-heading p {
+  color: var(--rv-color-content-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 6px 0 0;
+}
+
+.review-flow .discussion-thread {
+  align-content: start;
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  overflow: auto;
+  padding: 2px 4px 12px;
+}
+
+.review-flow .discussion-message {
+  background: var(--rv-color-surface-mist);
+  border-radius: 18px 24px 18px 7px;
+  justify-self: start;
+  max-width: 88%;
+  padding: 12px 14px;
+}
+
+.review-flow .discussion-message.is-reviewer {
+  background: rgba(47, 105, 79, 0.1);
+  border: 1px solid rgba(47, 105, 79, 0.18);
+  border-radius: 24px 18px 7px 18px;
+  justify-self: end;
+}
+
+.review-flow .discussion-message > div {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.review-flow .discussion-message strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.review-flow .discussion-message time {
+  color: var(--rv-color-content-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.review-flow .discussion-message p {
+  color: var(--rv-color-content-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.review-flow .discussion-empty {
+  align-self: center;
+  color: var(--rv-color-content-muted);
+  display: grid;
+  justify-items: center;
+  padding: 30px 12px;
+  text-align: center;
+}
+
+.review-flow .discussion-empty svg {
+  color: var(--rv-color-action);
+  height: 24px;
+  margin-bottom: 10px;
+  width: 24px;
+}
+
+.review-flow .discussion-empty strong {
+  color: var(--rv-color-content);
+  font-size: 14px;
+}
+
+.review-flow .discussion-empty p,
+.review-flow .discussion-closed {
+  color: var(--rv-color-content-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 6px 0 0;
+}
+
+.review-flow .discussion-closed {
+  background: var(--rv-color-surface-mist);
+  border-radius: 14px 18px 14px 6px;
+  padding: 12px;
+}
+
+.review-flow .discussion-composer {
+  border-top: 1px solid var(--rv-color-border);
+  padding-top: 14px;
+}
+
+.review-flow .discussion-composer label {
+  color: var(--rv-color-content-secondary);
+  display: block;
+  font-size: 12px;
+  font-weight: 650;
+  margin-bottom: 7px;
+}
+
+.review-flow .discussion-composer > div {
+  align-items: end;
+  background: var(--rv-color-surface-mist);
+  border: 1px solid transparent;
+  border-radius: 18px 24px 18px 7px;
+  display: flex;
+  gap: 8px;
+  padding: 7px;
+}
+
+.review-flow .discussion-composer > div:focus-within {
+  border-color: rgba(36, 95, 98, 0.4);
+}
+
+.review-flow .discussion-composer textarea {
+  background: transparent;
+  border: 0;
+  color: var(--rv-color-content);
+  flex: 1;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  max-height: 130px;
+  min-height: 52px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.review-flow .discussion-composer textarea:focus {
+  outline: 0;
+}
+
+.review-flow .discussion-composer button {
+  align-items: center;
+  background: var(--rv-color-action);
+  border: 0;
+  border-radius: 14px 18px 14px 6px;
+  color: var(--rv-color-on-action);
+  display: flex;
+  flex: 0 0 auto;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+
+.review-flow .discussion-composer button svg {
+  height: 17px;
+  width: 17px;
+}
+
+.review-flow .feedback-composer {
+  padding: 26px;
+}
+
+.review-flow .composer-heading {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.review-flow .composer-heading > div {
+  min-width: 0;
+}
+
+.review-flow .composer-heading strong {
+  display: block;
+  line-height: 1.05;
+}
+
+.review-flow .composer-intro {
+  color: var(--rv-color-content-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 18px 0 2px;
+}
+
+.review-flow .feedback-composer label {
+  margin-top: 15px;
+}
+
+.review-flow .feedback-composer textarea {
+  min-height: 128px;
+}
+
+@media (max-width: 820px) {
+  .review-flow .review-sidepanel:not(.open) {
+    transform: translateY(100%);
+  }
+
+  .review-flow .review-sidepanel:not(.open) .sidepanel-toggle {
+    border-radius: 18px 18px 0 0;
+    left: 50%;
+    top: -54px;
+    width: min(330px, calc(100vw - 26px));
+  }
+
+  .review-flow .brief-panel,
+  .review-flow .review-feedback-panel,
+  .review-flow .review-discussion-panel {
+    height: calc(100% - 62px);
+    padding: 22px 22px 112px;
+  }
+
+  .review-flow .review-discussion-panel {
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 560px) {
+  .review-flow .review-panel-tabs {
+    padding-inline: 10px;
+  }
+
+  .review-flow .review-panel-tabs button {
+    font-size: 12px;
+    padding-inline: 2px;
+  }
+
+  .review-flow .free-explore {
+    padding: 14px;
+  }
+
+  .review-flow .discussion-message {
+    max-width: 94%;
+  }
+
+  .review-flow .feedback-composer {
+    padding: 20px;
+  }
+}
+
+/* Collaboration développeur + publication légère des correctifs */
+
+.workspace-flow .workspace-content-tabs {
+  align-items: center;
+  border-bottom: 1px solid var(--rv-color-border);
+  display: flex;
+  gap: 26px;
+  margin: 0 6px 20px;
+}
+
+.workspace-flow .workspace-content-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  color: var(--rv-color-content-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 680;
+  min-height: 46px;
+  padding: 0 2px;
+}
+
+.workspace-flow .workspace-content-tabs button.active {
+  border-bottom-color: var(--rv-color-action);
+  color: var(--rv-color-action);
+}
+
+.workspace-flow .developer-discussion {
+  background: var(--rv-color-surface);
+  border: 1px solid var(--rv-color-border);
+  border-radius: 38px 52px 34px 18px;
+  box-shadow: var(--rv-shadow-soft);
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto;
+  min-height: 590px;
+  overflow: hidden;
+}
+
+.workspace-flow .developer-discussion > header {
+  align-items: center;
+  border-bottom: 1px solid var(--rv-color-border);
+  display: flex;
+  justify-content: space-between;
+  padding: 28px 32px 22px;
+}
+
+.workspace-flow .developer-discussion > header h2 {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3vw, 38px);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  margin-top: 7px;
+}
+
+.workspace-flow .developer-discussion > header > svg {
+  color: var(--rv-color-action);
+  height: 28px;
+  width: 28px;
+}
+
+.workspace-flow .developer-message-thread {
+  align-content: start;
+  display: grid;
+  gap: 13px;
+  list-style: none;
+  margin: 0;
+  max-height: 560px;
+  overflow: auto;
+  padding: 28px 32px;
+}
+
+.workspace-flow .developer-message {
+  background: var(--rv-color-surface-mist);
+  border-radius: 18px 26px 18px 7px;
+  justify-self: start;
+  max-width: min(680px, 82%);
+  padding: 14px 17px;
+}
+
+.workspace-flow .developer-message.is-developer {
+  background: rgba(36, 95, 98, 0.1);
+  border: 1px solid rgba(36, 95, 98, 0.16);
+  border-radius: 26px 18px 7px 18px;
+  justify-self: end;
+}
+
+.workspace-flow .developer-message > div {
+  align-items: baseline;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.workspace-flow .developer-message strong {
+  font-size: 12px;
+}
+
+.workspace-flow .developer-message time {
+  color: var(--rv-color-content-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.workspace-flow .developer-message p {
+  color: var(--rv-color-content-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.workspace-flow .developer-discussion-empty {
+  align-self: center;
+  color: var(--rv-color-content-muted);
+  display: grid;
+  justify-items: center;
+  padding: 52px 20px;
+  text-align: center;
+}
+
+.workspace-flow .developer-discussion-empty svg {
+  color: var(--rv-color-action);
+  height: 28px;
+  margin-bottom: 12px;
+  width: 28px;
+}
+
+.workspace-flow .developer-discussion-empty strong {
+  color: var(--rv-color-content);
+  font-size: 15px;
+}
+
+.workspace-flow .developer-discussion-empty p {
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 7px 0 0;
+  max-width: 420px;
+}
+
+.workspace-flow .developer-message-composer {
+  border-top: 1px solid var(--rv-color-border);
+  padding: 20px 32px 26px;
+}
+
+.workspace-flow .developer-message-composer > label {
+  color: var(--rv-color-content-secondary);
+  display: block;
+  font-size: 12px;
+  font-weight: 680;
+  margin-bottom: 8px;
+}
+
+.workspace-flow .developer-message-composer > div {
+  align-items: end;
+  background: var(--rv-color-surface-mist);
+  border: 1px solid transparent;
+  border-radius: 20px 28px 20px 8px;
+  display: flex;
+  gap: 12px;
+  padding: 9px;
+}
+
+.workspace-flow .developer-message-composer > div:focus-within {
+  border-color: rgba(36, 95, 98, 0.42);
+  box-shadow: 0 0 0 4px rgba(36, 95, 98, 0.08);
+}
+
+.workspace-flow .developer-message-composer textarea {
+  background: transparent;
+  border: 0;
+  color: var(--rv-color-content);
+  flex: 1;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 70px;
+  padding: 10px;
+  resize: vertical;
+}
+
+.workspace-flow .developer-message-composer textarea:focus {
+  outline: 0;
+}
+
+.workspace-flow .test-item-fields > p {
+  color: var(--rv-color-content-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0 0 3px;
+}
+
+.review-flow .brief-intro .avatar svg {
+  height: 18px;
+  width: 18px;
+}
+
+.review-flow .preview-update-banner {
+  align-items: center;
+  background: rgba(239, 247, 242, 0.98);
+  border: 1px solid rgba(47, 105, 79, 0.28);
+  border-radius: 18px 26px 18px 8px;
+  box-shadow: var(--rv-shadow-soft);
+  display: flex;
+  gap: 12px;
+  left: 50%;
+  max-width: calc(100vw - 36px);
+  padding: 10px 12px;
+  position: absolute;
+  top: 102px;
+  transform: translateX(-50%);
+  z-index: 45;
+}
+
+.review-flow .review-closed-banner + .preview-update-banner {
+  top: 168px;
+}
+
+.review-flow .preview-update-banner > span {
+  align-items: center;
+  background: var(--rv-color-success);
+  border-radius: 50% 50% 50% 7px;
+  color: #fff;
+  display: flex;
+  flex: 0 0 auto;
+  height: 32px;
+  justify-content: center;
+  width: 32px;
+}
+
+.review-flow .preview-update-banner > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.review-flow .preview-update-banner strong {
+  font-size: 13px;
+}
+
+.review-flow .preview-update-banner small {
+  color: var(--rv-color-content-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.review-flow .preview-update-banner button {
+  align-items: center;
+  background: var(--rv-color-success);
+  border: 0;
+  border-radius: 14px 18px 14px 6px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 680;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 13px;
+}
+
+.review-flow .preview-update-banner svg {
+  height: 16px;
+  width: 16px;
+}
+
+@media (max-width: 720px) {
+  .workspace-flow .developer-discussion {
+    border-radius: 28px 38px 26px 14px;
+    min-height: 520px;
+  }
+
+  .workspace-flow .developer-discussion > header,
+  .workspace-flow .developer-message-thread,
+  .workspace-flow .developer-message-composer {
+    padding-inline: 20px;
+  }
+
+  .workspace-flow .developer-message {
+    max-width: 92%;
+  }
+
+  .workspace-flow .developer-message-composer > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspace-flow .developer-message-composer .button {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .review-flow .preview-update-banner {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    top: 82px;
+    width: calc(100vw - 24px);
+  }
+
+  .review-flow .review-closed-banner + .preview-update-banner {
+    top: 160px;
+  }
+
+  .review-flow .preview-update-banner button {
+    grid-column: 1 / -1;
+    justify-content: center;
   }
 }

@@ -76,8 +76,8 @@ export function PerspectiveToggle() {
           </h3>
           <p>
             {clientView
-              ? "Claire décrit simplement ce qu’elle vient de vivre, à l’endroit précis où elle hésite."
-              : "Raphaël reçoit le retour avec la page, l’écran, la version et la position déjà rattachés."}
+              ? "Le client décrit simplement ce qu’il vient de vivre, à l’endroit précis où il hésite."
+              : "L’équipe reçoit le retour avec la page, l’écran, la version et la position déjà rattachés."}
           </p>
           <div className="perspective-meta">
             <span>

@@ -161,7 +161,7 @@ export default function Home() {
           </div>
 
           <article className="scene-feedback">
-            <span>Retour #03 · Claire</span>
+            <span>Retour #03 · Client</span>
             <strong>Je ne sais pas si ma réservation est confirmée.</strong>
             <small>Accueil · mobile · version v1.2</small>
           </article>
@@ -203,8 +203,8 @@ export default function Home() {
         <div className="flow-section-heading">
           <span>Le même retour, des deux côtés</span>
           <h2>
-            Claire explique simplement.
-            <em> Raphaël reçoit précisément.</em>
+            Le client explique simplement.
+            <em> L’équipe reçoit précisément.</em>
           </h2>
           <p>
             Changez de point de vue : l’identifiant reste le même, seul le
@@ -332,7 +332,7 @@ export default function Home() {
             La démo publique emploie uniquement des données synthétiques. Les
             espaces réels utilisent des invitations à usage unique, des
             sessions révocables, une séparation stricte entre développeur et
-            cliente, et une base de recette dédiée.
+            client, et une base de recette dédiée.
           </p>
           <a
             href="https://github.com/rfielbal/Revaloop/blob/main/docs/THREAT_MODEL.md"

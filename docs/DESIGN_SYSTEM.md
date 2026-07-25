@@ -31,19 +31,19 @@ Les alias `--flow-*` assurent la migration progressive des composants existants.
 | Atténué | `--rv-color-content-muted` | `#586970` | Métadonnées et aides |
 | Action | `--rv-color-action` | `#245f62` | CTA, sélection, focus |
 | Action survolée | `--rv-color-action-hover` | `#18494c` | Hover et active |
-| Retour humain | `--rv-color-feedback` | `#c86b57` | Annotation et signal humain |
-| Retour fonctionnel | `--rv-color-feedback-strong` | `#aa503e` | Pins et contexte du retour |
+| Retour humain | `--rv-color-feedback` | `#c86b57` | Contexte éditorial et parole humaine |
 | Information | `--rv-color-info` | `#3d6378` | Revalidation et information |
-| Succès | `--rv-color-success` | `#2f694f` | Validation confirmée |
+| Succès | `--rv-color-success` | `#2f694f` | Cadre d’annotation, pins client et validation |
 | Avertissement | `--rv-color-warning` | `#785817` | Sécurité et environnement de test |
 | Danger | `--rv-color-danger` | `#9b413c` | Erreur et action destructive |
 
 Le texte courant atteint au minimum 4,5:1 sur les surfaces où il est utilisé.
 Le bleu pétrole porte la confiance, l’accès et l’action. La terre cuite est
-réservée à la parole humaine : annotation, retour et contexte associé. Le focus
-est bicolore — papier puis pétrole — pour rester visible sur une surface claire
-comme sur un bouton d’action. Les couleurs du site testé restent isolées de
-celles de l’interface Revaloop.
+réservée au contexte éditorial. Le vert signale le mode de placement et la
+trace enregistrée d’un retour client : le cadre complet de la preview change,
+pas uniquement le voisinage du pin. Le focus est bicolore — papier puis pétrole
+— pour rester visible sur une surface claire comme sur un bouton d’action. Les
+couleurs du site testé restent isolées de celles de l’interface Revaloop.
 
 ### Typographie
 
@@ -97,20 +97,38 @@ La couleur n’est jamais l’unique information.
 ### Retour
 
 Sur ordinateur, un retour conserve une lecture tabulaire rapide. Sous 820 px,
-il devient une carte verticale avec les libellés `Type`, `État` et `Mise à
-jour`. La sélection synchronise la ligne, le contexte et le marqueur.
+il devient une carte verticale avec les libellés `État` et `Mise à jour`. La
+sélection synchronise la ligne, le contexte et le marqueur. L’interface cliente
+ne demande aucune catégorie « affichage », « fonctionnement » ou « texte » :
+le titre et l’explication libres portent le besoin.
 
 ### Panneau et dialogue
 
 Un panneau replié est `inert` et `aria-hidden` : son contenu ne reste pas
-atteignable au clavier hors écran. Les dialogues sont modaux, piègent le focus,
-se ferment avec `Échap` et restituent le focus à leur déclencheur.
+atteignable au clavier hors écran. Son bouton de réouverture reste attaché au
+bord du panneau, intégralement visible et dans le viewport à tous les seuils.
+Les dialogues sont modaux, piègent le focus, se ferment avec `Échap` et
+restituent le focus à leur déclencheur. Leur titre n’est rendu qu’une fois.
 
 ### Formulaire de retour
 
 Les labels restent visibles, les placeholders sont secondaires mais conformes
 au contraste AA, les champs mesurent au moins 48 px et le bouton d’envoi reste
 accessible sur mobile. Une erreur conserve le texte saisi.
+
+### Discussion
+
+La discussion est un parcours de premier niveau distinct des retours. Elle
+utilise un seul fil chronologique, différencie client et développeur par
+alignement, libellé d’auteur et couleur, et conserve un compositeur visible.
+La couleur seule ne porte jamais le rôle.
+
+### Vérifications suggérées
+
+La checklist est facultative et secondaire. En son absence, aucun état vide
+alarmant, compteur `0/0` ni appel bloquant n’est affiché. Le message principal
+invite d’abord le client à explorer librement, puis présente les vérifications
+comme aide éventuelle.
 
 ## Responsive
 

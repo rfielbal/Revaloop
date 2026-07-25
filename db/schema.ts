@@ -113,6 +113,36 @@ export const appUsers = sqliteTable("app_users", {
   lastSeenAt: text("last_seen_at").notNull(),
 });
 
+export const developerCredentials = sqliteTable("developer_credentials", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => appUsers.id, { onDelete: "cascade" }),
+  passwordHash: text("password_hash").notNull(),
+  passwordSalt: text("password_salt").notNull(),
+  passwordIterations: integer("password_iterations").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const developerSessions = sqliteTable(
+  "developer_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdAt: text("created_at").notNull(),
+    lastSeenAt: text("last_seen_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    revokedAt: text("revoked_at"),
+  },
+  (table) => [
+    index("developer_sessions_user_idx").on(table.userId),
+    index("developer_sessions_expires_idx").on(table.expiresAt),
+  ],
+);
+
 export const organizations = sqliteTable("organizations", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -198,6 +228,7 @@ export const reviewReleases = sqliteTable(
     previewUrl: text("preview_url").notNull(),
     reviewerMessage: text("reviewer_message").notNull().default(""),
     feedbackSequence: integer("feedback_sequence").notNull().default(0),
+    previewRevision: integer("preview_revision").notNull().default(0),
     createdBy: text("created_by")
       .notNull()
       .references(() => appUsers.id, { onDelete: "restrict" }),
@@ -280,6 +311,37 @@ export const reviewerSessions = sqliteTable(
   (table) => [
     index("reviewer_sessions_release_idx").on(table.releaseId),
     index("reviewer_sessions_invitation_idx").on(table.invitationId),
+  ],
+);
+
+export const releaseMessages = sqliteTable(
+  "release_messages",
+  {
+    id: text("id").primaryKey(),
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => reviewReleases.id, { onDelete: "cascade" }),
+    authorType: text("author_type", {
+      enum: ["developer", "reviewer"],
+    }).notNull(),
+    authorUserId: text("author_user_id").references(() => appUsers.id, {
+      onDelete: "set null",
+    }),
+    authorSessionId: text("author_session_id").references(
+      () => reviewerSessions.id,
+      { onDelete: "set null" },
+    ),
+    authorName: text("author_name").notNull(),
+    body: text("body").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("release_messages_release_created_idx").on(
+      table.releaseId,
+      table.createdAt,
+    ),
+    index("release_messages_author_user_idx").on(table.authorUserId),
+    index("release_messages_author_session_idx").on(table.authorSessionId),
   ],
 );
 

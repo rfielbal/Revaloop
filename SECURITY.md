@@ -4,7 +4,7 @@
 
 | Version | Support |
 |---|---|
-| `main` / `0.2.x` | alpha, pilote contrôlé, corrections au mieux |
+| `main` / `0.3.x` | alpha en cours, pilote contrôlé, corrections au mieux |
 | version stable | aucune publiée |
 
 L’alpha sécurise le review plane, mais elle n’est pas qualifiée pour des
@@ -40,16 +40,29 @@ Objectifs de réponse, sans engagement de niveau de service :
 
 ### Développeur
 
-- Sign in with ChatGPT fourni par OpenAI Sites ;
-- fallback local désactivé dans le build de production ;
+- authentification first-party Revaloop par e-mail et mot de passe ;
+- PBKDF2-SHA-256 via Web Crypto, sel aléatoire de 16 octets et 600 000
+  itérations pour les nouveaux mots de passe ;
+- mot de passe limité à 12–128 caractères ;
+- token de session opaque aléatoire, uniquement son SHA-256 en D1 ;
+- cookie `__Host-revaloop_developer` en production, `HttpOnly`, `Secure`,
+  `SameSite=Strict`, `Path=/`, sans `Domain`, valable 30 jours ;
+- révocation serveur lors de la déconnexion ;
+- erreurs de connexion génériques et dérivation factice lorsqu’un compte
+  n’existe pas ;
+- limites de débit par adresse réseau et par compte ;
+- inscription bootstrap ouverte uniquement tant qu’aucun credential
+  développeur n’existe ;
+- réouverture volontaire possible avec
+  `REVALOOP_ALLOW_REGISTRATION=true` ;
 - création d’un espace isolé par identité ;
 - autorisation par organisation, projet, release et retour ;
-- aucune route développeur accessible sans identité Sites ;
+- aucune route développeur accessible sans session Revaloop valide ;
 - création, révocation, export et suppression contrôlés côté serveur.
 
-L’application fait confiance aux en-têtes d’identité réservés ajoutés par
-l’ingress Sites. Un déploiement hors Sites doit remplacer cet adaptateur par
-une authentification vérifiable et supprimer les headers entrants non fiables.
+Le mot de passe brut et le token de session brut ne sont jamais stockés en D1.
+La session n’est pas glissante : elle expire au plus tard 30 jours après sa
+création.
 
 ### Reviewer
 
@@ -80,6 +93,9 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 - transition développeur et transition reviewer séparées ;
 - séquence + insertion d’un retour atomiques ;
 - une seule ligne de décision courante par release ;
+- messages de release autorisés côté serveur selon la session développeur ou
+  reviewer et leur release ;
+- incrément de `preview_revision` réservé au développeur autorisé ;
 - une demande d’ajustements peut être remplacée par un bilan ultérieur et ne
   clôt pas la release ;
 - seule l’approbation est terminale ;
@@ -100,9 +116,14 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 
 ## Limites connues
 
-- l’ouverture globale du Site permet à tout utilisateur Sign in with ChatGPT
-  de créer son propre espace isolé ; une alpha fermée doit ajouter une
-  allowlist ou des invitations développeur avant publication générale ;
+- il n’existe pas encore de vérification d’adresse e-mail, de réinitialisation
+  de mot de passe, de MFA, de clés de récupération ni d’interface de gestion
+  des sessions développeur ;
+- la première personne qui atteint `/register` sur une base vide peut devenir
+  propriétaire de l’instance : initialisez le compte avant une ouverture
+  publique ;
+- `REVALOOP_ALLOW_REGISTRATION=true` ouvre volontairement l’inscription à toute
+  personne qui atteint la route ; ne l’activez pas sur une alpha fermée ;
 - la preview est une ressource tierce, mutable et directement chargée par le
   navigateur ; l’invitation Revaloop ne protège pas son URL, ses comptes, sa
   base ni ses services ;
@@ -131,7 +152,14 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 - le bootstrap runtime complète les migrations pour Sites ; une distribution
   auto-hébergée doit exécuter les migrations de façon contrôlée ;
 - il n’existe ni pièce jointe, ni capture, ni stockage R2 ;
+- les positions d’annotation sont des coordonnées de viewport ; aucune capture
+  automatique, sélection DOM ou preuve visuelle immuable n’est produite ;
 - aucun agent ou tunnel local n’est implémenté ;
+- aucun build, hébergement ou déploiement de preview n’est fourni ;
+- le signalement d’une nouvelle `preview_revision` ne déploie pas la preview,
+  n’isole pas sa base et ne prouve pas son contenu ;
+- le rechargement conserve la même URL et ne garantit pas de contourner le
+  cache HTTP, un CDN ou le Service Worker de la preview ;
 - la suite automatisée vérifie les frontières HTTP et primitives, mais les
   scénarios de forte concurrence D1 doivent encore être élargis.
 
@@ -139,7 +167,8 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 
 - base et comptes de test uniquement ;
 - services externes en mode sandbox ;
-- aucun moyen de paiement, mot de passe ou donnée personnelle réelle ;
+- aucun moyen de paiement, mot de passe de la preview ou donnée personnelle
+  réelle dans les scénarios, consignes, messages ou retours ;
 - protection d’accès du staging configurée indépendamment de Revaloop ;
 - compatibilité testée pour iframe, authentification, cookies, OAuth/SSO,
   popups, téléchargements, paiement et caméra ; nouvel onglet utilisé dès qu’un
@@ -155,7 +184,9 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
 ## Périmètre prioritaire des signalements
 
 - IDOR ou accès croisé entre organisations/projets ;
-- contournement SIWC, invitation, expiration ou révocation ;
+- contournement du login Revaloop, du bootstrap d’inscription, de l’invitation,
+  de l’expiration ou de la révocation ;
+- vol, fixation ou non-révocation d’une session développeur ;
 - rejeu ou fuite d’un secret ;
 - session encore capable d’écrire après révocation ;
 - approbation possible avec retour ouvert ;

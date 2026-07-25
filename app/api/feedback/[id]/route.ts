@@ -23,7 +23,7 @@ type RouteContext = {
 const developerStatuses: FeedbackStatus[] = ["in_progress", "to_review"];
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const identity = developerIdentityFromRequest(request);
+  const identity = await developerIdentityFromRequest(request);
 
   if (!identity) {
     return unauthorizedResponse();

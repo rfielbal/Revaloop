@@ -1,7 +1,7 @@
 # ADR-0001 — Construire le review plane avant le tunnel
 
 - **Statut de la décision :** accepté
-- **Statut d’implémentation :** prototype partiel
+- **Statut d’implémentation :** review plane externe implémenté, data plane absent
 - **Date :** 24 juillet 2026
 
 ## Contexte
@@ -27,6 +27,8 @@ Construire et éprouver d’abord le **review plane** :
 - consignes ;
 - espace client ;
 - retours ;
+- discussion de release ;
+- signal de mise à jour de preview ;
 - décisions ;
 - historique et cycle de vie des données.
 

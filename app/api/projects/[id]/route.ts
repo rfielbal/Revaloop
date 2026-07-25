@@ -18,7 +18,7 @@ type RouteContext = {
 };
 
 export async function DELETE(request: Request, context: RouteContext) {
-  const identity = developerIdentityFromRequest(request);
+  const identity = await developerIdentityFromRequest(request);
 
   if (!identity) {
     return unauthorizedResponse();

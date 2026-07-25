@@ -83,6 +83,9 @@ const worker = {
       url.pathname.startsWith("/review/") ||
       url.pathname.startsWith("/dashboard") ||
       url.pathname.startsWith("/join") ||
+      url.pathname.startsWith("/login") ||
+      url.pathname.startsWith("/register") ||
+      url.pathname.startsWith("/logout") ||
       url.pathname.startsWith("/api/")
     ) {
       securedResponse.headers.set(
@@ -95,7 +98,10 @@ const worker = {
     if (
       url.pathname.startsWith("/review/") ||
       url.pathname.startsWith("/dashboard") ||
-      url.pathname.startsWith("/join")
+      url.pathname.startsWith("/join") ||
+      url.pathname.startsWith("/login") ||
+      url.pathname.startsWith("/register") ||
+      url.pathname.startsWith("/logout")
     ) {
       securedResponse.headers.set(
         "X-Robots-Tag",

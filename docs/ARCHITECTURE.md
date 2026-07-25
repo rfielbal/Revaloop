@@ -1,6 +1,6 @@
 # Architecture de Revaloop
 
-- **Version décrite :** alpha 0.2
+- **Version décrite :** alpha 0.3 en cours
 - **Dernière mise à jour :** 25 juillet 2026
 
 ## Principe directeur
@@ -8,7 +8,8 @@
 Revaloop sépare deux systèmes :
 
 1. le **review plane**, aujourd’hui implémenté, qui gère identité, projets,
-   releases, invitations, retours et décisions ;
+   releases, invitations, retours, discussion, révisions déclarées et
+   décisions ;
 2. le futur **data plane**, qui transportera le trafic entre le navigateur
    client et une application locale.
 
@@ -18,8 +19,8 @@ Le Worker web ne doit jamais devenir implicitement un proxy réseau générique.
 
 ```mermaid
 flowchart LR
-    dev["Développeur"] --> siwc["Sign in with ChatGPT"]
-    siwc --> dashboard["Dashboard Revaloop"]
+    dev["Développeur"] --> auth["Compte Revaloop"]
+    auth --> dashboard["Dashboard Revaloop"]
     dashboard --> api["API métier"]
 
     dev --> preview["Preview HTTPS tierce"]
@@ -31,6 +32,8 @@ flowchart LR
     review --> api
     review -->|"iframe directe"| preview
     preview -. "path + title facultatifs" .-> review
+    api --> messages["Discussion release"]
+    api --> revision["preview_revision"]
 ```
 
 La preview est chargée par le navigateur. Revaloop ne reçoit ni son trafic, ni
@@ -43,7 +46,7 @@ séparément par l’application tierce.
 - Next App Router compilé par vinext ;
 - Cloudflare Worker dans `worker/index.ts` ;
 - routes et composants dans `app/` ;
-- logique d’identité dans `app/chatgpt-auth.ts` et `lib/auth.ts` ;
+- logique d’identité dans `lib/developer-auth.ts` et `lib/auth.ts` ;
 - primitives de sécurité dans `lib/security.ts` ;
 - repository D1 dans `db/repository.ts` ;
 - schéma Drizzle dans `db/schema.ts` ;
@@ -58,28 +61,44 @@ Le plugin de build copie la configuration Sites et les migrations dans
 |---|---|
 | `/` | publique |
 | `/demo` | publique, données synthétiques |
-| `/dashboard` | identité Sites obligatoire |
+| `/login` | publique, ouvre une session développeur |
+| `/register` | publique tant que le bootstrap est ouvert |
+| `/logout` | session développeur |
+| `/dashboard` | session développeur Revaloop obligatoire |
 | `/join` | publique, ne reçoit pas le fragment au premier GET |
 | `/review/[releaseId]` | cookie de session lié à la release |
+| `/api/auth/register` | bootstrap ou inscription explicitement ouverte |
+| `/api/auth/login` | tentative bornée, même origine |
+| `/api/auth/logout` | session développeur, même origine |
 | `/api/projects/**` | développeur + organisation |
-| `/api/releases/**` | développeur + projet |
+| `/api/releases/**` | développeur + projet, dont messages et révision |
 | `/api/reviewer/session` | invitation ou session |
-| `/api/review/**` | session reviewer |
+| `/api/review/**` | session reviewer, dont `{ kind: "message" }` |
 | `/api/feedback/**` | développeur |
 
 ### Identité développeur
 
-Sur Sites, l’adaptateur lit les headers réservés de Sign in with ChatGPT. Le
-build de production n’accorde aucune identité locale. En développement, une
-identité de test n’est créée que pour `localhost`, `127.0.0.1` ou `::1`.
+Revaloop gère directement le compte développeur. Le mot de passe, entre 12 et
+128 caractères, est dérivé dans Web Crypto avec PBKDF2-SHA-256, un sel
+aléatoire de 16 octets et 600 000 itérations. D1 conserve le dérivé, le sel et
+le coût, jamais le mot de passe.
 
-La première connexion provisionne un utilisateur et une organisation
-personnelle. Les identifiants sont déterministes par e-mail afin qu’un
-provisionnement concurrent reste idempotent. Les requêtes de ressource joignent
-toujours membre, organisation et projet.
+Une connexion valide émet un token opaque aléatoire. Seul son SHA-256 est
+stocké dans `developer_sessions`. En production, le token brut est porté par le
+cookie `__Host-revaloop_developer`, `Secure`, `HttpOnly`, `SameSite=Strict`,
+`Path=/`, sans `Domain`, avec une durée maximale de 30 jours. La déconnexion
+révoque la ligne serveur avant d’effacer le cookie.
 
-L’inscription SIWC libre est un choix d’alpha. Une instance fermée doit ajouter
-une allowlist ou un système d’invitation développeur.
+Sur une base vide, `/register` permet de créer le premier credential et
+provisionne atomiquement l’utilisateur, son organisation personnelle et son
+rôle propriétaire. Dès qu’un credential existe, l’inscription est fermée.
+L’opérateur peut l’ouvrir explicitement avec
+`REVALOOP_ALLOW_REGISTRATION=true`, ce qui doit être considéré comme une
+décision de déploiement et non un mode sûr par défaut.
+
+Les requêtes de ressource joignent toujours membre, organisation et projet. Il
+n’existe pas encore de vérification d’adresse e-mail, reset de mot de passe,
+MFA, récupération de compte ni gestion self-service de toutes les sessions.
 
 ### Invitation et session cliente
 
@@ -124,6 +143,43 @@ Le batch incrémente le compteur, insère le retour avec ce numéro puis ajoute
 l’audit. Une approbation concurrente ne peut donc pas clôturer une release avec
 un nouveau retour ouvert.
 
+L’interface cliente demande un titre et une explication libres, sans imposer
+de choix « affichage », « fonctionnement » ou « texte ». Les valeurs techniques
+de type et priorité restent normalisées côté serveur pour la compatibilité du
+modèle 0.2, mais ne structurent plus la saisie principale. Un retour visuel
+conserve ses coordonnées en pourcentage du viewport et apparaît sous forme de
+repère vert exactement au point enregistré pour ce contexte de page.
+
+### Discussion de release
+
+`release_messages` porte une discussion persistée qui n’oblige pas à créer un
+retour. Un message contient la release, le rôle auteur (`developer` ou
+`reviewer`), son nom affiché, son corps borné et sa date.
+
+- le développeur écrit avec `POST /api/releases/[id]/messages` ;
+- le client écrit avec `POST /api/review/[releaseId]` et
+  `{ "kind": "message", "body": "…" }` ;
+- chaque route revérifie l’accès à la release et applique une limite de débit ;
+- le client ne peut pas choisir son identité dans le corps.
+
+Les messages appartiennent à toute la release. Les fils attachés à un retour,
+mentions, pièces jointes et notifications restent hors périmètre.
+
+### Révision de preview
+
+Après avoir déployé ses correctifs sur la même URL, le développeur appelle
+`POST /api/releases/[id]/preview`. Le serveur autorise la release, incrémente
+`preview_revision` et met à jour son activité. Le polling client détecte la
+nouvelle valeur et propose de remonter l’iframe dans le même espace de revue.
+Ce parcours ne dispense d’une nouvelle invitation que tant que la session
+reviewer de 24 heures reste valide.
+
+Cette primitive est un signal de disponibilité, pas un déploiement. Revaloop ne
+construit pas la preview, ne modifie pas sa base et ne vérifie pas que le
+contenu servi correspond au commit annoncé. L’iframe reprend exactement la
+même URL : le navigateur, un CDN ou un Service Worker peuvent encore fournir
+une réponse en cache.
+
 ### Décision
 
 L’écriture d’une décision utilise un `INSERT ... SELECT` conditionnel avec
@@ -165,12 +221,15 @@ organizations
 └── organization_members
 └── client_projects
     └── review_releases
-        ├── review_test_items
+        ├── review_test_items (optionnels)
         │   └── review_test_completions
         ├── review_invitations
         │   └── reviewer_sessions
         ├── review_feedback
+        ├── release_messages
         └── review_decisions
+developer_credentials
+developer_sessions
 audit_events
 rate_limit_buckets
 ```
@@ -180,7 +239,9 @@ Principaux invariants :
 - slug unique dans une organisation ;
 - version unique dans un projet ;
 - hash d’invitation et de session uniques ;
+- un credential par utilisateur et hash de session développeur unique ;
 - séquence unique dans une release ;
+- compteur `preview_revision` monotone par release ;
 - une ligne de décision courante par release, remplaçable seulement tant que son
   état est `changes_requested` ;
 - une complétion par session et consigne ;
@@ -188,9 +249,11 @@ Principaux invariants :
 - référence de session d’une décision nullable pour permettre la purge.
 
 Les migrations `0001` et `0002` introduisent le modèle sécurisé et la
-suppression possible des sessions. Le bootstrap `CREATE IF NOT EXISTS` reste
-présent pour les environnements Sites qui démarrent sur une D1 vide ; il devra
-disparaître lorsque le déploiement exécutera explicitement les migrations.
+suppression possible des sessions reviewer. La migration `0003` ajoute les
+credentials et sessions développeur, la discussion et
+`preview_revision`. Le bootstrap `CREATE IF NOT EXISTS` reste présent pour les
+environnements Sites qui démarrent sur une D1 vide ; il devra disparaître
+lorsque le déploiement exécutera explicitement les migrations.
 
 ## Preview externe
 
@@ -302,6 +365,7 @@ injection de bridge. Voir [ADR-0003](adr/0003-tls-termination-modes.md).
 - [ADR-0001 — Construire le review plane avant le tunnel](adr/0001-review-plane-first.md)
 - [ADR-0002 — Échanger une invitation opaque contre une session](adr/0002-reviewer-authentication.md)
 - [ADR-0003 — Distinguer terminaison TLS et passthrough](adr/0003-tls-termination-modes.md)
+- [ADR-0004 — Gérer le compte développeur dans Revaloop](adr/0004-developer-authentication.md)
 
 Toute évolution d’identité, d’autorisation, de stockage, d’origine ou de
 transport doit mettre à jour ce document et le modèle de menace.

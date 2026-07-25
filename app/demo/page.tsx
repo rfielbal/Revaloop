@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import {
   DEMO_TOKEN,
   demoFeedback,
+  demoMessages,
   demoProject,
   demoRelease,
   demoTestItems,
@@ -26,9 +27,10 @@ const demoReview: ReviewPayload = {
   release: demoRelease,
   feedback: demoFeedback,
   decisions: [],
+  messages: demoMessages,
   testItems: demoTestItems,
   completedTestItemIds: [],
-  reviewerName: "Claire",
+  reviewerName: "Client invité",
 };
 
 export default function DemoPage() {

@@ -1,6 +1,6 @@
 # Cycle de vie des données
 
-- **Version :** alpha 0.2
+- **Version :** alpha 0.3 en cours
 - **Dernière vérification :** 25 juillet 2026
 
 ## Résumé
@@ -29,18 +29,24 @@ Ces valeurs sont publiques. `/demo` ne lit et n’écrit aucune donnée réelle.
 | Catégorie | Données | Finalité |
 |---|---|---|
 | identité développeur | e-mail, nom affiché, dernière activité | connexion et autorisation |
+| credential développeur | dérivé PBKDF2-SHA-256, sel, coût, dates | vérifier le mot de passe sans le stocker en clair |
+| session développeur | hash du token, activité, expiration, révocation | autoriser le dashboard et ses API |
 | organisation/membre | nom d’espace, rôle | isolation |
 | projet | nom, description, slug, dates | classement |
-| release | version, titre, commit déclaré, URL HTTPS, message, dates | cible de recette |
-| consigne | titre, description, ordre | guider la cliente |
+| release | version, titre, commit déclaré, URL HTTPS, message, `preview_revision`, dates | cible de recette et signal de mise à jour |
+| consigne optionnelle | titre, description, ordre | suggérer une vérification sans bloquer l’exploration |
 | invitation | hash, nom reviewer déclaratif, e-mail API nullable, expiration, usage, révocation | créer l’accès |
 | session | hash, nom reviewer, activité, expiration, révocation | autoriser la recette |
-| retour | texte, type, priorité, chemin, titre, viewport, position, auteur, dates | collaboration |
+| retour | texte libre, métadonnées techniques, chemin, titre, viewport, position, auteur, dates | collaboration contextualisée |
+| message de release | rôle et nom auteur, texte, date, références auteur nullable | discussion client-développeur |
 | décision courante | état, note, auteur, date | demander des ajustements ou clôturer par approbation |
 | audit | acteur interne, action, ressource, métadonnées minimales, date | sécurité |
 | rate limit | clé contenant un hash tronqué, compteur, expiration | limiter l’abus |
 
-Le secret d’invitation et le token de session ne sont jamais stockés en clair.
+Le secret d’invitation et les tokens de session développeur ou reviewer ne sont
+jamais stockés en clair. Le mot de passe développeur est reçu uniquement pour
+l’inscription ou la connexion puis dérivé avec Web Crypto ; D1 ne conserve que
+le dérivé PBKDF2, le sel et le nombre d’itérations.
 Le nom reviewer est saisi par le développeur et ne prouve pas l’identité de la
 personne qui utilise le lien. L’interface fournie ne collecte plus d’e-mail
 reviewer. L’API et le schéma conservent un champ nullable pour compatibilité
@@ -49,15 +55,15 @@ et ne prouve pas davantage l’identité.
 
 ## Données non collectées
 
-Revaloop ne collecte pas :
+Revaloop ne conserve pas :
 
-- mot de passe ;
+- mot de passe développeur en clair ;
 - moyen de paiement ;
 - cookie de la preview ;
 - valeur de champ ou contenu DOM ;
 - corps ou header du trafic applicatif ;
 - query string de la preview ;
-- capture ou fichier ;
+- capture automatique ou fichier ;
 - vidéo ou audio ;
 - donnée R2 ;
 - trafic d’un serveur local.
@@ -74,7 +80,7 @@ tronquée associée à une fenêtre courte.
 
 ```mermaid
 flowchart LR
-    siwc["Identité Sites"] --> api["API Revaloop"]
+    auth["Compte et session Revaloop"] --> api["API Revaloop"]
     developer["Saisie développeur"] --> api
     reviewer["Saisie reviewer"] --> api
     api --> d1[("D1")]
@@ -94,6 +100,7 @@ saisies dans celui-ci.
 |---|---|
 | invitation | 1 à 14 jours dans l’UI, jamais au-delà de la release |
 | session reviewer | au plus 24 heures |
+| session développeur | autorisation au plus 30 jours ; ligne expirée ou révoquée purgée après 30 jours supplémentaires |
 | release `in_review` ou `changes_requested` non expirée | bloque la publication d’une nouvelle release |
 | release active expirée | accès déjà invalide ; passée à `superseded` et révoquée lors de la publication suivante |
 | release approuvée | terminale ; une nouvelle release peut ensuite être publiée |
@@ -101,6 +108,7 @@ saisies dans celui-ci.
 | session/invitation opérationnelle ancienne | purge après 30 jours lorsqu’aucune décision ne la retient |
 | audit | purge après 365 jours |
 | projet, release, retour, décision | jusqu’à suppression du projet |
+| message de release | jusqu’à suppression du projet |
 | utilisateur/organisation | pas encore de suppression self-service |
 
 La maintenance s’exécute au bootstrap d’un isolate. Ce n’est pas un cron à
@@ -124,7 +132,8 @@ Le dashboard génère un fichier Markdown local contenant :
 - date de l’export.
 
 Le fichier est construit dans le navigateur. Revaloop ne stocke pas une copie
-supplémentaire de cet export.
+supplémentaire de cet export. Dans l’alpha 0.3, la discussion générale et le
+compteur `preview_revision` ne sont pas encore inclus dans cet export.
 
 ## Suppression
 
@@ -135,6 +144,7 @@ cascade :
 - consignes et complétions ;
 - invitations et sessions ;
 - retours ;
+- messages de discussion ;
 - décisions.
 
 L’audit organisationnel peut subsister jusqu’à sa rétention avec les références
@@ -146,7 +156,8 @@ Il n’existe pas encore :
 - de suppression d’un retour isolé ;
 - de suppression de compte/organisation self-service ;
 - de preuve cryptographique de suppression ;
-- de contrôle utilisateur des sauvegardes de l’hébergeur.
+- de contrôle utilisateur des sauvegardes de l’hébergeur ;
+- de reset de mot de passe, vérification d’e-mail ou MFA.
 
 Ces limites doivent être évaluées avant toute donnée personnelle réelle.
 

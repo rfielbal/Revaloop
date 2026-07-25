@@ -21,7 +21,7 @@ type RouteContext = {
 };
 
 export async function POST(request: Request, context: RouteContext) {
-  const identity = developerIdentityFromRequest(request);
+  const identity = await developerIdentityFromRequest(request);
 
   if (!identity) {
     return unauthorizedResponse();

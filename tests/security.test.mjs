@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   RequestValidationError,
@@ -133,4 +134,56 @@ test("durcit le cookie reviewer et analyse les cookies sans exception", () => {
   );
   assert.equal(cookies.get("first"), "hello world");
   assert.equal(cookies.get("second"), "%E0%A4%A");
+});
+
+test("protège les nouveaux endpoints de collaboration contre les mutations croisées", async () => {
+  const [developerMessages, reviewerMutations, previewUpdates, login, register] =
+    await Promise.all([
+      readFile(
+        new URL(
+          "../app/api/releases/[id]/messages/route.ts",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL("../app/api/review/[token]/route.ts", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL(
+          "../app/api/releases/[id]/preview/route.ts",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL("../app/api/auth/login/route.ts", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../app/api/auth/register/route.ts", import.meta.url),
+        "utf8",
+      ),
+    ]);
+
+  for (const source of [
+    developerMessages,
+    reviewerMutations,
+    previewUpdates,
+    login,
+    register,
+  ]) {
+    assert.match(source, /assertSameOrigin\(request\)/);
+  }
+
+  assert.match(developerMessages, /developerIdentityFromRequest\(request\)/);
+  assert.match(developerMessages, /namespace:\s*"developer-message"/);
+  assert.match(previewUpdates, /developerIdentityFromRequest\(request\)/);
+  assert.match(previewUpdates, /namespace:\s*"developer-preview-update"/);
+  assert.match(reviewerMutations, /sessionToken\(request,\s*releaseId\)/);
+  assert.match(reviewerMutations, /namespace:\s*"review-write"/);
+  assert.match(login, /namespace:\s*"developer-login-ip"/);
+  assert.match(login, /namespace:\s*"developer-login-account"/);
+  assert.match(register, /namespace:\s*"developer-register-ip"/);
 });

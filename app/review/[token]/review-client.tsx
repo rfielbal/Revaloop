@@ -16,6 +16,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
+  RefreshCw,
   ScanLine,
   Send,
   ShieldCheck,
@@ -36,17 +37,16 @@ import { Brand } from "../../components/brand";
 import {
   formatRelativeDate,
   type FeedbackItem,
-  type FeedbackPriority,
-  type FeedbackType,
+  type ReleaseMessage,
   type ReviewDecision,
   type ReviewPayload,
-  typeLabels,
 } from "../../../lib/revaloop";
 import { ReviewUnavailable } from "./review-unavailable";
 
 type Viewport = "desktop" | "tablet" | "mobile";
 type ReviewMode = "browse" | "comment";
 type ReviewExperienceMode = "demo" | "live";
+type ReviewPanelTab = "brief" | "feedback" | "discussion";
 
 type ComposerPosition = {
   x: number | null;
@@ -68,6 +68,8 @@ const viewportDisplayLabels: Record<Viewport, string> = {
   mobile: "Téléphone",
 };
 
+const reviewPanelTabs = ["brief", "feedback", "discussion"] as const;
+
 const clientStatusLabels: Record<FeedbackItem["status"], string> = {
   open: "Envoyé",
   in_progress: "En cours de correction",
@@ -87,7 +89,31 @@ function normalizePreviewPath(value: string) {
     return "/";
   }
 
-  return value.split(/[?#]/, 1)[0].slice(0, 180) || "/";
+  return value.split(/[?#]/, 1)[0]?.slice(0, 180) || "/";
+}
+
+function feedbackMatchesViewport(value: string, viewport: Viewport) {
+  const normalized = value.trim().toLocaleLowerCase("fr");
+
+  if (viewport === "desktop") {
+    return (
+      normalized.startsWith("desktop") ||
+      normalized.startsWith("ordinateur")
+    );
+  }
+
+  if (viewport === "tablet") {
+    return (
+      normalized.startsWith("tablet") ||
+      normalized.startsWith("tablette")
+    );
+  }
+
+  return (
+    normalized.startsWith("mobile") ||
+    normalized.startsWith("téléphone") ||
+    normalized.startsWith("telephone")
+  );
 }
 
 function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
@@ -129,7 +155,7 @@ export function ReviewClient({
   const [mode, setMode] = useState<ReviewMode>("browse");
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
-  const [panelTab, setPanelTab] = useState<"brief" | "feedback">("brief");
+  const [panelTab, setPanelTab] = useState<ReviewPanelTab>("brief");
   const [completedPoints, setCompletedPoints] = useState<string[]>(
     initialReview.completedTestItemIds ?? [],
   );
@@ -141,36 +167,37 @@ export function ReviewClient({
   const [showFinishDialog, setShowFinishDialog] = useState(false);
   const [showReservation, setShowReservation] = useState(false);
   const [previewHelpVisible, setPreviewHelpVisible] = useState(false);
+  const [previewUpdateAvailable, setPreviewUpdateAvailable] = useState(false);
+  const [previewReloadKey, setPreviewReloadKey] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [messageBody, setMessageBody] = useState("");
   const [accessError, setAccessError] = useState<{
     title: string;
     message: string;
   } | null>(null);
-  const [form, setForm] = useState<{
-    type: FeedbackType;
-    priority: FeedbackPriority;
-    title: string;
-    body: string;
-    pagePath: string;
-  }>({
-    type: "visual",
-    priority: "normal",
+  const [form, setForm] = useState({
     title: "",
     body: "",
-    pagePath: "",
   });
   const previewRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const finishButtonRef = useRef<HTMLButtonElement>(null);
   const composerTriggerRef = useRef<HTMLElement | null>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  const loadedPreviewRevisionRef = useRef(
+    initialReview.release.previewRevision ?? 0,
+  );
   const testPoints = review.testItems ?? [];
+  const messages = review.messages ?? [];
   const selectedFeedback =
     review.feedback.find((item) => item.id === selectedFeedbackId) ?? null;
   const currentDecision = review.decisions[0] ?? null;
   const isReviewApproved =
     currentDecision?.status === "approved" ||
     review.release.status === "approved";
+  const isReviewClosed =
+    isReviewApproved || review.release.status === "superseded";
   const externalPreviewUrl =
     review.release.previewKind === "external"
       ? review.release.previewUrl
@@ -217,6 +244,12 @@ export function ReviewClient({
       })
       .then((payload) => {
         if (!cancelled) {
+          if (
+            (payload.release.previewRevision ?? 0) >
+            loadedPreviewRevisionRef.current
+          ) {
+            setPreviewUpdateAvailable(true);
+          }
           setReview(payload);
           setAccessError(null);
         }
@@ -257,6 +290,16 @@ export function ReviewClient({
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [experienceMode, token]);
+
+  function reloadUpdatedPreview() {
+    loadedPreviewRevisionRef.current = review.release.previewRevision ?? 0;
+    setPreviewReloadKey((key) => key + 1);
+    setPreviewUpdateAvailable(false);
+    setPreviewHelpVisible(false);
+    setToast(
+      "Le rechargement de la preview a été demandé. Son cache reste géré par le site de test.",
+    );
+  }
 
   useEffect(() => {
     if (!externalPreviewUrl) {
@@ -381,9 +424,7 @@ export function ReviewClient({
           item.status !== "resolved" &&
           normalizePreviewPath(item.pagePath) ===
             normalizePreviewPath(previewContext.path) &&
-          item.viewport.toLowerCase().startsWith(
-            viewport === "tablet" ? "tablette" : viewport,
-          ),
+          feedbackMatchesViewport(item.viewport, viewport),
       ),
     [previewContext.path, review.feedback, viewport],
   );
@@ -408,34 +449,18 @@ export function ReviewClient({
     event.stopPropagation();
 
     const bounds = previewRef.current.getBoundingClientRect();
-    const contentWidth = Math.max(
-      bounds.width,
-      previewRef.current.scrollWidth,
-    );
-    const contentHeight = Math.max(
-      bounds.height,
-      previewRef.current.scrollHeight,
-    );
     const x =
-      ((event.clientX - bounds.left + previewRef.current.scrollLeft) /
-        contentWidth) *
-      100;
+      ((event.clientX - bounds.left) / Math.max(1, bounds.width)) * 100;
     const y =
-      ((event.clientY - bounds.top + previewRef.current.scrollTop) /
-        contentHeight) *
-      100;
+      ((event.clientY - bounds.top) / Math.max(1, bounds.height)) * 100;
 
     composerTriggerRef.current =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    setForm((current) => ({
-      ...current,
-      pagePath: normalizePreviewPath(previewContext.path),
-    }));
     setComposer({
-      x: Math.min(96, Math.max(4, x)),
-      y: Math.min(96, Math.max(4, y)),
+      x: Math.min(100, Math.max(0, x)),
+      y: Math.min(100, Math.max(0, y)),
       clientX: event.clientX,
       clientY: event.clientY,
       general: false,
@@ -448,10 +473,6 @@ export function ReviewClient({
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    setForm((current) => ({
-      ...current,
-      pagePath: normalizePreviewPath(previewContext.path),
-    }));
     setComposer({
       x: 50,
       y: 50,
@@ -514,10 +535,6 @@ export function ReviewClient({
     setShowReservation(false);
     setShowFinishDialog(false);
     setMode("comment");
-    setForm((current) => ({
-      ...current,
-      pagePath: normalizePreviewPath(previewContext.path),
-    }));
     setComposer({
       x: null,
       y: null,
@@ -543,9 +560,7 @@ export function ReviewClient({
       const frameContext = frameBounds
         ? `cadre ${Math.round(frameBounds.width)} × ${Math.round(frameBounds.height)}`
         : "cadre adaptatif";
-      const pagePath = normalizePreviewPath(
-        form.pagePath || previewContext.path,
-      );
+      const pagePath = normalizePreviewPath(previewContext.path);
 
       if (experienceMode === "demo") {
         const now = new Date().toISOString();
@@ -555,11 +570,11 @@ export function ReviewClient({
           sequence:
             Math.max(0, ...review.feedback.map((feedback) => feedback.sequence)) +
             1,
-          type: form.type,
+          type: "visual",
           title: form.title.trim(),
           body: form.body.trim(),
           status: "open",
-          priority: form.priority,
+          priority: "normal",
           pagePath,
           pageTitle: previewContext.title,
           viewport: `${viewportDisplayLabels[viewport]} · ${frameContext}`,
@@ -573,7 +588,7 @@ export function ReviewClient({
           ...current,
           feedback: [...current.feedback, item],
         }));
-        completeFeedbackSubmission();
+        completeFeedbackSubmission(item.id);
         return;
       }
 
@@ -582,7 +597,8 @@ export function ReviewClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "feedback",
-          ...form,
+          title: form.title,
+          body: form.body,
           pagePath,
           pageTitle: previewContext.title,
           viewport: `${viewportLabels[viewport]} · ${frameContext} · fenêtre ${window.innerWidth} × ${window.innerHeight}`,
@@ -605,7 +621,7 @@ export function ReviewClient({
         ...current,
         feedback: [...current.feedback, item],
       }));
-      completeFeedbackSubmission();
+      completeFeedbackSubmission(item.id);
     } catch (error) {
       setToast(
         error instanceof Error
@@ -617,17 +633,15 @@ export function ReviewClient({
     }
   }
 
-  function completeFeedbackSubmission() {
+  function completeFeedbackSubmission(feedbackId: string) {
     setComposer(null);
     window.requestAnimationFrame(() => composerTriggerRef.current?.focus());
     setSessionFeedbackCount((count) => count + 1);
     setForm({
-      type: "visual",
-      priority: "normal",
       title: "",
       body: "",
-      pagePath: "",
     });
+    setSelectedFeedbackId(feedbackId);
     setToast(
       experienceMode === "demo"
         ? "Retour ajouté à la démonstration. Il disparaîtra au rechargement."
@@ -635,6 +649,73 @@ export function ReviewClient({
     );
     setPanelTab("feedback");
     setSidePanelOpen(true);
+  }
+
+  async function submitMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const body = messageBody.trim();
+    if (!body || isSubmitting || isReviewClosed) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      if (experienceMode === "demo") {
+        const message: ReleaseMessage = {
+          id: `demo_message_${crypto.randomUUID()}`,
+          releaseId: review.release.id,
+          authorRole: "reviewer",
+          authorName: review.reviewerName ?? "Client",
+          body,
+          createdAt: new Date().toISOString(),
+        };
+        setReview((current) => ({
+          ...current,
+          messages: [...(current.messages ?? []), message],
+        }));
+      } else {
+        const response = await fetch(
+          `/api/review/${encodeURIComponent(token)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind: "message", body }),
+          },
+        );
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          throw new Error(
+            payload?.error ?? "Le message n’a pas pu être envoyé.",
+          );
+        }
+
+        const message = (await response.json()) as ReleaseMessage;
+        setReview((current) => ({
+          ...current,
+          messages: [...(current.messages ?? []), message],
+        }));
+      }
+
+      setMessageBody("");
+      setToast(
+        experienceMode === "demo"
+          ? "Message ajouté à la démonstration."
+          : "Message envoyé à l’équipe.",
+      );
+      window.requestAnimationFrame(() => messageInputRef.current?.focus());
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Le message n’a pas pu être envoyé. Votre texte est conservé.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   async function submitDecision(
@@ -909,7 +990,7 @@ export function ReviewClient({
             ref={finishButtonRef}
             className="button button-primary button-dashboard"
             type="button"
-            disabled={isReviewApproved}
+            disabled={isReviewClosed}
             onClick={() => {
               setComposer(null);
               setShowReservation(false);
@@ -957,6 +1038,25 @@ export function ReviewClient({
         </section>
       ) : null}
 
+      {previewUpdateAvailable ? (
+        <section className="preview-update-banner" role="status">
+          <span>
+            <RefreshCw aria-hidden="true" />
+          </span>
+          <div>
+            <strong>Des correctifs sont disponibles.</strong>
+            <small>
+              Demandez son rechargement sans perdre vos retours. Le site testé
+              reste responsable de son propre cache.
+            </small>
+          </div>
+          <button type="button" onClick={reloadUpdatedPreview}>
+            Voir la mise à jour
+            <RefreshCw aria-hidden="true" />
+          </button>
+        </section>
+      ) : null}
+
       <div
         className="review-stage"
         inert={composer || showFinishDialog ? true : undefined}
@@ -979,7 +1079,11 @@ export function ReviewClient({
               </a>
             </div>
           ) : null}
-          <div className={`preview-frame preview-${viewport}`}>
+          <div
+            className={`preview-frame preview-${viewport} ${
+              mode === "comment" ? "is-commenting" : ""
+            }`}
+          >
             <div
               className={`client-preview ${mode === "comment" ? "is-commenting" : ""}`}
               ref={previewRef}
@@ -988,6 +1092,7 @@ export function ReviewClient({
               {externalPreviewUrl ? (
                 <>
                   <iframe
+                    key={previewReloadKey}
                     ref={iframeRef}
                     className="external-preview-frame"
                     src={externalPreviewUrl}
@@ -1175,7 +1280,9 @@ export function ReviewClient({
                     setSidePanelOpen(true);
                   }}
                   aria-label={`Voir le retour ${item.sequence} : ${item.title}`}
-                />
+                >
+                  <span aria-hidden="true">{item.sequence}</span>
+                </button>
               ))}
 
               {composer && composer.x !== null && composer.y !== null && (
@@ -1199,9 +1306,9 @@ export function ReviewClient({
 
         <aside className={`review-sidepanel ${sidePanelOpen ? "open" : ""}`}>
           <div className="review-notebook-header">
-            <span>Guide de test</span>
-            <strong>Bonjour {review.reviewerName ?? "à vous"}</strong>
-            <small>Suivez les étapes à votre rythme.</small>
+            <span>Espace de revue</span>
+            <strong>Votre espace de test</strong>
+            <small>Explorez librement, puis partagez ce qui compte.</small>
           </div>
           <button
             className="sidepanel-toggle"
@@ -1226,12 +1333,28 @@ export function ReviewClient({
             inert={!sidePanelOpen ? true : undefined}
             aria-hidden={!sidePanelOpen ? true : undefined}
             onKeyDown={(event) => {
-              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+              if (
+                event.key !== "ArrowLeft" &&
+                event.key !== "ArrowRight" &&
+                event.key !== "Home" &&
+                event.key !== "End"
+              ) {
                 return;
               }
 
               event.preventDefault();
-              const nextTab = panelTab === "brief" ? "feedback" : "brief";
+              const currentIndex = reviewPanelTabs.indexOf(panelTab);
+              const nextTab: ReviewPanelTab =
+                event.key === "Home"
+                  ? "brief"
+                  : event.key === "End"
+                    ? "discussion"
+                    : (reviewPanelTabs[
+                        (currentIndex +
+                            (event.key === "ArrowRight" ? 1 : -1) +
+                            reviewPanelTabs.length) %
+                          reviewPanelTabs.length
+                      ] ?? "brief");
               setPanelTab(nextTab);
               window.requestAnimationFrame(() =>
                 document.getElementById(`review-tab-${nextTab}`)?.focus(),
@@ -1248,7 +1371,7 @@ export function ReviewClient({
               tabIndex={panelTab === "brief" ? 0 : -1}
               onClick={() => setPanelTab("brief")}
             >
-              À vérifier
+              Explorer
             </button>
             <button
               id="review-tab-feedback"
@@ -1262,6 +1385,18 @@ export function ReviewClient({
             >
               Retours
             </button>
+            <button
+              id="review-tab-discussion"
+              className={panelTab === "discussion" ? "active" : ""}
+              type="button"
+              role="tab"
+              aria-selected={panelTab === "discussion"}
+              aria-controls="review-panel-discussion"
+              tabIndex={panelTab === "discussion" ? 0 : -1}
+              onClick={() => setPanelTab("discussion")}
+            >
+              Discussion
+            </button>
           </div>
 
           {panelTab === "brief" ? (
@@ -1274,12 +1409,26 @@ export function ReviewClient({
               aria-hidden={!sidePanelOpen ? true : undefined}
             >
               <div className="brief-intro">
-                <span className="avatar avatar-ink">RM</span>
+                <span className="avatar avatar-ink" aria-hidden="true">
+                  <MessageCirclePlus />
+                </span>
                 <div>
                   <span>Message du développeur</span>
                   <p>
                     {review.release.reviewerMessage ||
-                      `Bonjour ${review.reviewerName ?? ""}, vérifiez les éléments ci-dessous puis indiquez directement ce qui mérite un ajustement.`}
+                      "Explorez cette version librement, puis indiquez directement ce qui mérite un ajustement."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="free-explore">
+                <MousePointer2 aria-hidden="true" />
+                <div>
+                  <strong>Commencez par utiliser le site naturellement.</strong>
+                  <p>
+                    Cliquez, naviguez et essayez vos scénarios habituels.
+                    Ajoutez un retour dès qu’un détail vous gêne ou vous
+                    surprend.
                   </p>
                 </div>
               </div>
@@ -1293,33 +1442,35 @@ export function ReviewClient({
                 </p>
               </div>
 
-              <div className="test-points">
-                <div className="test-points-heading">
-                  <strong>Parcours suggéré</strong>
-                  <span>environ 5 min</span>
-                </div>
-                {testPoints.map((point) => {
-                  const completed = completedPoints.includes(point.id);
-                  return (
-                    <button
-                      className={completed ? "completed" : ""}
-                      key={point.id}
-                      type="button"
-                      disabled={isReviewApproved || isSubmitting}
-                      aria-pressed={completed}
-                      onClick={() => togglePoint(point.id)}
-                    >
-                      <span className="point-check">
-                        {completed ? <Check aria-hidden="true" /> : null}
-                      </span>
-                      <span>
-                        <strong>{point.title}</strong>
-                        <small>{point.description}</small>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              {testPoints.length > 0 ? (
+                <details className="test-points">
+                  <summary className="test-points-heading">
+                    <strong>Repères facultatifs</strong>
+                    <span>Une aide, jamais une obligation</span>
+                  </summary>
+                  {testPoints.map((point) => {
+                    const completed = completedPoints.includes(point.id);
+                    return (
+                      <button
+                        className={completed ? "completed" : ""}
+                        key={point.id}
+                        type="button"
+                        disabled={isReviewClosed || isSubmitting}
+                        aria-pressed={completed}
+                        onClick={() => togglePoint(point.id)}
+                      >
+                        <span className="point-check">
+                          {completed ? <Check aria-hidden="true" /> : null}
+                        </span>
+                        <span>
+                          <strong>{point.title}</strong>
+                          <small>{point.description}</small>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </details>
+              ) : null}
 
               <div className="known-limits">
                 <strong>Limites connues</strong>
@@ -1353,7 +1504,9 @@ export function ReviewClient({
                 </ul>
               </div>
             </div>
-          ) : (
+          ) : null}
+
+          {panelTab === "feedback" ? (
             <div
               id="review-panel-feedback"
               className="review-feedback-panel"
@@ -1378,10 +1531,6 @@ export function ReviewClient({
                   <h2>{selectedFeedback.title}</h2>
                   <p>{selectedFeedback.body}</p>
                   <div className="client-detail-meta">
-                    <span>
-                      <small>Type</small>
-                      <strong>{typeLabels[selectedFeedback.type]}</strong>
-                    </span>
                     <span>
                       <small>Écran</small>
                       <strong>{selectedFeedback.viewport}</strong>
@@ -1430,7 +1579,7 @@ export function ReviewClient({
                     </div>
                     <button
                       type="button"
-                      disabled={isReviewApproved}
+                      disabled={isReviewClosed}
                       onClick={openGeneralFeedback}
                       aria-label="Ajouter un retour général"
                     >
@@ -1446,10 +1595,7 @@ export function ReviewClient({
                       >
                         <span>
                           <strong>{item.title}</strong>
-                          <small>
-                            {typeLabels[item.type]} ·{" "}
-                            {clientStatusLabels[item.status]}
-                          </small>
+                          <small>{clientStatusLabels[item.status]}</small>
                         </span>
                         <ArrowRight aria-hidden="true" />
                       </button>
@@ -1458,7 +1604,86 @@ export function ReviewClient({
                 </>
               )}
             </div>
-          )}
+          ) : null}
+
+          {panelTab === "discussion" ? (
+            <div
+              id="review-panel-discussion"
+              className="review-discussion-panel"
+              role="tabpanel"
+              aria-labelledby="review-tab-discussion"
+              inert={!sidePanelOpen ? true : undefined}
+              aria-hidden={!sidePanelOpen ? true : undefined}
+            >
+              <div className="discussion-heading">
+                <strong>Discussion</strong>
+                <p>
+                  Un fil simple pour préciser un retour sans créer une nouvelle
+                  annotation.
+                </p>
+              </div>
+
+              <ol className="discussion-thread" aria-live="polite">
+                {messages.length > 0 ? (
+                  messages.map((message) => (
+                    <li
+                      className={`discussion-message is-${message.authorRole}`}
+                      key={message.id}
+                    >
+                      <div>
+                        <strong>{message.authorName}</strong>
+                        <time dateTime={message.createdAt}>
+                          {formatRelativeDate(message.createdAt)}
+                        </time>
+                      </div>
+                      <p>{message.body}</p>
+                    </li>
+                  ))
+                ) : (
+                  <li className="discussion-empty">
+                    <MessageCirclePlus aria-hidden="true" />
+                    <strong>La discussion est prête.</strong>
+                    <p>
+                      Posez une question ou précisez une attente ; l’équipe
+                      répondra ici.
+                    </p>
+                  </li>
+                )}
+              </ol>
+
+              {isReviewClosed ? (
+                <p className="discussion-closed">
+                  Cette version est clôturée : la discussion reste consultable.
+                </p>
+              ) : (
+                <form
+                  className="discussion-composer"
+                  onSubmit={submitMessage}
+                >
+                  <label htmlFor="review-message">Votre message</label>
+                  <div>
+                    <textarea
+                      id="review-message"
+                      ref={messageInputRef}
+                      value={messageBody}
+                      maxLength={2_000}
+                      placeholder="Écrire à l’équipe…"
+                      required
+                      onChange={(event) => setMessageBody(event.target.value)}
+                    />
+                    <button
+                      type="submit"
+                      disabled={isSubmitting || !messageBody.trim()}
+                      aria-busy={isSubmitting}
+                      aria-label="Envoyer le message"
+                    >
+                      <Send aria-hidden="true" />
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          ) : null}
         </aside>
       </div>
 
@@ -1472,7 +1697,7 @@ export function ReviewClient({
         <button
           className={mode === "comment" ? "active" : ""}
           type="button"
-          disabled={isReviewApproved}
+          disabled={isReviewClosed}
           aria-pressed={mode === "comment"}
           onClick={() => {
             setComposer(null);
@@ -1491,7 +1716,7 @@ export function ReviewClient({
         </button>
         <button
           type="button"
-          disabled={isReviewApproved}
+          disabled={isReviewClosed}
           onClick={openGeneralFeedback}
         >
           <CircleDotDashed aria-hidden="true" />
@@ -1517,6 +1742,7 @@ export function ReviewClient({
             role="dialog"
             aria-modal="true"
             aria-labelledby="composer-title"
+            aria-describedby="composer-description"
             onKeyDown={trapDialogFocus}
             onSubmit={submitFeedback}
             style={composerStyle}
@@ -1531,8 +1757,10 @@ export function ReviewClient({
                   )}
                 </span>
                 <span>
-                  <small className="composer-kicker">Nouveau retour</small>
-                  <strong id="composer-title">Nouveau retour</strong>
+                  <small className="composer-kicker">
+                    {composer.general ? "Retour général" : "Repère sur la page"}
+                  </small>
+                  <strong id="composer-title">Décrivez votre retour</strong>
                 </span>
               </div>
               <button
@@ -1548,70 +1776,20 @@ export function ReviewClient({
                 <X aria-hidden="true" />
               </button>
             </div>
-
-            <div className="feedback-type-grid">
-              {(
-                [
-                  ["visual", "Affichage"],
-                  ["functional", "Fonctionnement"],
-                  ["copy", "Texte"],
-                ] as [FeedbackType, string][]
-              ).map(([value, label]) => (
-                <button
-                  className={form.type === value ? "active" : ""}
-                  key={value}
-                  type="button"
-                  aria-pressed={form.type === value}
-                  onClick={() =>
-                    setForm((current) => ({ ...current, type: value }))
-                  }
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div
-              className="feedback-priority-grid"
-              role="group"
-              aria-label="Importance du retour"
-            >
-              <button
-                className={form.priority === "normal" ? "active" : ""}
-                type="button"
-                aria-pressed={form.priority === "normal"}
-                onClick={() =>
-                  setForm((current) => ({
-                    ...current,
-                    priority: "normal",
-                  }))
-                }
-              >
-                Standard
-              </button>
-              <button
-                className={form.priority === "high" ? "active" : ""}
-                type="button"
-                aria-pressed={form.priority === "high"}
-                onClick={() =>
-                  setForm((current) => ({
-                    ...current,
-                    priority: "high",
-                  }))
-                }
-              >
-                Important
-              </button>
-            </div>
+            <p className="composer-intro" id="composer-description">
+              {composer.general
+                ? "Partagez une impression globale sur la page actuelle."
+                : "Le repère vert conservera précisément cet emplacement."}
+            </p>
 
             <label>
-              <span>Quel est votre retour ?</span>
+              <span>Titre</span>
               <input
                 type="text"
                 value={form.title}
                 maxLength={120}
                 minLength={3}
-                placeholder="Ex. Le bouton manque de contraste"
+                placeholder="Ex. Le bouton est difficile à repérer"
                 autoFocus
                 required
                 onChange={(event) =>
@@ -1624,12 +1802,12 @@ export function ReviewClient({
             </label>
 
             <label>
-              <span>Précisez votre attente</span>
+              <span>Détail</span>
               <textarea
                 value={form.body}
                 maxLength={1200}
                 minLength={3}
-                placeholder="Décrivez ce que vous voyez et ce que vous attendiez…"
+                placeholder="Expliquez simplement ce qui vous gêne et ce que vous attendiez…"
                 required
                 onChange={(event) =>
                   setForm((current) => ({
@@ -1639,24 +1817,6 @@ export function ReviewClient({
                 }
               />
             </label>
-
-            {composer.general ? (
-              <label>
-                <span>Page concernée · sans paramètre secret</span>
-                <input
-                  type="text"
-                  value={form.pagePath}
-                  maxLength={180}
-                  placeholder="/exemple-de-page"
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      pagePath: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            ) : null}
 
             <div className="composer-context">
               <span>
@@ -1726,10 +1886,15 @@ export function ReviewClient({
               {review.release.version} ?
             </h2>
             <p>
-              Vous avez vérifié {completedPoints.length} point
-              {completedPoints.length > 1 ? "s" : ""} sur {testPoints.length} et
-              envoyé {sessionFeedbackCount} retour
-              {sessionFeedbackCount > 1 ? "s" : ""} pendant cette visite.
+              {testPoints.length > 0
+                ? `Vous avez vérifié ${completedPoints.length} point${
+                    completedPoints.length > 1 ? "s" : ""
+                  } sur ${testPoints.length} et envoyé ${sessionFeedbackCount} retour${
+                    sessionFeedbackCount > 1 ? "s" : ""
+                  } pendant cette visite.`
+                : `Vous avez envoyé ${sessionFeedbackCount} retour${
+                    sessionFeedbackCount > 1 ? "s" : ""
+                  } pendant cette visite.`}
             </p>
             {unresolvedFeedback.length > 0 && (
               <p className="finish-blocker">

@@ -1,6 +1,6 @@
 {
   "name": "revaloop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "La plateforme open source de recette client, du lien de test à la validation.",
   "engines": {

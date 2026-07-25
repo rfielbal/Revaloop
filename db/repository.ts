@@ -10,6 +10,7 @@ import {
   type FeedbackType,
   type Project,
   type Release,
+  type ReleaseMessage as SharedReleaseMessage,
   type ReviewDecision,
   type ReviewPayload,
   type ReviewTestItem,
@@ -23,6 +24,29 @@ type MemberContext = {
   role: "owner" | "developer";
   displayName: string;
   email: string;
+};
+
+export type DeveloperCredentialRecord = {
+  userId: string;
+  email: string;
+  displayName: string;
+  passwordHash: string;
+  passwordSalt: string;
+  passwordIterations: number;
+};
+
+export type ReleaseMessage = SharedReleaseMessage;
+
+export type ReleaseWithRevision = Release & {
+  previewRevision: number;
+};
+
+export type ReviewPayloadWithMessages = Omit<
+  ReviewPayload,
+  "release" | "messages"
+> & {
+  release: ReleaseWithRevision;
+  messages: ReleaseMessage[];
 };
 
 type ProjectRow = {
@@ -47,6 +71,7 @@ type ReleaseRow = {
   preview_url: string;
   reviewer_message: string;
   feedback_sequence: number;
+  preview_revision: number;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -119,6 +144,15 @@ type FeedbackAccessRow = FeedbackRow & {
   organization_id: string;
 };
 
+type ReleaseMessageRow = {
+  id: string;
+  release_id: string;
+  author_type: "developer" | "reviewer";
+  author_name: string;
+  body: string;
+  created_at: string;
+};
+
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS app_users (
     id TEXT PRIMARY KEY NOT NULL,
@@ -127,6 +161,29 @@ const schemaStatements = [
     created_at TEXT NOT NULL,
     last_seen_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS developer_credentials (
+    user_id TEXT PRIMARY KEY NOT NULL,
+    password_hash TEXT NOT NULL,
+    password_salt TEXT NOT NULL,
+    password_iterations INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS developer_sessions (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS developer_sessions_user_idx
+    ON developer_sessions (user_id)`,
+  `CREATE INDEX IF NOT EXISTS developer_sessions_expires_idx
+    ON developer_sessions (expires_at)`,
   `CREATE TABLE IF NOT EXISTS organizations (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
@@ -172,6 +229,7 @@ const schemaStatements = [
     preview_url TEXT NOT NULL,
     reviewer_message TEXT NOT NULL DEFAULT '',
     feedback_sequence INTEGER NOT NULL DEFAULT 0,
+    preview_revision INTEGER NOT NULL DEFAULT 0,
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -232,6 +290,25 @@ const schemaStatements = [
     ON reviewer_sessions (release_id)`,
   `CREATE INDEX IF NOT EXISTS reviewer_sessions_invitation_idx
     ON reviewer_sessions (invitation_id)`,
+  `CREATE TABLE IF NOT EXISTS release_messages (
+    id TEXT PRIMARY KEY NOT NULL,
+    release_id TEXT NOT NULL,
+    author_type TEXT NOT NULL,
+    author_user_id TEXT,
+    author_session_id TEXT,
+    author_name TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (release_id) REFERENCES review_releases(id) ON DELETE CASCADE,
+    FOREIGN KEY (author_user_id) REFERENCES app_users(id) ON DELETE SET NULL,
+    FOREIGN KEY (author_session_id) REFERENCES reviewer_sessions(id) ON DELETE SET NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS release_messages_release_created_idx
+    ON release_messages (release_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS release_messages_author_user_idx
+    ON release_messages (author_user_id)`,
+  `CREATE INDEX IF NOT EXISTS release_messages_author_session_idx
+    ON release_messages (author_session_id)`,
   `CREATE TABLE IF NOT EXISTS review_feedback (
     id TEXT PRIMARY KEY NOT NULL,
     release_id TEXT NOT NULL,
@@ -374,6 +451,30 @@ async function bootstrapDatabase() {
     await db.batch(statements.slice(index, index + 20));
   }
 
+  const releaseColumns = await db
+    .prepare("PRAGMA table_info(review_releases)")
+    .all<{ name: string }>();
+
+  if (
+    !releaseColumns.results.some((column) => column.name === "preview_revision")
+  ) {
+    try {
+      await db
+        .prepare(
+          `ALTER TABLE review_releases
+           ADD COLUMN preview_revision INTEGER NOT NULL DEFAULT 0`,
+        )
+        .run();
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !/duplicate column name/i.test(error.message)
+      ) {
+        throw error;
+      }
+    }
+  }
+
   const now = new Date();
   const staleOperationalData = new Date(
     now.getTime() - 30 * 86_400_000,
@@ -386,6 +487,13 @@ async function bootstrapDatabase() {
     db
       .prepare("DELETE FROM rate_limit_buckets WHERE expires_at <= ?")
       .bind(now.toISOString()),
+    db
+      .prepare(
+        `DELETE FROM developer_sessions
+         WHERE expires_at <= ?
+            OR (revoked_at IS NOT NULL AND revoked_at <= ?)`,
+      )
+      .bind(staleOperationalData, staleOperationalData),
     db
       .prepare(
         `DELETE FROM reviewer_sessions
@@ -459,7 +567,7 @@ function mapProject(row: ProjectRow): Project {
   };
 }
 
-function mapRelease(row: ReleaseRow): Release {
+function mapRelease(row: ReleaseRow): ReleaseWithRevision {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -470,10 +578,22 @@ function mapRelease(row: ReleaseRow): Release {
     previewKind: row.preview_kind,
     previewUrl: row.preview_url,
     reviewerMessage: row.reviewer_message,
+    previewRevision: row.preview_revision,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     expiresAt: row.expires_at,
     closedAt: row.closed_at,
+  };
+}
+
+function mapReleaseMessage(row: ReleaseMessageRow): ReleaseMessage {
+  return {
+    id: row.id,
+    releaseId: row.release_id,
+    authorRole: row.author_type,
+    authorName: row.author_name,
+    body: row.body,
+    createdAt: row.created_at,
   };
 }
 
@@ -554,6 +674,387 @@ async function auditStatement(input: {
       JSON.stringify(input.metadata ?? {}),
       new Date().toISOString(),
     );
+}
+
+export async function countDeveloperCredentials(): Promise<number> {
+  await ensureDatabase();
+  const row = await database()
+    .prepare("SELECT COUNT(*) AS count FROM developer_credentials")
+    .first<{ count: number }>();
+
+  return row?.count ?? 0;
+}
+
+export async function getDeveloperCredential(
+  email: string,
+): Promise<DeveloperCredentialRecord | null> {
+  await ensureDatabase();
+  const normalizedEmail = email.trim().toLowerCase();
+  const row = await database()
+    .prepare(
+      `SELECT
+         app_users.id AS user_id,
+         app_users.email,
+         app_users.display_name,
+         developer_credentials.password_hash,
+         developer_credentials.password_salt,
+         developer_credentials.password_iterations
+       FROM developer_credentials
+       INNER JOIN app_users
+         ON app_users.id = developer_credentials.user_id
+       WHERE app_users.email = ?
+       LIMIT 1`,
+    )
+    .bind(normalizedEmail)
+    .first<{
+      user_id: string;
+      email: string;
+      display_name: string;
+      password_hash: string;
+      password_salt: string;
+      password_iterations: number;
+    }>();
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    userId: row.user_id,
+    email: row.email,
+    displayName: row.display_name,
+    passwordHash: row.password_hash,
+    passwordSalt: row.password_salt,
+    passwordIterations: row.password_iterations,
+  };
+}
+
+export async function registerDeveloperCredential(input: {
+  email: string;
+  displayName: string;
+  passwordHash: string;
+  passwordSalt: string;
+  passwordIterations: number;
+  allowAdditional?: boolean;
+}): Promise<DeveloperIdentity> {
+  await ensureDatabase();
+  const db = database();
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const displayName = input.displayName.trim() || normalizedEmail;
+
+  if (
+    !normalizedEmail ||
+    !input.passwordHash ||
+    !input.passwordSalt ||
+    !Number.isSafeInteger(input.passwordIterations) ||
+    input.passwordIterations <= 0
+  ) {
+    throw new ReviewConflictError(
+      "Les informations d’inscription développeur sont invalides.",
+    );
+  }
+
+  const existingUser = await db
+    .prepare("SELECT id FROM app_users WHERE email = ? LIMIT 1")
+    .bind(normalizedEmail)
+    .first<{ id: string }>();
+
+  if (!input.allowAdditional && !existingUser) {
+    const legacyUsers = await db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM app_users
+         WHERE EXISTS (
+           SELECT 1 FROM organization_members
+           WHERE organization_members.user_id = app_users.id
+         )`,
+      )
+      .first<{ count: number }>();
+
+    if ((legacyUsers?.count ?? 0) > 0) {
+      throw new ReviewConflictError(
+        "Cette instance contient déjà un espace à reprendre. Utilisez l’adresse e-mail du compte développeur historique avant d’ouvrir l’accès public.",
+      );
+    }
+  }
+
+  const identityDigest = await sha256(normalizedEmail);
+  const userId =
+    existingUser?.id ?? `user_${identityDigest.slice(0, 32)}`;
+  const organizationId = `org_${identityDigest.slice(0, 32)}`;
+  const organizationName = `${displayName} · Revaloop`;
+  const organizationSlug = `${slugify(displayName || normalizedEmail)}-${identityDigest.slice(0, 12)}`;
+  const memberId = `member_${identityDigest.slice(0, 32)}`;
+  const now = new Date().toISOString();
+  const allowAdditional = input.allowAdditional ? 1 : 0;
+  const results = await db.batch([
+    db
+      .prepare(
+        `INSERT INTO app_users
+          (id, email, display_name, created_at, last_seen_at)
+         SELECT ?, ?, ?, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM app_users WHERE email = ?
+         )
+           AND (
+             ? = 1
+             OR NOT EXISTS (SELECT 1 FROM developer_credentials)
+           )`,
+      )
+      .bind(
+        userId,
+        normalizedEmail,
+        displayName,
+        now,
+        now,
+        normalizedEmail,
+        allowAdditional,
+      ),
+    db
+      .prepare(
+        `UPDATE app_users
+         SET display_name = ?, last_seen_at = ?
+         WHERE id = ?
+           AND email = ?
+           AND (
+             ? = 1
+             OR NOT EXISTS (SELECT 1 FROM developer_credentials)
+           )`,
+      )
+      .bind(
+        displayName,
+        now,
+        userId,
+        normalizedEmail,
+        allowAdditional,
+      ),
+    db
+      .prepare(
+        `UPDATE organizations
+         SET name = ?
+         WHERE id IN (
+           SELECT organization_id
+           FROM organization_members
+           WHERE user_id = ? AND role = 'owner'
+         )
+           AND (
+             ? = 1
+             OR NOT EXISTS (SELECT 1 FROM developer_credentials)
+           )`,
+      )
+      .bind(
+        organizationName,
+        userId,
+        allowAdditional,
+      ),
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO organizations (id, name, slug, created_at)
+         SELECT ?, ?, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM organization_members WHERE user_id = ?
+         )
+           AND (
+             ? = 1
+             OR NOT EXISTS (SELECT 1 FROM developer_credentials)
+           )`,
+      )
+      .bind(
+        organizationId,
+        organizationName,
+        organizationSlug,
+        now,
+        userId,
+        allowAdditional,
+      ),
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO organization_members
+          (id, organization_id, user_id, role, created_at)
+         SELECT ?, ?, app_users.id, 'owner', ?
+         FROM app_users
+         INNER JOIN organizations ON organizations.id = ?
+         WHERE app_users.id = ?
+           AND app_users.email = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM organization_members WHERE user_id = app_users.id
+           )
+           AND (
+             ? = 1
+             OR NOT EXISTS (SELECT 1 FROM developer_credentials)
+           )`,
+      )
+      .bind(
+        memberId,
+        organizationId,
+        now,
+        organizationId,
+        userId,
+        normalizedEmail,
+        allowAdditional,
+      ),
+    db
+      .prepare(
+        `INSERT INTO developer_credentials
+          (user_id, password_hash, password_salt, password_iterations,
+           created_at, updated_at)
+         SELECT app_users.id, ?, ?, ?, ?, ?
+         FROM app_users
+         WHERE app_users.id = ?
+           AND app_users.email = ?
+           AND EXISTS (
+             SELECT 1 FROM organization_members
+             WHERE organization_members.user_id = app_users.id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM developer_credentials
+             WHERE developer_credentials.user_id = app_users.id
+           )
+           AND (
+             ? = 1
+             OR NOT EXISTS (SELECT 1 FROM developer_credentials)
+           )`,
+      )
+      .bind(
+        input.passwordHash,
+        input.passwordSalt,
+        input.passwordIterations,
+        now,
+        now,
+        userId,
+        normalizedEmail,
+        allowAdditional,
+      ),
+  ]);
+
+  if (results[5]?.meta.changes !== 1) {
+    throw new ReviewConflictError(
+      "Un compte avec cette adresse e-mail existe déjà.",
+    );
+  }
+
+  const registeredUser = await db
+    .prepare(
+      "SELECT email, display_name FROM app_users WHERE id = ? LIMIT 1",
+    )
+    .bind(userId)
+    .first<{ email: string; display_name: string }>();
+
+  if (!registeredUser) {
+    throw new Error("Le compte développeur n’a pas pu être relu.");
+  }
+
+  return {
+    displayName: registeredUser.display_name,
+    email: registeredUser.email,
+  };
+}
+
+export async function createDeveloperSession(input: {
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+}): Promise<void> {
+  await ensureDatabase();
+  const now = new Date().toISOString();
+
+  if (!/^[a-f0-9]{64}$/.test(input.tokenHash) || input.expiresAt <= now) {
+    throw new ReviewConflictError("La session développeur est invalide.");
+  }
+
+  const result = await database()
+    .prepare(
+      `INSERT INTO developer_sessions
+        (id, user_id, token_hash, created_at, last_seen_at, expires_at, revoked_at)
+       SELECT ?, developer_credentials.user_id, ?, ?, ?, ?, NULL
+       FROM developer_credentials
+       WHERE developer_credentials.user_id = ?
+         AND ? > ?`,
+    )
+    .bind(
+      `devsession_${crypto.randomUUID()}`,
+      input.tokenHash,
+      now,
+      now,
+      input.expiresAt,
+      input.userId,
+      input.expiresAt,
+      now,
+    )
+    .run();
+
+  if (result.meta.changes !== 1) {
+    throw new ReviewForbiddenError(
+      "Le compte développeur ne peut pas ouvrir de session.",
+    );
+  }
+}
+
+export async function getDeveloperIdentityBySessionHash(
+  tokenHash: string,
+): Promise<DeveloperIdentity | null> {
+  await ensureDatabase();
+  const db = database();
+  const now = new Date().toISOString();
+  const session = await db
+    .prepare(
+      `SELECT
+         developer_sessions.id AS session_id,
+         app_users.email,
+         app_users.display_name
+       FROM developer_sessions
+       INNER JOIN app_users ON app_users.id = developer_sessions.user_id
+       INNER JOIN developer_credentials
+         ON developer_credentials.user_id = app_users.id
+       WHERE developer_sessions.token_hash = ?
+         AND developer_sessions.revoked_at IS NULL
+         AND developer_sessions.expires_at > ?
+       LIMIT 1`,
+    )
+    .bind(tokenHash, now)
+    .first<{
+      session_id: string;
+      email: string;
+      display_name: string;
+    }>();
+
+  if (!session) {
+    return null;
+  }
+
+  await db
+    .prepare(
+      `UPDATE developer_sessions
+       SET last_seen_at = ?
+       WHERE id = ?
+         AND revoked_at IS NULL
+         AND expires_at > ?
+         AND last_seen_at < ?`,
+    )
+    .bind(
+      now,
+      session.session_id,
+      now,
+      new Date(Date.now() - 10 * 60 * 1_000).toISOString(),
+    )
+    .run();
+
+  return {
+    displayName: session.display_name,
+    email: session.email,
+  };
+}
+
+export async function revokeDeveloperSession(tokenHash: string): Promise<void> {
+  await ensureDatabase();
+  await database()
+    .prepare(
+      `UPDATE developer_sessions
+       SET revoked_at = ?
+       WHERE token_hash = ? AND revoked_at IS NULL`,
+    )
+    .bind(new Date().toISOString(), tokenHash)
+    .run();
 }
 
 export async function provisionDeveloper(
@@ -695,15 +1196,53 @@ async function getAuthorizedProject(
   return row;
 }
 
+async function getAuthorizedRelease(
+  member: MemberContext,
+  releaseId: string,
+) {
+  const row = await database()
+    .prepare(
+      `SELECT review_releases.*, client_projects.organization_id
+       FROM review_releases
+       INNER JOIN client_projects
+         ON client_projects.id = review_releases.project_id
+       INNER JOIN organization_members
+         ON organization_members.organization_id = client_projects.organization_id
+       WHERE review_releases.id = ?
+         AND organization_members.user_id = ?
+         AND organization_members.organization_id = ?
+         AND client_projects.organization_id = ?
+       LIMIT 1`,
+    )
+    .bind(
+      releaseId,
+      member.userId,
+      member.organizationId,
+      member.organizationId,
+    )
+    .first<ReleaseRow & { organization_id: string }>();
+
+  if (!row) {
+    throw new ReviewNotFoundError("Version introuvable.");
+  }
+
+  return row;
+}
+
 async function loadReviewPayload(input: {
   project: ProjectRow;
   release: ReleaseRow;
   reviewerName?: string;
   sessionId?: string;
-}): Promise<ReviewPayload> {
+}): Promise<ReviewPayloadWithMessages> {
   const db = database();
-  const [feedbackResult, decisionResult, testResult, completionResult] =
-    await Promise.all([
+  const [
+    feedbackResult,
+    decisionResult,
+    testResult,
+    completionResult,
+    messageResult,
+  ] = await Promise.all([
       db
         .prepare(
           `SELECT * FROM review_feedback
@@ -741,6 +1280,15 @@ async function loadReviewPayload(input: {
             .bind(input.sessionId, input.release.id)
             .all<{ test_item_id: string }>()
         : Promise.resolve({ results: [] as { test_item_id: string }[] }),
+      db
+        .prepare(
+          `SELECT *
+           FROM release_messages
+           WHERE release_id = ?
+           ORDER BY created_at ASC, id ASC`,
+        )
+        .bind(input.release.id)
+        .all<ReleaseMessageRow>(),
     ]);
 
   return {
@@ -752,6 +1300,7 @@ async function loadReviewPayload(input: {
     completedTestItemIds: completionResult.results.map(
       (row) => row.test_item_id,
     ),
+    messages: messageResult.results.map(mapReleaseMessage),
     reviewerName: input.reviewerName,
   };
 }
@@ -759,7 +1308,9 @@ async function loadReviewPayload(input: {
 export async function getDeveloperWorkspace(
   identity: DeveloperIdentity,
   preferredProjectId?: string | null,
-): Promise<DeveloperWorkspace> {
+): Promise<
+  DeveloperWorkspace & { activeReview: ReviewPayloadWithMessages | null }
+> {
   const member = await provisionDeveloper(identity);
   const db = database();
   const projectResult = await db
@@ -818,7 +1369,7 @@ export async function getDeveloperWorkspace(
   const activeProjectId =
     projects.find((project) => project.id === preferredProjectId)?.id ??
     projects[0]?.id;
-  let activeReview: ReviewPayload | null = null;
+  let activeReview: ReviewPayloadWithMessages | null = null;
 
   if (activeProjectId) {
     const project = await getAuthorizedProject(member, activeProjectId);
@@ -890,9 +1441,10 @@ async function insertReleaseStatements(input: {
       .prepare(
         `INSERT INTO review_releases
           (id, project_id, version, title, commit_sha, status, preview_kind,
-           preview_url, reviewer_message, feedback_sequence, created_by,
+           preview_url, reviewer_message, feedback_sequence, preview_revision,
+           created_by,
            created_at, updated_at, expires_at, closed_at)
-         VALUES (?, ?, ?, ?, ?, 'in_review', 'external', ?, ?, 0, ?, ?, ?, ?, NULL)`,
+         VALUES (?, ?, ?, ?, ?, 'in_review', 'external', ?, ?, 0, 0, ?, ?, ?, ?, NULL)`,
       )
       .bind(
         input.releaseId,
@@ -1485,10 +2037,302 @@ async function getReviewerAccess(
     .first<ReviewerAccessRow>();
 }
 
+export async function listReleaseMessagesForDeveloper(
+  identity: DeveloperIdentity,
+  releaseId: string,
+): Promise<ReleaseMessage[]> {
+  const member = await provisionDeveloper(identity);
+  const release = await getAuthorizedRelease(member, releaseId);
+  const result = await database()
+    .prepare(
+      `SELECT *
+       FROM release_messages
+       WHERE release_id = ?
+       ORDER BY created_at ASC, id ASC`,
+    )
+    .bind(release.id)
+    .all<ReleaseMessageRow>();
+
+  return result.results.map(mapReleaseMessage);
+}
+
+export async function listReleaseMessagesForReviewer(
+  releaseId: string,
+  sessionToken: string,
+): Promise<ReleaseMessage[]> {
+  const access = await getReviewerAccess(releaseId, sessionToken);
+
+  if (!access) {
+    throw new ReviewForbiddenError("Session de recette invalide.");
+  }
+
+  const result = await database()
+    .prepare(
+      `SELECT *
+       FROM release_messages
+       WHERE release_id = ?
+       ORDER BY created_at ASC, id ASC`,
+    )
+    .bind(access.release_id)
+    .all<ReleaseMessageRow>();
+
+  return result.results.map(mapReleaseMessage);
+}
+
+export async function createReleaseMessageAsDeveloper(
+  identity: DeveloperIdentity,
+  releaseId: string,
+  body: string,
+): Promise<ReleaseMessage> {
+  const member = await provisionDeveloper(identity);
+  const release = await getAuthorizedRelease(member, releaseId);
+  const db = database();
+  const messageId = `message_${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+  const [insertResult] = await db.batch([
+    db
+      .prepare(
+        `INSERT INTO release_messages
+          (id, release_id, author_type, author_user_id, author_session_id,
+           author_name, body, created_at)
+         SELECT ?, review_releases.id, 'developer', ?, NULL, ?, ?, ?
+         FROM review_releases
+         INNER JOIN client_projects
+           ON client_projects.id = review_releases.project_id
+         INNER JOIN organization_members
+           ON organization_members.organization_id = client_projects.organization_id
+         WHERE review_releases.id = ?
+           AND review_releases.status IN ('in_review', 'changes_requested')
+           AND review_releases.expires_at > ?
+           AND organization_members.user_id = ?
+           AND organization_members.organization_id = ?
+           AND client_projects.organization_id = ?`,
+      )
+      .bind(
+        messageId,
+        member.userId,
+        member.displayName,
+        body,
+        now,
+        release.id,
+        now,
+        member.userId,
+        member.organizationId,
+        member.organizationId,
+      ),
+    db
+      .prepare(
+        `INSERT INTO audit_events
+          (id, organization_id, project_id, release_id, actor_type, actor_id,
+           action, metadata_json, created_at)
+         SELECT ?, ?, ?, ?, 'developer', ?, 'message.created', ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM release_messages WHERE id = ?
+         )`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        member.organizationId,
+        release.project_id,
+        release.id,
+        member.userId,
+        JSON.stringify({ messageId }),
+        now,
+        messageId,
+      ),
+  ]);
+
+  if (insertResult.meta.changes !== 1) {
+    throw new ReviewConflictError(
+      "Cette version est clôturée, expirée ou n’est plus accessible.",
+    );
+  }
+
+  const row = await db
+    .prepare("SELECT * FROM release_messages WHERE id = ? LIMIT 1")
+    .bind(messageId)
+    .first<ReleaseMessageRow>();
+
+  if (!row) {
+    throw new ReviewConflictError("Le message n’a pas pu être enregistré.");
+  }
+
+  return mapReleaseMessage(row);
+}
+
+export async function createReleaseMessageAsReviewer(
+  releaseId: string,
+  sessionToken: string,
+  body: string,
+): Promise<ReleaseMessage> {
+  const access = await getReviewerAccess(releaseId, sessionToken);
+
+  if (!access) {
+    throw new ReviewForbiddenError("Session de recette invalide.");
+  }
+
+  const db = database();
+  const messageId = `message_${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+  const sessionHash = await sha256(sessionToken);
+  const [insertResult] = await db.batch([
+    db
+      .prepare(
+        `INSERT INTO release_messages
+          (id, release_id, author_type, author_user_id, author_session_id,
+           author_name, body, created_at)
+         SELECT ?, review_releases.id, 'reviewer', NULL, ?, ?, ?, ?
+         FROM review_releases
+         WHERE review_releases.id = ?
+           AND review_releases.status IN ('in_review', 'changes_requested')
+           AND review_releases.expires_at > ?
+           AND EXISTS (
+             SELECT 1
+             FROM reviewer_sessions
+             INNER JOIN review_invitations
+               ON review_invitations.id = reviewer_sessions.invitation_id
+              AND review_invitations.release_id = reviewer_sessions.release_id
+             WHERE reviewer_sessions.id = ?
+               AND reviewer_sessions.token_hash = ?
+               AND reviewer_sessions.release_id = review_releases.id
+               AND reviewer_sessions.revoked_at IS NULL
+               AND review_invitations.revoked_at IS NULL
+               AND reviewer_sessions.expires_at > ?
+               AND review_invitations.expires_at > ?
+           )`,
+      )
+      .bind(
+        messageId,
+        access.session_id,
+        access.reviewer_name,
+        body,
+        now,
+        releaseId,
+        now,
+        access.session_id,
+        sessionHash,
+        now,
+        now,
+      ),
+    db
+      .prepare(
+        `INSERT INTO audit_events
+          (id, organization_id, project_id, release_id, actor_type, actor_id,
+           action, metadata_json, created_at)
+         SELECT ?, ?, ?, ?, 'reviewer', ?, 'message.created', ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM release_messages WHERE id = ?
+         )`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        access.organization_id,
+        access.project_id,
+        releaseId,
+        access.session_id,
+        JSON.stringify({ messageId }),
+        now,
+        messageId,
+      ),
+  ]);
+
+  if (insertResult.meta.changes !== 1) {
+    throw new ReviewConflictError(
+      "Cette version est clôturée ou la session vient d’être révoquée.",
+    );
+  }
+
+  const row = await db
+    .prepare("SELECT * FROM release_messages WHERE id = ? LIMIT 1")
+    .bind(messageId)
+    .first<ReleaseMessageRow>();
+
+  if (!row) {
+    throw new ReviewConflictError("Le message n’a pas pu être enregistré.");
+  }
+
+  return mapReleaseMessage(row);
+}
+
+export async function incrementPreviewRevision(
+  identity: DeveloperIdentity,
+  releaseId: string,
+) {
+  const member = await provisionDeveloper(identity);
+  const release = await getAuthorizedRelease(member, releaseId);
+  const db = database();
+  const now = new Date().toISOString();
+  const [revisionResult] = await db.batch([
+    db
+      .prepare(
+        `UPDATE review_releases
+         SET preview_revision = preview_revision + 1, updated_at = ?
+         WHERE id = ?
+           AND status IN ('in_review', 'changes_requested')
+           AND expires_at > ?
+           AND EXISTS (
+             SELECT 1
+             FROM client_projects
+             INNER JOIN organization_members
+               ON organization_members.organization_id =
+                  client_projects.organization_id
+             WHERE client_projects.id = review_releases.project_id
+               AND organization_members.user_id = ?
+               AND organization_members.organization_id = ?
+               AND client_projects.organization_id = ?
+           )
+         RETURNING preview_revision`,
+      )
+      .bind(
+        now,
+        release.id,
+        now,
+        member.userId,
+        member.organizationId,
+        member.organizationId,
+      ),
+    db
+      .prepare(
+        `INSERT INTO audit_events
+          (id, organization_id, project_id, release_id, actor_type, actor_id,
+           action, metadata_json, created_at)
+         SELECT ?, ?, ?, ?, 'developer', ?, 'preview.revised', '{}', ?
+         FROM review_releases
+         WHERE review_releases.id = ?
+           AND review_releases.updated_at = ?`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        member.organizationId,
+        release.project_id,
+        release.id,
+        member.userId,
+        now,
+        release.id,
+        now,
+      ),
+  ]);
+  const revision = (
+    revisionResult.results[0] as { preview_revision: number } | undefined
+  )?.preview_revision;
+
+  if (typeof revision !== "number") {
+    throw new ReviewConflictError(
+      "Cette version est clôturée, expirée ou n’est plus accessible.",
+    );
+  }
+
+  return {
+    releaseId: release.id,
+    previewRevision: revision,
+    updatedAt: now,
+  };
+}
+
 export async function getReviewForReviewer(
   releaseId: string,
   sessionToken: string,
-): Promise<ReviewPayload | null> {
+): Promise<ReviewPayloadWithMessages | null> {
   const access = await getReviewerAccess(releaseId, sessionToken);
 
   if (!access) {

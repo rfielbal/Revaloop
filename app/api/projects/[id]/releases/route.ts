@@ -22,7 +22,7 @@ type RouteContext = {
 };
 
 export async function POST(request: Request, context: RouteContext) {
-  const identity = developerIdentityFromRequest(request);
+  const identity = await developerIdentityFromRequest(request);
 
   if (!identity) {
     return unauthorizedResponse();
@@ -77,16 +77,7 @@ export async function POST(request: Request, context: RouteContext) {
         new URL(request.url).hostname === "localhost",
       ),
       reviewerMessage: cleanText(body.reviewerMessage, 1_200),
-      testItems:
-        testItems.length > 0
-          ? testItems
-          : [
-              {
-                title: "Parcours principal",
-                description:
-                  "Vérifiez que le parcours principal répond à votre besoin.",
-              },
-            ],
+      testItems,
       expiresAt: new Date(
         Date.now() + expiresInDays * 86_400_000,
       ).toISOString(),

@@ -42,6 +42,15 @@ export interface ReviewDecision {
   createdAt: string;
 }
 
+export interface ReleaseMessage {
+  id: string;
+  releaseId: string;
+  authorRole: "developer" | "reviewer";
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
 export interface Release {
   id: string;
   projectId: string;
@@ -52,6 +61,7 @@ export interface Release {
   previewKind?: "demo" | "external";
   previewUrl?: string;
   reviewerMessage?: string;
+  previewRevision?: number;
   shareToken?: string;
   createdAt: string;
   updatedAt?: string;
@@ -74,6 +84,7 @@ export interface ReviewPayload {
   release: Release;
   feedback: FeedbackItem[];
   decisions: ReviewDecision[];
+  messages?: ReleaseMessage[];
   testItems?: ReviewTestItem[];
   completedTestItemIds?: string[];
   reviewerName?: string;
@@ -142,6 +153,7 @@ export const demoRelease: Release = {
   commitSha: "a84d9c1",
   status: "changes_requested",
   previewKind: "demo",
+  previewRevision: 1,
   shareToken: DEMO_TOKEN,
   createdAt: "2026-07-23T14:20:00.000Z",
   expiresAt: "2027-08-06T22:00:00.000Z",
@@ -187,7 +199,7 @@ export const demoFeedback: FeedbackItem[] = [
     viewport: "desktop · 1440 × 900",
     positionX: 77,
     positionY: 25,
-    authorName: "Claire Dubois",
+    authorName: "Client invité",
     createdAt: "2026-07-23T15:02:00.000Z",
     updatedAt: "2026-07-24T08:42:00.000Z",
   },
@@ -204,7 +216,7 @@ export const demoFeedback: FeedbackItem[] = [
     viewport: "mobile · 390 × 844",
     positionX: 31,
     positionY: 56,
-    authorName: "Claire Dubois",
+    authorName: "Client invité",
     createdAt: "2026-07-23T15:11:00.000Z",
     updatedAt: "2026-07-24T09:10:00.000Z",
   },
@@ -221,7 +233,7 @@ export const demoFeedback: FeedbackItem[] = [
     viewport: "desktop · 1440 × 900",
     positionX: null,
     positionY: null,
-    authorName: "Claire Dubois",
+    authorName: "Client invité",
     createdAt: "2026-07-23T15:28:00.000Z",
     updatedAt: "2026-07-23T15:28:00.000Z",
   },
@@ -238,9 +250,28 @@ export const demoFeedback: FeedbackItem[] = [
     viewport: "desktop · 1440 × 900",
     positionX: 64,
     positionY: 71,
-    authorName: "Claire Dubois",
+    authorName: "Client invité",
     createdAt: "2026-07-22T16:04:00.000Z",
     updatedAt: "2026-07-23T11:32:00.000Z",
+  },
+];
+
+export const demoMessages: ReleaseMessage[] = [
+  {
+    id: "message_demo_001",
+    releaseId: demoRelease.id,
+    authorRole: "developer",
+    authorName: "Équipe projet",
+    body: "La nouvelle version est en ligne. Vous pouvez explorer librement et nous écrire ici si quelque chose n’est pas clair.",
+    createdAt: "2026-07-24T08:35:00.000Z",
+  },
+  {
+    id: "message_demo_002",
+    releaseId: demoRelease.id,
+    authorRole: "reviewer",
+    authorName: "Client invité",
+    body: "Le parcours mobile doit-il aussi inclure la réservation complète ?",
+    createdAt: "2026-07-24T08:41:00.000Z",
   },
 ];
 

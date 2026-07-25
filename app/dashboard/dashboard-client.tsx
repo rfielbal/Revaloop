@@ -14,8 +14,11 @@ import {
   Link2,
   LogOut,
   Menu,
+  MessageCircle,
   Plus,
+  RefreshCw,
   RotateCcwKey,
+  Send,
   ShieldCheck,
   Trash2,
   X,
@@ -36,13 +39,14 @@ import {
   type DeveloperWorkspace,
   type FeedbackItem,
   type FeedbackStatus,
+  type ReleaseMessage,
   type ReviewPayload,
-  typeLabels,
 } from "../../lib/revaloop";
 import { Brand } from "../components/brand";
 
 type FeedbackFilter = "all" | "todo" | "to_review" | "resolved";
 type DialogName = "project" | "release" | "invitation" | null;
+type WorkspaceTab = "feedback" | "discussion";
 
 const statusAction: Record<
   FeedbackStatus,
@@ -120,14 +124,19 @@ export function DashboardClient({
     initialWorkspace.activeReview?.feedback[0]?.id,
   );
   const [filter, setFilter] = useState<FeedbackFilter>("all");
+  const [workspaceTab, setWorkspaceTab] =
+    useState<WorkspaceTab>("feedback");
   const [dialog, setDialog] = useState<DialogName>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [messageBody, setMessageBody] = useState("");
   const [notice, setNotice] = useState("");
   const [formError, setFormError] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
   const [inviteExpiresAt, setInviteExpiresAt] = useState("");
   const dialogTriggerRef = useRef<HTMLButtonElement>(null);
+  const messageThreadRef = useRef<HTMLOListElement>(null);
 
   const review = workspace.activeReview;
   const activeProjectId = review?.project.id ?? workspace.projects[0]?.id;
@@ -188,6 +197,15 @@ export function DashboardClient({
     const timeout = window.setTimeout(() => setNotice(""), 5_000);
     return () => window.clearTimeout(timeout);
   }, [notice]);
+
+  useEffect(() => {
+    if (workspaceTab !== "discussion") return;
+    const thread = messageThreadRef.current;
+
+    if (thread) {
+      thread.scrollTop = thread.scrollHeight;
+    }
+  }, [review?.messages?.length, workspaceTab]);
 
   useEffect(() => {
     if (!dialog) return;
@@ -263,7 +281,7 @@ export function DashboardClient({
   async function advanceFeedback(item: FeedbackItem) {
     const nextStatus = statusAction[item.status].next;
 
-    if (!nextStatus || isUpdating || !review || isReleaseExpired) return;
+    if (!nextStatus || isUpdating || !review || !isActiveRelease) return;
 
     setIsUpdating(true);
 
@@ -507,6 +525,110 @@ export function DashboardClient({
     }
   }
 
+  async function signalPreviewUpdate() {
+    if (!review || isUpdating || !isActiveRelease) return;
+
+    setIsUpdating(true);
+
+    try {
+      const response = await fetch(
+        `/api/releases/${encodeURIComponent(review.release.id)}/preview`,
+        { method: "POST" },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await responseError(
+            response,
+            "La mise à jour n’a pas pu être signalée au client.",
+          ),
+        );
+      }
+
+      const updated = (await response.json()) as {
+        previewRevision: number;
+        updatedAt: string;
+      };
+      setWorkspace((current) => ({
+        ...current,
+        activeReview: current.activeReview
+          ? {
+              ...current.activeReview,
+              release: {
+                ...current.activeReview.release,
+                previewRevision: updated.previewRevision,
+                updatedAt: updated.updatedAt,
+              },
+            }
+          : null,
+      }));
+      setNotice(
+        "Mise à jour signalée. Le client pourra demander le rechargement de la preview dans son espace.",
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "La mise à jour n’a pas pu être signalée au client.",
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
+  async function sendDeveloperMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!review || isSendingMessage || !isActiveRelease) return;
+
+    const body = messageBody.trim();
+
+    if (!body) return;
+
+    setIsSendingMessage(true);
+
+    try {
+      const response = await fetch(
+        `/api/releases/${encodeURIComponent(review.release.id)}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await responseError(response, "Le message n’a pas pu être envoyé."),
+        );
+      }
+
+      const message = (await response.json()) as ReleaseMessage;
+      setWorkspace((current) => ({
+        ...current,
+        activeReview: current.activeReview
+          ? {
+              ...current.activeReview,
+              messages: [
+                ...(current.activeReview.messages ?? []),
+                message,
+              ],
+            }
+          : null,
+      }));
+      setMessageBody("");
+      setNotice("Message envoyé au client.");
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Le message n’a pas pu être envoyé.",
+      );
+    } finally {
+      setIsSendingMessage(false);
+    }
+  }
+
   async function removeCurrentProject() {
     if (!review || isUpdating) return;
 
@@ -564,10 +686,6 @@ export function DashboardClient({
             `### #${item.sequence} — ${item.title}`,
             "",
             `- État : ${statusLabels[item.status]}`,
-            `- Type : ${typeLabels[item.type]}`,
-            `- Importance : ${
-              item.priority === "high" ? "Importante" : "Standard"
-            }`,
             `- Page : ${item.pagePath}`,
             `- Écran : ${item.viewport}`,
             "",
@@ -717,7 +835,7 @@ export function DashboardClient({
               <h1>{review?.project.name ?? "Votre premier projet"}</h1>
               <p>
                 {review?.project.description ??
-                  "Publiez une preview de test avant d’inviter votre cliente."}
+                  "Publiez une preview de test avant d’inviter votre client."}
               </p>
             </div>
           </div>
@@ -830,6 +948,15 @@ export function DashboardClient({
             </section>
 
             <div className="workspace-utility-bar">
+              <button
+                type="button"
+                disabled={isUpdating || !isActiveRelease}
+                onClick={signalPreviewUpdate}
+                title="Déployez d’abord vos correctifs sur la même URL de staging, puis prévenez le client ici."
+              >
+                <RefreshCw aria-hidden="true" />
+                Signaler les correctifs
+              </button>
               <button type="button" onClick={exportReview}>
                 <Download aria-hidden="true" />
                 Exporter la recette
@@ -857,7 +984,42 @@ export function DashboardClient({
               </span>
             </div>
 
-            <section className="feedback-workspace">
+            <div
+              className="workspace-content-tabs"
+              role="tablist"
+              aria-label="Contenu de la recette"
+            >
+              <button
+                id="workspace-tab-feedback"
+                className={workspaceTab === "feedback" ? "active" : ""}
+                type="button"
+                role="tab"
+                aria-selected={workspaceTab === "feedback"}
+                aria-controls="workspace-panel-feedback"
+                onClick={() => setWorkspaceTab("feedback")}
+              >
+                Retours
+              </button>
+              <button
+                id="workspace-tab-discussion"
+                className={workspaceTab === "discussion" ? "active" : ""}
+                type="button"
+                role="tab"
+                aria-selected={workspaceTab === "discussion"}
+                aria-controls="workspace-panel-discussion"
+                onClick={() => setWorkspaceTab("discussion")}
+              >
+                Discussion
+              </button>
+            </div>
+
+            {workspaceTab === "feedback" ? (
+            <section
+              id="workspace-panel-feedback"
+              className="feedback-workspace"
+              role="tabpanel"
+              aria-labelledby="workspace-tab-feedback"
+            >
               <div className="feedback-panel">
                 <div className="panel-heading">
                   <div>
@@ -891,7 +1053,6 @@ export function DashboardClient({
                 <div className="feedback-table">
                   <div className="feedback-table-head" aria-hidden="true">
                     <span>Retour</span>
-                    <span>Type</span>
                     <span>État</span>
                     <span>Mis à jour</span>
                   </div>
@@ -912,10 +1073,6 @@ export function DashboardClient({
                             #{item.sequence} · {item.title}
                           </strong>
                         </span>
-                        <span className="feedback-type">
-                          <span className="feedback-mobile-label">Type</span>
-                          {typeLabels[item.type]}
-                        </span>
                         <span className={`status-badge status-${item.status}`}>
                           <span className="feedback-mobile-label">État</span>
                           {statusLabels[item.status]}
@@ -933,8 +1090,8 @@ export function DashboardClient({
                       <CircleCheck aria-hidden="true" />
                       <strong>Aucun retour dans cet état</strong>
                       <p>
-                        Le client pourra déposer ses remarques depuis son
-                        invitation.
+                        Le client explore librement la preview et pourra
+                        déposer ses remarques depuis son invitation.
                       </p>
                     </div>
                   )}
@@ -961,24 +1118,12 @@ export function DashboardClient({
                         <dt>Écran</dt>
                         <dd>{selected.viewport}</dd>
                       </div>
-                      <div>
-                        <dt>Type</dt>
-                        <dd>{typeLabels[selected.type]}</dd>
-                      </div>
-                      <div>
-                        <dt>Importance</dt>
-                        <dd>
-                          {selected.priority === "high"
-                            ? "Importante"
-                            : "Standard"}
-                        </dd>
-                      </div>
                     </dl>
                     {statusAction[selected.status].next ? (
                       <button
                         className="button button-primary button-full"
                         type="button"
-                        disabled={isUpdating || isReleaseExpired}
+                        disabled={isUpdating || !isActiveRelease}
                         aria-busy={isUpdating}
                         onClick={() => advanceFeedback(selected)}
                       >
@@ -1002,6 +1147,89 @@ export function DashboardClient({
                 )}
               </aside>
             </section>
+            ) : (
+              <section
+                id="workspace-panel-discussion"
+                className="developer-discussion"
+                role="tabpanel"
+                aria-labelledby="workspace-tab-discussion"
+              >
+                <header>
+                  <div>
+                    <p className="eyebrow">Conversation du projet</p>
+                    <h2>Échangez sans créer de retour.</h2>
+                  </div>
+                  <MessageCircle aria-hidden="true" />
+                </header>
+                <ol
+                  ref={messageThreadRef}
+                  className="developer-message-thread"
+                  aria-live="polite"
+                >
+                  {(review.messages ?? []).length ? (
+                    (review.messages ?? []).map((message) => (
+                      <li
+                        className={`developer-message is-${message.authorRole}`}
+                        key={message.id}
+                      >
+                        <div>
+                          <strong>{message.authorName}</strong>
+                          <time dateTime={message.createdAt}>
+                            {formatRelativeDate(message.createdAt)}
+                          </time>
+                        </div>
+                        <p>{message.body}</p>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="developer-discussion-empty">
+                      <MessageCircle aria-hidden="true" />
+                      <strong>La conversation est prête.</strong>
+                      <p>
+                        Posez une question ou donnez du contexte, sans demander
+                        au client de placer une annotation.
+                      </p>
+                    </li>
+                  )}
+                </ol>
+                <form
+                  className="developer-message-composer"
+                  onSubmit={sendDeveloperMessage}
+                >
+                  <label htmlFor="developer-message">
+                    Message au client
+                  </label>
+                  <div>
+                    <textarea
+                      id="developer-message"
+                      value={messageBody}
+                      maxLength={2_000}
+                      rows={3}
+                      placeholder={
+                        isActiveRelease
+                          ? "Écrivez votre message…"
+                          : "Cette version est clôturée."
+                      }
+                      disabled={!isActiveRelease}
+                      onChange={(event) => setMessageBody(event.target.value)}
+                    />
+                    <button
+                      className="button button-primary"
+                      type="submit"
+                      disabled={
+                        isSendingMessage ||
+                        !isActiveRelease ||
+                        !messageBody.trim()
+                      }
+                      aria-busy={isSendingMessage}
+                    >
+                      {isSendingMessage ? "Envoi…" : "Envoyer"}
+                      <Send aria-hidden="true" />
+                    </button>
+                  </div>
+                </form>
+              </section>
+            )}
           </>
         ) : (
           <section className="workspace-onboarding">
@@ -1039,7 +1267,7 @@ export function DashboardClient({
               <li>
                 <span>03</span>
                 <strong>Recevez les retours contextualisés</strong>
-                <p>La cliente n’accède jamais à votre dashboard.</p>
+                <p>Le client n’accède jamais à votre dashboard.</p>
               </li>
             </ol>
           </section>
@@ -1194,25 +1422,27 @@ function ReleaseForm({
       </div>
 
       <label>
-        <span>Message à la cliente</span>
+        <span>Message d’accueil au client</span>
         <textarea
           name="reviewerMessage"
           maxLength={1_200}
-          placeholder="Bonjour, vérifiez les points ci-dessous avec uniquement des données fictives."
+          placeholder="Ajoutez ici un contexte utile pour cette version."
         />
       </label>
 
       <fieldset className="test-item-fields">
-        <legend>Parcours suggéré</legend>
+        <legend>Vérifications suggérées · optionnel</legend>
+        <p>
+          Le client pourra toujours explorer librement la preview et ajouter
+          ses propres retours. Renseignez seulement les points qui nécessitent
+          une vérification précise.
+        </p>
         {[1, 2, 3].map((index) => (
           <div className="secure-form-grid" key={index}>
             <label>
               <span>Point {index}</span>
               <input
                 name={`testTitle${index}`}
-                defaultValue={
-                  index === 1 ? "Vérifier le parcours principal" : ""
-                }
                 maxLength={120}
               />
             </label>

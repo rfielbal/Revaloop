@@ -2,15 +2,12 @@ import {
   consumeRateLimit,
   createDecisionAsReviewer,
   createFeedbackAsReviewer,
+  createReleaseMessageAsReviewer,
   getReviewForReviewer,
   repositoryErrorResponse,
   setTestItemCompletion,
 } from "../../../../db/repository";
-import type {
-  FeedbackPriority,
-  FeedbackType,
-  ReviewDecision,
-} from "../../../../lib/revaloop";
+import type { ReviewDecision } from "../../../../lib/revaloop";
 import {
   assertSameOrigin,
   cleanText,
@@ -27,8 +24,6 @@ type RouteContext = {
   params: Promise<{ token: string }>;
 };
 
-const feedbackTypes: FeedbackType[] = ["visual", "functional", "copy"];
-const priorities: FeedbackPriority[] = ["low", "normal", "high"];
 const decisionStatuses: ReviewDecision["status"][] = [
   "changes_requested",
   "approved",
@@ -109,13 +104,26 @@ export async function POST(request: Request, context: RouteContext) {
     });
     const body = await readJsonObject(request);
 
+    if (body.kind === "message") {
+      const message = cleanText(body.body, 2_000);
+
+      if (message.length < 1) {
+        return Response.json(
+          { error: "Écrivez un message avant de l’envoyer." },
+          { status: 400 },
+        );
+      }
+
+      const created = await createReleaseMessageAsReviewer(
+        releaseId,
+        secret,
+        message,
+      );
+
+      return Response.json(created, { status: 201 });
+    }
+
     if (body.action === "feedback") {
-      const type = feedbackTypes.includes(body.type as FeedbackType)
-        ? (body.type as FeedbackType)
-        : "visual";
-      const priority = priorities.includes(body.priority as FeedbackPriority)
-        ? (body.priority as FeedbackPriority)
-        : "normal";
       const title = cleanText(body.title, 120);
       const description = cleanText(body.body, 1_200);
 
@@ -130,20 +138,22 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       const item = await createFeedbackAsReviewer(releaseId, secret, {
-        type,
+        type: "visual",
         title,
         body: description,
-        priority,
+        priority: "normal",
         pagePath: normalizeReviewPath(body.pagePath),
         pageTitle: cleanText(body.pageTitle, 160),
         viewport: cleanText(body.viewport, 100) || "desktop",
         positionX:
           typeof body.positionX === "number"
-            ? Math.round(Math.min(100, Math.max(0, body.positionX)))
+            ? Math.round(Math.min(100, Math.max(0, body.positionX)) * 100) /
+              100
             : null,
         positionY:
           typeof body.positionY === "number"
-            ? Math.round(Math.min(100, Math.max(0, body.positionY)))
+            ? Math.round(Math.min(100, Math.max(0, body.positionY)) * 100) /
+              100
             : null,
       });
 

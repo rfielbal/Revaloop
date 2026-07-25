@@ -6,7 +6,7 @@ Ce guide prépare une recette réelle, mais non sensible, avec une seule cliente
 
 Déployez le site client sur une URL HTTPS de staging. Cela peut être un VPS, un
 environnement de preview de votre hébergeur ou un serveur dédié à la recette.
-Revaloop 0.2 ne partage pas encore `localhost`.
+Revaloop 0.3 ne partage pas encore `localhost`.
 
 L’invitation Revaloop protège l’espace de revue et ses commentaires. Elle ne
 protège pas l’URL de staging, ne la place pas derrière la session reviewer et ne
@@ -79,23 +79,44 @@ Avec ou sans bridge :
 
 Sans bridge, le chemin reste en plus celui de l’URL initiale.
 
-## 4. Vérifier le mode d’accès de Revaloop
+## 4. Initialiser et protéger le compte développeur
 
-Un Site globalement privé réserve toutes les routes à son propriétaire. Il est
-adapté au développement, mais une cliente extérieure ne pourra pas ouvrir
-`/join`.
+Un Site globalement privé réserve toutes les routes à son propriétaire,
+y compris `/join`. Il est adapté au développement interne, mais aucune cliente
+extérieure ne pourra utiliser son invitation tant que ce mode reste actif.
 
-Pour un pilote distant, le Site doit devenir accessible publiquement tout en
+Avant de rendre l’instance joignable par une cliente :
+
+1. ouvrez `/register` sur la base vide ;
+2. créez le premier compte développeur avec une adresse que vous contrôlez et
+   un mot de passe unique de 12 à 128 caractères ;
+3. vérifiez qu’une seconde inscription est refusée ;
+4. laissez `REVALOOP_ALLOW_REGISTRATION` absent ou différent de `true` ;
+5. déconnectez-vous puis vérifiez que `/dashboard` redirige vers `/login` ;
+6. reconnectez-vous et vérifiez que `/logout` révoque bien la session.
+
+Si cette base provient de Revaloop 0.2 et contient déjà un espace, utilisez
+l’adresse e-mail exacte du compte développeur historique à l’étape 2. Une
+adresse différente est refusée afin de ne pas fermer le bootstrap sur un tenant
+vide. Effectuez toujours cette reprise tant que le Site reste globalement privé.
+
+Revaloop dérive le mot de passe avec PBKDF2-SHA-256 Web Crypto, sel aléatoire
+et 600 000 itérations. La session opaque est stockée hachée et son cookie
+`HttpOnly`, `Secure`, `SameSite=Strict` expire après 30 jours.
+
+Pour un pilote distant, l’instance doit être accessible publiquement tout en
 conservant :
 
-- Sign in with ChatGPT sur `/dashboard` et les API développeur ;
+- la session Revaloop sur `/dashboard` et les API développeur ;
+- l’inscription bootstrap fermée ;
 - le cookie reviewer sur `/review` ;
 - les headers `no-store` et `noindex` ;
-- aucune identité locale dans le build de production.
+- HTTPS sur toute l’instance.
 
-Ne publiez pas l’instance tant que ces quatre contrôles ne sont pas vérifiés.
-L’ouverture publique permet aussi l’inscription SIWC libre dans un tenant
-isolé ; une alpha fermée doit ajouter une allowlist développeur.
+Ne publiez pas l’instance tant que ces contrôles ne sont pas vérifiés. Il
+n’existe pas encore de reset de mot de passe, de vérification d’e-mail ou de
+MFA. Conservez donc le mot de passe initial dans un gestionnaire adapté et
+préparez une procédure opérateur de récupération de la base.
 
 ## 5. Créer la recette
 
@@ -106,13 +127,15 @@ isolé ; une alpha fermée doit ajouter une allowlist développeur.
 5. Collez l’URL HTTPS de staging.
 6. Donnez un numéro de version et, si possible, le commit.
 7. Écrivez un message clair pour la cliente.
-8. Ajoutez un à trois points de vérification concrets.
+8. Si cela aide la recette, ajoutez un à trois points de vérification concrets.
+   Vous pouvez les laisser entièrement vides : l’exploration et les retours
+   libres constituent le parcours principal.
 9. Choisissez une expiration courte.
 10. Publiez.
 
 Exemples de consignes :
 
-- « Créez un compte avec `claire.test@example.invalid`. »
+- « Créez un compte avec `client.test@example.invalid`. »
 - « Ajoutez un article fictif puis annulez la commande. »
 - « Vérifiez la compréhension du bouton principal sur téléphone. »
 
@@ -144,9 +167,11 @@ La cliente :
 
 La cliente peut :
 
-- cocher les consignes ;
+- explorer librement le site, sans checklist obligatoire ;
+- cocher les éventuelles vérifications suggérées ;
 - changer le viewport ;
 - annoter ou créer un retour général ;
+- poser une question dans la discussion sans créer d’annotation ;
 - consulter l’état partagé de chaque retour ;
 - confirmer une correction ou rouvrir le point ;
 - approuver lorsque tout est résolu ;
@@ -156,11 +181,37 @@ Le développeur peut :
 
 - prendre en charge un retour ;
 - le passer à revalider ;
+- répondre dans la discussion de la release ;
+- signaler que ses correctifs sont disponibles sur la preview ;
 - suivre les mises à jour sans rechargement ;
 - révoquer l’accès ;
 - exporter le compte rendu.
 
 L’approbation est bloquée tant qu’un retour n’est pas résolu.
+
+### Rendre des correctifs visibles dans le même espace
+
+1. corrigez l’application ;
+2. déployez vous-même la nouvelle version sur l’URL de staging déjà utilisée ;
+3. vérifiez directement cette URL et sa base de test ;
+4. dans Revaloop, choisissez l’action qui signale les correctifs ;
+5. le client voit qu’une nouvelle `preview_revision` est disponible et recharge
+   la preview dans son espace de revue.
+
+Cette action Revaloop ne lance ni build, ni déploiement, ni migration de la base
+de la preview. Elle ne sécurise pas davantage son URL et ne constitue pas une
+preuve d’immuabilité. Si le staging a besoin d’un déploiement automatisé,
+configurez-le dans votre hébergeur ou votre CI.
+
+Le même espace reste utilisable uniquement tant que la session cliente de
+24 heures est valide. L’invitation initiale étant à usage unique, créez et
+transmettez une nouvelle invitation après expiration de la session.
+
+Revaloop remonte la même URL dans l’iframe lorsqu’un client choisit de voir la
+mise à jour. Il ne peut pas forcer un cache HTTP, un CDN ou un Service Worker
+de la preview à livrer le nouveau contenu. Configurez le staging pour éviter un
+cache persistant et prévoyez un rechargement direct dans un nouvel onglet si
+nécessaire.
 
 « Demander des ajustements » n’est pas une clôture. La release passe dans
 `changes_requested`, mais le lien, la checklist, les commentaires et les
@@ -216,7 +267,8 @@ Créez une nouvelle invitation. Une session ne dépasse pas 24 heures.
 
 ### La cliente ne voit pas `/join`
 
-Le déploiement Revaloop est probablement globalement privé.
+Le déploiement Revaloop est probablement globalement privé. Dans ce mode,
+l’invitation cliente ne peut pas contourner le contrôle d’accès Sites.
 
 ### La copie automatique échoue
 
@@ -235,9 +287,13 @@ de l’avoir copié.
 - [ ] téléchargements testés dans un nouvel onglet
 - [ ] paiement, caméra, microphone et géolocalisation écartés de l’iframe
 - [ ] origine Revaloop accessible à la cliente
-- [ ] dashboard inaccessible sans SIWC
+- [ ] premier compte propriétaire créé avant ouverture publique
+- [ ] inscription bootstrap désormais fermée
+- [ ] dashboard inaccessible sans session développeur Revaloop
+- [ ] connexion et déconnexion testées ; mot de passe conservé en sécurité
 - [ ] expiration courte
 - [ ] canal de partage choisi
 - [ ] nom client traité comme déclaratif, jamais comme identité vérifiée
 - [ ] stratégie d’export et suppression prévue
 - [ ] accord client sur l’outil tiers et les données saisies
+- [ ] processus de déploiement de la preview testé indépendamment de Revaloop

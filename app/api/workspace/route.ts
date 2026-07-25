@@ -7,7 +7,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const identity = developerIdentityFromRequest(request);
+  const identity = await developerIdentityFromRequest(request);
 
   if (!identity) {
     return unauthorizedResponse();

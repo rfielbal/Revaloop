@@ -1,7 +1,7 @@
 # ADR-0002 — Échanger une invitation opaque contre une session
 
 - **Statut de la décision :** accepté
-- **Statut d’implémentation :** implémenté dans l’alpha 0.2
+- **Statut d’implémentation :** implémenté en 0.2, étendu aux messages en 0.3
 - **Date :** 24 juillet 2026
 - **Mise à jour :** 25 juillet 2026
 
@@ -58,8 +58,8 @@ La session est liée à une invitation et une release. Chaque lecture vérifie :
 Chaque mutation refait la vérification dans son SQL final afin qu’une
 révocation concurrente coupe aussi une écriture déjà commencée.
 
-La session permet uniquement checklist, retours, revalidation et décision. Elle
-n’accorde aucun accès au dashboard.
+La session permet uniquement vérifications optionnelles, retours, discussion de
+release, revalidation et décision. Elle n’accorde aucun accès au dashboard.
 
 Le développeur saisit un nom affiché lors de l’invitation. Le serveur le porte
 dans la session et l’utilise comme auteur, sans authentifier la personne qui

@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
-import { requireChatGPTUser, chatGPTSignOutPath } from "../chatgpt-auth";
+import {
+  developerLogoutPath,
+  requireDeveloperIdentity,
+} from "../../lib/developer-auth";
 import { getDeveloperWorkspace } from "../../db/repository";
 import { DashboardClient } from "./dashboard-client";
 
@@ -22,7 +25,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ project?: string }>;
 }) {
-  const user = await requireChatGPTUser("/dashboard");
+  const user = await requireDeveloperIdentity("/dashboard");
   const { project } = await searchParams;
   const workspace = await getDeveloperWorkspace(
     {
@@ -36,7 +39,7 @@ export default async function DashboardPage({
     <DashboardClient
       initialWorkspace={workspace}
       renderedAt={new Date().toISOString()}
-      signOutPath={chatGPTSignOutPath("/")}
+      signOutPath={developerLogoutPath("/")}
     />
   );
 }

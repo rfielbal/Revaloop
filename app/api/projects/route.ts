@@ -39,7 +39,7 @@ function parseTestItems(value: unknown) {
 }
 
 export async function POST(request: Request) {
-  const identity = developerIdentityFromRequest(request);
+  const identity = await developerIdentityFromRequest(request);
 
   if (!identity) {
     return unauthorizedResponse();
@@ -79,14 +79,6 @@ export async function POST(request: Request) {
         },
         { status: 400 },
       );
-    }
-
-    if (testItems.length === 0) {
-      testItems.push({
-        title: "Parcours principal",
-        description:
-          "Vérifiez que le parcours principal répond à votre besoin.",
-      });
     }
 
     const result = await createProjectWithRelease(identity, {

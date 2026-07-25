@@ -14,11 +14,15 @@ ne constitue pas un avis juridique.
 
 ## Données traitées par Revaloop
 
+- adresse e-mail et nom affiché du compte développeur ;
+- dérivé PBKDF2 du mot de passe, sel, nombre d’itérations et hash des sessions
+  développeur ; jamais le mot de passe ni le token de session en clair ;
 - nom déclaratif de la session invitée, saisi par le développeur et non vérifié
   par Revaloop ;
-- cases de vérification, commentaires, catégorie et importance ;
+- vérifications suggérées optionnelles et leur état ;
+- commentaires libres, messages de discussion et état des corrections ;
 - chemin de page sans query string, contexte d’écran et repère visuel ;
-- décisions et changements d’état ;
+- décisions, changements d’état et numéro de révision de preview ;
 - identifiants techniques hachés, dates et journal d’audit minimal.
 
 L’interface fournie ne demande aucune adresse e-mail cliente. Le schéma et
@@ -27,23 +31,25 @@ API personnalisés ; si un exploitant choisit de l’alimenter, il doit l’ajou
 sa notice et justifier sa collecte. Cette valeur ne vérifie jamais l’identité.
 
 Revaloop ne collecte pas le contenu des champs, cookies ou identifiants de la
-preview. La preview, sa base et ses services externes restent sous la
-responsabilité de leur propre exploitant. L’invitation Revaloop protège
-l’espace de revue, pas l’URL de staging ni les données que la cliente y saisit.
+preview. Il ne réalise pas de capture automatique. La preview, son déploiement,
+sa base et ses services externes restent sous la responsabilité de leur propre
+exploitant. L’invitation Revaloop protège l’espace de revue, pas l’URL de
+staging ni les données que la cliente y saisit.
 
 ## Finalités
 
-Les données servent à organiser une phase de test, transmettre les retours,
-suivre les corrections, demander une revalidation et documenter le bilan
+Les données servent à authentifier le développeur, organiser une phase de test,
+transmettre des retours ou questions libres, suivre les corrections, signaler
+une révision de preview, demander une revalidation et documenter le bilan
 courant. Une demande d’ajustements laisse la même version ouverte ; seule
 l’approbation finale la clôt.
 
 ## Destinataires
 
 L’équipe autorisée du projet accède aux retours. Une nouvelle session invitée
-sur la même version accède également à l’historique partagé de cette version.
-Le nom affiché dans cet historique indique la session déclarée, pas une identité
-authentifiée.
+sur la même version accède également aux retours et à la discussion partagée de
+cette version. Le nom client affiché dans cet historique indique la session
+déclarée, pas une identité authentifiée.
 
 ## Suppression et droits
 

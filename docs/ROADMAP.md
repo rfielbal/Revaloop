@@ -11,22 +11,30 @@
 - 🔬 recherche ;
 - 🚫 hors périmètre initial.
 
-## État actuel — alpha 0.2
+## État actuel — alpha 0.3 en cours
 
 ### Review plane
 
 - ✅ landing et démo cliente fictive ;
-- ✅ Sign in with ChatGPT pour le développeur sur Sites ;
+- ✅ compte développeur Revaloop par e-mail et mot de passe ;
+- ✅ PBKDF2-SHA-256 Web Crypto à 600 000 itérations et session opaque hachée ;
+- ✅ inscription bootstrap fermée après le premier compte, sauf activation
+  explicite de `REVALOOP_ALLOW_REGISTRATION` ;
 - ✅ utilisateurs, organisations, membres et autorisation par projet ;
 - ✅ projets multiples ;
-- ✅ création d’une release avec URL HTTPS, consignes et référence Git ;
+- ✅ création d’une release avec URL HTTPS, vérifications optionnelles et
+  référence Git ;
 - ✅ cible `external` dans une iframe et fallback nouvel onglet ;
 - ✅ bridge facultatif ne transmettant que chemin et titre ;
 - ✅ invitations one-shot de 32 octets stockées hachées ;
 - ✅ échange atomique fragment → session → cookie ;
 - ✅ session maximale de 24 h, rotation, révocation et fermeture ;
-- ✅ checklist persistée ;
+- ✅ vérifications suggérées, persistées et optionnelles ;
 - ✅ retours généraux et visuels ;
+- ✅ saisie de retour libre sans catégorie imposée dans l’interface cliente ;
+- ✅ discussion générale persistée par release entre client et développeur ;
+- ✅ signal de nouvelle `preview_revision` et rechargement client dans la même
+  session valide ;
 - ✅ transitions séparées développeur/reviewer ;
 - ✅ synchronisation à cinq secondes ;
 - ✅ demande d’ajustements non terminale puis approbation finale atomique ;
@@ -46,7 +54,8 @@
 - après expiration, publier une nouvelle release révoque les anciens accès et
   passe la précédente à `superseded` ;
 - l’origine de preview n’est pas limitée par allowlist globale ;
-- l’ouverture publique autorise l’inscription SIWC libre dans un tenant isolé ;
+- aucun reset de mot de passe, vérification d’e-mail ou MFA ;
+- l’inscription bootstrap doit être terminée avant l’ouverture publique ;
 - le bridge transmet seulement le chemin et le titre : les annotations externes
   ne sont jamais ancrées à un élément et ne suivent pas le scroll interne ;
 - l’invitation protège la revue, pas l’accès à l’URL de staging ;
@@ -81,14 +90,33 @@
 - déploiement public vérifié avec dashboard protégé et `/join` anonyme ;
 - canal privé de vulnérabilité opérationnel.
 
-## Jalon 0.3 — captures et discussions
+## Jalon 0.3 — stabiliser la collaboration
+
+- ⏳ tests de concurrence sur le bootstrap et les sessions développeur ;
+- ⏳ écran de révocation de toutes les sessions développeur ;
+- ⏳ procédure opérateur de récupération de compte ;
+- ⏳ vérification d’adresse e-mail et reset de mot de passe ;
+- ⏳ MFA ;
+- ⏳ discussion incluse dans l’export ;
+- ⏳ historique de `preview_revision` associé aux commits déclarés ;
+- ⏳ notifications configurables de nouveaux messages et correctifs.
+
+### Porte de sortie
+
+- bootstrap testé sur une base vide avant exposition publique ;
+- login, expiration et révocation couverts en intégration D1 ;
+- boucle message → correctif déployé → signal → recharge validée sur les
+  navigateurs cibles ;
+- documentation opérateur testée sur une instance neuve.
+
+## Jalon 0.4 — captures et fils de discussion
 
 - ⏳ binding R2 et stockage privé ;
 - ⏳ capture explicite avec prévisualisation ;
 - ⏳ contrôle MIME, taille et dimensions ;
 - ⏳ empreinte de contenu ;
 - ⏳ suppression de l’objet avec son retour ;
-- ⏳ fil de discussion par retour ;
+- ⏳ fil de discussion attaché à chaque retour ;
 - ⏳ mentions et notifications configurables ;
 - ⏳ intégrations GitHub/GitLab ;
 - ⏳ quotas de stockage.
@@ -96,7 +124,7 @@
 🚫 Captures silencieuses, enregistrement continu et collecte de champs restent
 hors périmètre.
 
-## Jalon 0.4 — portabilité du review plane
+## Jalon 0.5 — portabilité du review plane
 
 - ⏳ interfaces repository indépendantes de D1 ;
 - ⏳ PostgreSQL de référence ;
@@ -107,7 +135,7 @@ hors périmètre.
 - ⏳ test d’installation sur un environnement vierge ;
 - ⏳ documentation des régions et sous-traitants.
 
-## Jalon 0.5 — agent et tunnel
+## Jalon 0.6 — agent et tunnel
 
 Objectif : rendre enfin possible `revaloop share 3000`.
 
@@ -131,7 +159,7 @@ Objectif : rendre enfin possible `revaloop share 3000`.
 - les commentaires restent disponibles hors ligne ;
 - l’opérateur documente clairement s’il peut lire le trafic.
 
-## Jalon 0.6 — hébergement de previews
+## Jalon 0.7 — hébergement de previews
 
 - ⏳ build reproductible depuis une source autorisée ;
 - ⏳ runner rootless éphémère ;

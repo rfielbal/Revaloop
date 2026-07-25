@@ -1,7 +1,7 @@
 # Modèle de menace
 
 - **Système :** Revaloop
-- **Version :** 0.2
+- **Version :** 0.3 en cours
 - **Dernière vérification :** 25 juillet 2026
 - **Statut :** alpha pour pilote contrôlé, aucune donnée sensible
 
@@ -16,8 +16,9 @@ Inclus :
 
 - landing et démo fictive ;
 - dashboard développeur ;
-- Sign in with ChatGPT fourni par Sites ;
-- projets, releases, invitations, sessions, retours et décisions ;
+- compte, credential et session développeur Revaloop ;
+- projets, releases, invitations, sessions, retours, messages et décisions ;
+- signal de révision de preview ;
 - preview HTTPS tierce dans une iframe ;
 - bridge facultatif `postMessage` ;
 - API et D1 ;
@@ -35,6 +36,8 @@ Hors périmètre :
 ## Actifs
 
 - identité et appartenance du développeur ;
+- dérivé et sel du mot de passe développeur ;
+- token de session développeur ;
 - séparation entre organisations et projets ;
 - secret d’invitation et token de session ;
 - nom déclaratif du reviewer ;
@@ -42,6 +45,8 @@ Hors périmètre :
   l’interface fournie ;
 - URL, commit et consignes de release ;
 - contenu et contexte des retours ;
+- discussion partagée d’une release ;
+- compteur de révision déclaré de la preview ;
 - bilan courant et approbation finale ;
 - audit ;
 - disponibilité et budget D1 ;
@@ -55,7 +60,8 @@ l’application tierce. Revaloop ne doit pas les collecter.
 - visiteur anonyme ;
 - développeur authentifié ;
 - reviewer possédant une invitation ou session ;
-- autre utilisateur SIWC dans son propre tenant ;
+- autre utilisateur Revaloop dans son propre tenant si l’inscription est
+  explicitement ouverte ;
 - attaquant Internet ;
 - reviewer malveillant ;
 - preview tierce compromise ;
@@ -68,7 +74,7 @@ l’application tierce. Revaloop ne doit pas les collecter.
 ```mermaid
 flowchart LR
     internet["Internet non fiable"] --> worker["Worker Revaloop"]
-    sites["Ingress Sites + SIWC"] --> worker
+    auth["Login + cookie développeur"] --> worker
     worker --> api["API métier"]
     api --> d1[("D1 partagé")]
     reviewer["Session reviewer"] --> api
@@ -79,22 +85,27 @@ flowchart LR
 
 Hypothèses :
 
-- Sites remplace/protège les headers d’identité réservés ;
 - le build de production est servi en HTTPS ;
 - D1 exécute un batch séquentiel de façon transactionnelle ;
 - le développeur contrôle ou approuve l’URL de staging ;
 - la cliente n’entre que des données fictives.
 
-Un déploiement hors Sites doit remplacer la première hypothèse par un mécanisme
-d’identité vérifiable.
-
 ## Invariants implémentés
 
 ### Développeur
 
-- aucun fallback local en production ;
+- mot de passe de 12 à 128 caractères dérivé avec PBKDF2-SHA-256 Web Crypto,
+  sel aléatoire et 600 000 itérations ;
+- mot de passe brut jamais stocké ;
+- token de session opaque dont seul le SHA-256 est stocké ;
+- cookie développeur `HttpOnly`, `Secure` en production, `SameSite=Strict`,
+  sans `Domain`, valable au plus 30 jours ;
+- session révocable côté serveur ;
+- message d’erreur de login générique, calcul factice pour un compte absent et
+  rate limits par compte/adresse ;
+- inscription bootstrap conditionnée à l’absence de tout credential, jusque
+  dans le batch final ;
 - identité obligatoire sur pages et API développeur ;
-- provisionnement idempotent ;
 - chaque ressource est résolue avec membre + organisation + projet ;
 - un identifiant seul ne donne aucun droit ;
 - suppression réservée au propriétaire.
@@ -131,6 +142,11 @@ reviewer → token hash → session → invitation → release → ressource
 - release approuvée ou remplacée non mutable ;
 - checklist et retours encore actifs après une demande d’ajustements, bloqués
   seulement après approbation, remplacement ou expiration.
+- messages liés à une release, auteur dérivé de la session développeur ou
+  reviewer ;
+- incrément de `preview_revision` réservé au développeur de l’organisation ;
+- vérifications suggérées facultatives : leur absence ne bloque ni retour ni
+  décision.
 
 ### Entrées et navigateur
 
@@ -156,10 +172,10 @@ reviewer → token hash → session → invitation → release → ressource
 
 | ID | Menace | Contrôle | Risque résiduel / action |
 |---|---|---|---|
-| T01 | header SIWC forgé | ingress Sites + fallback prod absent | documenter/tester l’ingress ; autre hébergeur interdit sans adaptateur |
+| T01 | prise de contrôle du bootstrap | inscription fermée après le premier credential, condition finale en D1 | initialiser le compte avant ouverture publique |
 | T02 | accès croisé tenant | joins membre/org/projet | ajouter tests intégration à deux identités |
 | T03 | rejeu invitation | `used_at`, hash, batch atomique | bearer transférable avant premier usage |
-| T04 | vol session | HttpOnly/Secure/Strict, 24 h, révocation | possession du navigateur suffit pendant la durée |
+| T04 | vol session reviewer | HttpOnly/Secure/Strict, 24 h, révocation | possession du navigateur suffit pendant la durée |
 | T05 | CSRF | Strict + `Origin` | vérifier les futurs clients natifs séparément |
 | T06 | écriture après révocation | garde dans SQL final | étendre les tests de concurrence D1 |
 | T07 | approbation avec retour ouvert | transaction conditionnelle | maintenir tests de course |
@@ -170,14 +186,18 @@ reviewer → token hash → session → invitation → release → ressource
 | T12 | framing ou fonction embarquée refusés | aide temporisée + nouvel onglet | pas de détection fiable de XFO ; cookies tiers, OAuth, top-navigation, téléchargements et Permissions Policy peuvent casser un parcours |
 | T13 | contenu externe mutable | libellé et commit déclaratif | aucune preuve d’immuabilité |
 | T14 | annotation trompeuse | chemin/viewport filtrés + limite affichée | bridge ou non, aucun ancrage DOM/scroll ; position approximative |
-| T15 | abus D1 | rate limits, tailles, purge | inscription SIWC libre et quotas globaux manquants |
+| T15 | abus D1 | rate limits, tailles, purge | quotas globaux manquants |
 | T16 | rétention excessive | expiration, purge, suppression projet | pas de suppression compte/org self-service |
 | T17 | dépendance compromise | lockfile et revue | ajouter scans/provenance de release |
 | T18 | Site globalement privé | protège tout | cliente externe bloquée |
-| T19 | Site public | dashboard reste SIWC | inscription développeur libre, ajouter allowlist pour alpha fermée |
+| T19 | instance publique | dashboard protégé par cookie Revaloop et bootstrap fermé | aucune vérification e-mail, MFA ou récupération de compte |
 | T20 | décision prise pour un mauvais contenu | preview mutable | procès-verbal externe si enjeu contractuel |
+| T21 | force brute du login | PBKDF2 600k, réponse générique, limites compte/IP | pas de MFA ni alerte de connexion |
+| T22 | vol session développeur | token opaque haché, cookie Host/HttpOnly/Secure/Strict, expiration et révocation | pas d’écran pour révoquer toutes les sessions |
+| T23 | faux signal de correctif | incrément autorisé de `preview_revision` | ne prouve ni déploiement, ni commit, ni contenu servi |
+| T24 | message attribué au mauvais acteur | auteur dérivé de la session et release autorisée | nom reviewer déclaratif, pas d’identité forte |
 
-T01, T02, T06, T07 et T19 demandent une validation d’intégration avant une
+T01, T02, T06, T07, T19, T21 et T22 demandent une validation d’intégration avant une
 publication générale.
 
 ## Preview externe
