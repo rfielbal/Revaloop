@@ -1,7 +1,26 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { registerHooks } from "node:module";
 import test from "node:test";
-import {
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    try {
+      return nextResolve(specifier, context);
+    } catch (error) {
+      if (
+        error?.code === "ERR_MODULE_NOT_FOUND" &&
+        specifier.startsWith(".") &&
+        !/\.[a-z0-9]+$/i.test(specifier)
+      ) {
+        return nextResolve(`${specifier}.ts`, context);
+      }
+      throw error;
+    }
+  },
+});
+
+const {
   RequestValidationError,
   assertSameOrigin,
   generateSecret,
@@ -11,7 +30,7 @@ import {
   readJsonObject,
   serializeReviewCookie,
   sha256,
-} from "../lib/security.ts";
+} = await import("../lib/security.ts");
 
 test("génère des secrets imprévisibles et ne conserve que leur empreinte", async () => {
   const first = generateSecret();

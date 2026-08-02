@@ -16,6 +16,7 @@ import {
 } from "./protocol.ts";
 import { RuntimeManager } from "./project.ts";
 import { SettingsStore } from "./settings.ts";
+import { TunnelManager } from "./tunnel.ts";
 import {
   isTrustedRendererUrl,
   resolveRendererDevUrl,
@@ -51,6 +52,8 @@ app.setPath(
 let mainWindow: BrowserWindow | null = null;
 let removeIpcHandlers: (() => void) | null = null;
 let quitting = false;
+let runtimeManager: RuntimeManager | null = null;
+let tunnelManager: TunnelManager | null = null;
 
 function isAllowedRendererUrl(raw: string): boolean {
   return isTrustedRendererUrl(raw, rendererDevUrl);
@@ -93,6 +96,13 @@ async function createWindow(): Promise<BrowserWindow> {
   mainWindow = window;
   hardenWebContents(window);
   window.once("ready-to-show", () => window.show());
+  window.on("close", (event) => {
+    if (quitting || !tunnelManager?.hasActiveProcess()) return;
+    event.preventDefault();
+    void tunnelManager?.stop().finally(() => {
+      if (!window.isDestroyed()) window.destroy();
+    });
+  });
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
   });
@@ -139,6 +149,22 @@ app.whenReady().then(async () => {
   }
 
   const settings = new SettingsStore(app.getPath("userData"));
+  const tunnel = new TunnelManager({
+    log: (line) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC_CHANNELS.previewLogEvent, line);
+      }
+    },
+    status: (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(
+          IPC_CHANNELS.tunnelStatusEvent,
+          status,
+        );
+      }
+    },
+  });
+  tunnelManager = tunnel;
   const runtime = new RuntimeManager({
     log: (line) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -152,14 +178,17 @@ app.whenReady().then(async () => {
           status,
         );
       }
+      if (!status.running) void tunnel.stop();
     },
   });
+  runtimeManager = runtime;
 
   removeIpcHandlers = registerIpcHandlers({
     getWindow: () => mainWindow,
     rendererDevUrl,
     settings,
     runtime,
+    tunnel,
   });
   await createWindow();
 
@@ -168,10 +197,17 @@ app.whenReady().then(async () => {
   });
 
   app.on("before-quit", (event) => {
-    if (quitting || !runtime.status().running) return;
+    if (
+      quitting ||
+      (!runtime.status().running && !tunnel.hasActiveProcess())
+    ) {
+      return;
+    }
     event.preventDefault();
     quitting = true;
-    void runtime.stop().finally(() => app.quit());
+    void Promise.allSettled([tunnel.stop(), runtime.stop()]).finally(() =>
+      app.quit(),
+    );
   });
 });
 
@@ -182,4 +218,6 @@ app.on("window-all-closed", () => {
 app.on("will-quit", () => {
   removeIpcHandlers?.();
   removeIpcHandlers = null;
+  void tunnelManager?.stop();
+  void runtimeManager?.stop();
 });

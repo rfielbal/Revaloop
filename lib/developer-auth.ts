@@ -14,6 +14,7 @@ import {
   DEVELOPER_SESSION_DURATION_SECONDS,
   DeveloperAuthError,
   developerLoginPath,
+  developerRegistrationPolicyAllowsRequest,
   developerSessionCookieName,
   hashDeveloperPassword,
   normalizeDeveloperEmail,
@@ -32,6 +33,23 @@ export async function developerRegistrationIsOpen() {
   }
 
   return (await countDeveloperCredentials()) === 0;
+}
+
+export async function developerRegistrationRequestIsAuthorized(
+  headers: Pick<Headers, "get">,
+) {
+  if (developerRegistrationPolicyAllowsRequest(headers, false)) {
+    return true;
+  }
+
+  if (process.env.REVALOOP_ALLOW_REGISTRATION !== "true") {
+    return false;
+  }
+
+  return developerRegistrationPolicyAllowsRequest(
+    headers,
+    (await countDeveloperCredentials()) > 0,
+  );
 }
 
 async function issueDeveloperSession(userId: string) {

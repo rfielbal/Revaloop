@@ -7,6 +7,7 @@ import {
   developerIdentityFromRequest,
   unauthorizedResponse,
 } from "../../../../../lib/auth";
+import { isLoopbackRequestHostname } from "../../../../../lib/developer-auth-core";
 import {
   assertSameOrigin,
   cleanText,
@@ -74,7 +75,7 @@ export async function POST(request: Request, context: RouteContext) {
       commitSha: cleanText(body.commitSha, 80),
       previewUrl: normalizeExternalPreviewUrl(
         body.previewUrl,
-        new URL(request.url).hostname === "localhost",
+        isLoopbackRequestHostname(new URL(request.url).hostname),
       ),
       reviewerMessage: cleanText(body.reviewerMessage, 1_200),
       testItems,

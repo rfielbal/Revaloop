@@ -99,10 +99,9 @@ une procédure opérateur dédiée.
 
 Le nom de session est saisi par le développeur lors de l’invitation puis recopié
 côté serveur comme auteur. Il reste déclaratif : Revaloop ne vérifie pas
-l’identité de la personne qui possède le lien. L’interface fournie ne collecte
-plus d’adresse e-mail cliente. Le schéma et l’API conservent toutefois un champ
-e-mail nullable pour compatibilité avec d’éventuels clients API personnalisés ;
-ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
+l’identité de la personne qui possède le lien. L’interface accepte un e-mail de
+suivi optionnel, stocké dans le champ nullable existant. Ce champ n’est ni un
+facteur d’authentification ni un canal d’envoi.
 
 ### Mutations et données
 
@@ -174,6 +173,18 @@ ce champ n’est ni un facteur d’authentification ni un canal d’envoi.
   query ni fragment ;
 - origine Revaloop en HTTPS, ou HTTP uniquement pour une instance loopback ;
 - destinations externes en liste fermée, ouvertes dans le navigateur système ;
+- `cloudflared` recherché localement et jamais téléchargé, mis à jour ou
+  configuré automatiquement par Revaloop ;
+- Quick Tunnel démarré sans token ni configuration utilisateur, avec un
+  environnement réduit à une liste de variables système ;
+- confirmation native et checklist non persistée avant chaque tunnel, liée à
+  la cible loopback par une autorisation courte et à usage unique ;
+- URL publique acceptée uniquement sous la forme racine
+  `https://*.trycloudflare.com`, sans credentials, port, query ni fragment ;
+- logs `cloudflared` drainés, bornés et masqués ; arrêt du tunnel avec le projet,
+  la fenêtre ou l’application, puis terminaison forcée bornée si nécessaire ;
+- transfert vers `/connect-preview` par fragment, sans laisser l’URL du tunnel
+  dans la requête initiale, les logs serveur ou le referrer ;
 - aucun mot de passe, cookie, token développeur ou invitation dans l’app ;
 - paramètres non secrets seulement, fichier local `0600` sur Unix ;
 - chaque ligne de journal est nettoyée, limitée à 2 000 caractères et masquée
@@ -217,9 +228,10 @@ macOS et vérification de provenance.
 - il n’existe pas encore de vérification d’adresse e-mail, de réinitialisation
   de mot de passe, de MFA, de clés de récupération ni d’interface de gestion
   des sessions développeur ;
-- la première personne qui atteint `/register` sur une base vide peut devenir
-  propriétaire de l’instance : initialisez le compte avant une ouverture
-  publique ;
+- sur une base vide, le bootstrap anonyme public est refusé par défaut ; il
+  exige l’identité propriétaire Sites, une requête loopback hors production ou
+  `REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP=true` activé explicitement par
+  l’opérateur ;
 - `REVALOOP_ALLOW_REGISTRATION=true` ouvre volontairement l’inscription à toute
   personne qui atteint la route ; ne l’activez pas sur une alpha fermée ;
 - la preview est une ressource tierce, mutable et directement chargée par le
@@ -254,8 +266,10 @@ macOS et vérification de provenance.
 - il n’existe ni pièce jointe, ni capture, ni stockage R2 ;
 - les positions d’annotation sont des coordonnées de viewport ; aucune capture
   automatique, sélection DOM ou preuve visuelle immuable n’est produite ;
-- le compagnon desktop local est implémenté, mais aucun agent de tunnel, relais
-  ou partage distant de `localhost` ne l’est ;
+- le compagnon Electron sait créer un Quick Tunnel de développement, mais ce
+  sous-domaine est public, aléatoire, sans garantie de disponibilité et sans
+  Cloudflare Access ; il ne constitue ni un relais Revaloop maîtrisé ni une
+  protection de la preview ;
 - le desktop n’appelle pas encore l’API Revaloop : l’authentification reste dans
   le navigateur système ;
 - aucune distribution desktop signée, notariée ou mise à jour automatiquement
@@ -270,8 +284,10 @@ macOS et vérification de provenance.
 - aucun build, hébergement ou déploiement de preview n’est fourni ;
 - le signalement d’une nouvelle `preview_revision` ne déploie pas la preview,
   n’isole pas sa base et ne prouve pas son contenu ;
-- le rechargement conserve la même URL et ne garantit pas de contourner le
-  cache HTTP, un CDN ou le Service Worker de la preview ;
+- une URL de tunnel redémarré peut être remplacée sur la release active sans
+  perdre la session cliente ; Revaloop journalise le changement mais ne garantit
+  ni le contenu servi ni le contournement du cache HTTP, d’un CDN ou d’un
+  Service Worker ;
 - la suite automatisée vérifie les frontières HTTP et primitives, mais les
   scénarios de forte concurrence D1 doivent encore être élargis.
 
@@ -296,6 +312,11 @@ Pour le compagnon desktop :
 - inspectez le script `dev` avant de confirmer ;
 - n’ouvrez qu’un dépôt de confiance et gardez ses dépendances à jour ;
 - utilisez une URL loopback et une base locale ou de test ;
+- n’activez le tunnel qu’après avoir vérifié comptes fictifs, base isolée,
+  services sandbox et absence de secret de production ;
+- ne transmettez normalement à la cliente que l’invitation Revaloop, pas l’URL
+  brute du tunnel ;
+- arrêtez immédiatement le tunnel lorsque la séance se termine ;
 - ne collez aucun token dans l’URL du site ou de la preview ;
 - arrêtez le projet depuis Revaloop avant de quitter ;
 - ne distribuez pas le binaire alpha non signé à un client.
@@ -315,7 +336,10 @@ Pour le compagnon desktop :
 - contournement de la CSP ou de l’origine ;
 - audit contenant un secret ou décrivant une mutation inexistante ;
 - suppression incomplète ;
-- plus tard : SSRF, proxy ouvert, confusion de tunnel ou contournement mTLS.
+- validation insuffisante de la cible loopback, URL de tunnel forgée, fuite de
+  logs, tunnel survivant à l’arrêt du projet ou consentement natif contourné ;
+- plus tard : SSRF ou proxy ouvert dans un relais Revaloop, confusion de tunnel
+  nommé ou contournement mTLS.
 
 Les failles propres à la preview tierce doivent être signalées à son
 propriétaire, sauf si elles permettent de franchir une frontière Revaloop.

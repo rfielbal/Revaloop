@@ -110,15 +110,16 @@ export function JoinClient() {
           <ShieldCheck aria-hidden="true" />
           <span>
             Le secret est retiré de l’adresse avant l’ouverture du projet.
+            Cette invitation crée une session valable 24 heures maximum sur
+            cet appareil.
           </span>
         </div>
         {state === "ready" ? (
           <>
             <p className="join-privacy-note">
-              L’ouverture crée une session technique. Vos actions de
-              vérification et les commentaires que vous envoyez seront
-              conservés dans ce projet et visibles par son équipe. Utilisez
-              uniquement des données fictives.{" "}
+              Vos actions de vérification et les commentaires que vous envoyez
+              seront conservés dans ce projet et visibles par son équipe.
+              Utilisez uniquement des données fictives.{" "}
               <Link href="/privacy">Lire les informations de confidentialité</Link>.
             </p>
             <button

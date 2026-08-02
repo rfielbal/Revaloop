@@ -1,7 +1,7 @@
 # Architecture de Revaloop
 
 - **Version décrite :** alpha 0.3 en cours
-- **Dernière mise à jour :** 25 juillet 2026
+- **Dernière mise à jour :** 2 août 2026
 
 ## Principe directeur
 
@@ -13,8 +13,9 @@ Revaloop sépare trois frontières :
 2. le **compagnon desktop local**, aujourd’hui implémenté en alpha, qui prépare
    et surveille explicitement le projet sans charger le site dans sa fenêtre
    privilégiée ;
-3. le futur **data plane**, qui transportera le trafic entre le navigateur
-   client et une application locale.
+3. un **data plane local optionnel**, aujourd’hui limité à un Quick Tunnel
+   `cloudflared` public et temporaire ; un relais Revaloop authentifié reste un
+   chantier futur.
 
 Le Worker web ne doit jamais devenir implicitement un proxy réseau générique.
 
@@ -30,6 +31,9 @@ flowchart LR
     dev --> desktop["Compagnon Electron local"]
     desktop -->|"ouvre le navigateur système"| dashboard
     desktop -->|"script dev explicite"| local["127.0.0.1:port"]
+    desktop -->|"consentement natif"| tunnel["Quick Tunnel cloudflared"]
+    tunnel -->|"HTTPS public temporaire"| local
+    desktop -->|"fragment /connect-preview"| dashboard
     api --> d1[("Cloudflare D1")]
 
     client["Cliente"] --> join["/join#token"]
@@ -75,7 +79,8 @@ flowchart LR
     main --> assets["Assets locaux revaloop://app"]
     main --> settings["settings.json sans secret"]
     main --> npm["npm --ignore-scripts run dev"]
-    main --> probe["Probe TCP loopback"]
+    main --> probe["Probe HTTP loopback"]
+    main --> tunnel["cloudflared sans token"]
     main --> browser["Navigateur système"]
 ```
 
@@ -95,7 +100,8 @@ HTTP générique. Le preload expose seulement ce contrat :
 | sélection et inspection | dialogue natif dans le main, chemin canonique, `package.json` régulier et inférieur à 1 Mio |
 | lecture et sauvegarde des réglages | preview loopback et origine Revaloop validées, chemin fourni par l’état autoritaire du main |
 | statut, démarrage et arrêt | un processus géré, opérations sérialisées, confirmation native, script attendu seulement, relecture du manifeste puis commande fixe |
-| probe de preview | connexion TCP courte vers une adresse loopback et un port explicite |
+| probe de preview | Electron envoie `HEAD`, puis `GET` uniquement après `405`/`501`, sans suivre de redirection, et exige une réponse HTTP exploitable ; le fallback Tauri vérifie seulement l’ouverture TCP du port loopback |
+| tunnel temporaire | confirmation native, `cloudflared` local, URL `trycloudflare.com` validée, arrêt borné et aucun token |
 | ouverture externe | seulement `preview`, `login` ou `dashboard`, dans le navigateur système |
 | événements | lignes de log et statut du processus, sans primitive IPC générique |
 
@@ -137,6 +143,20 @@ Le bouton vers l’espace en ligne ouvre le navigateur système. Les cookies
 `HttpOnly` et `SameSite=Strict` y restent : le compagnon n’appelle pas l’API
 Revaloop, ne stocke aucun token et ne lit aucun cookie web.
 
+Le tunnel suit la même séparation. Le processus principal vérifie que le projet
+géré tourne, sonde la cible loopback, demande une confirmation native avec une
+checklist non persistée, puis lance une installation locale de `cloudflared`
+avec un environnement minimisé. L’URL publique est transmise dans le fragment
+de `/connect-preview`, conservée temporairement dans `sessionStorage`, puis
+confirmée dans le dashboard. Le renderer ne peut fournir ni URL externe, ni
+commande, ni token au processus de tunnel. L’arrêt du projet, de la fenêtre ou
+de l’application arrête aussi `cloudflared`.
+
+Ce Quick Tunnel ne protège pas la preview : toute personne qui connaît son URL
+peut la joindre. Il convient seulement à une fixture ou une base de test isolée.
+Un contrôle d’accès durable, un hostname stable, des leases signées et un relais
+Revaloop restent hors de cette alpha.
+
 Une future intégration API suivra un canal d’appareil séparé : navigateur
 système, Authorization Code avec PKCE S256 et callback loopback exact, tokens
 opaques hachés et révocables, access token court dans le runtime natif et refresh
@@ -163,6 +183,7 @@ macOS et provenance vérifiable.
 | `/register` | publique tant que le bootstrap est ouvert |
 | `/logout` | session développeur |
 | `/dashboard` | session développeur Revaloop obligatoire |
+| `/connect-preview#url=…` | relais client-side du compagnon vers le dashboard ; fragment non envoyé au serveur |
 | `/join` | publique, ne reçoit pas le fragment au premier GET |
 | `/review/[releaseId]` | cookie de session lié à la release |
 | `/api/auth/register` | bootstrap ou inscription explicitement ouverte |
@@ -188,9 +209,12 @@ cookie `__Host-revaloop_developer`, `Secure`, `HttpOnly`, `SameSite=Strict`,
 `Path=/`, sans `Domain`, avec une durée maximale de 30 jours. La déconnexion
 révoque la ligne serveur avant d’effacer le cookie.
 
-Sur une base vide, `/register` permet de créer le premier credential et
-provisionne atomiquement l’utilisateur, son organisation personnelle et son
-rôle propriétaire. Dès qu’un credential existe, l’inscription est fermée.
+Sur une base vide, `/register` permet de créer le premier credential uniquement
+depuis localhost hors production, avec l’identité propriétaire Sites ou avec le
+mode opérateur explicite. Le bootstrap anonyme public est refusé par défaut.
+Une requête autorisée provisionne atomiquement l’utilisateur, son organisation
+personnelle et son rôle propriétaire. Dès qu’un credential existe,
+l’inscription est fermée.
 L’opérateur peut l’ouvrir explicitement avec
 `REVALOOP_ALLOW_REGISTRATION=true`, ce qui doit être considéré comme une
 décision de déploiement et non un mode sûr par défaut.
@@ -225,8 +249,8 @@ session. Le cookie expire au plus tôt entre l’invitation et 24 heures.
 Le nom de reviewer est saisi par le développeur lors de la création du lien,
 puis porté par l’invitation et la session. Il sert de libellé d’auteur, mais
 n’est pas une identité authentifiée. L’interface actuelle ne collecte aucune
-adresse e-mail cliente ; l’API et le schéma gardent seulement un champ nullable
-pour compatibilité avec un client API personnalisé.
+preuve d’identité : elle accepte seulement un e-mail de suivi optionnel dans le
+champ nullable, sans vérification ni envoi automatique.
 
 ### Écriture d’un retour
 
@@ -474,6 +498,7 @@ injection de bridge. Voir [ADR-0003](adr/0003-tls-termination-modes.md).
 - [ADR-0004 — Gérer le compte développeur dans Revaloop](adr/0004-developer-authentication.md)
 - [ADR-0005 — Séparer le compagnon desktop du site et du tunnel](adr/0005-desktop-companion.md)
 - [ADR-0006 — Utiliser Electron pour la boucle de développement desktop](adr/0006-electron-development-runtime.md)
+- [ADR-0007 — Utiliser un Quick Tunnel tiers pour le premier pilote](adr/0007-quick-tunnel-pilot.md)
 
 Toute évolution d’identité, d’autorisation, de stockage, d’origine ou de
 transport doit mettre à jour ce document et le modèle de menace.

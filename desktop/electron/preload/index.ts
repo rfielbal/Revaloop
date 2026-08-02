@@ -4,6 +4,7 @@ import {
   type DesktopBridge,
   type LogLine,
   type RuntimeStatus,
+  type TunnelStatus,
 } from "../shared/contract.ts";
 
 function onEvent<T>(
@@ -34,12 +35,22 @@ const bridge: DesktopBridge = Object.freeze({
   stopDevServer: () => ipcRenderer.invoke(IPC_CHANNELS.stopDevServer),
   probePreview: (url) =>
     ipcRenderer.invoke(IPC_CHANNELS.probePreview, url),
+  tunnelStatus: () => ipcRenderer.invoke(IPC_CHANNELS.tunnelStatus),
+  startTunnel: () => ipcRenderer.invoke(IPC_CHANNELS.startTunnel),
+  stopTunnel: () => ipcRenderer.invoke(IPC_CHANNELS.stopTunnel),
+  copyTunnelUrl: () => ipcRenderer.invoke(IPC_CHANNELS.copyTunnelUrl),
+  openTunnelPreview: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.openTunnelPreview),
+  openTunnelWorkspace: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.openTunnelWorkspace),
   openExternal: (target) =>
     ipcRenderer.invoke(IPC_CHANNELS.openExternal, target),
   onPreviewLog: (listener) =>
     onEvent<LogLine>(IPC_CHANNELS.previewLogEvent, listener),
   onRuntimeStatus: (listener) =>
     onEvent<RuntimeStatus>(IPC_CHANNELS.runtimeStatusEvent, listener),
+  onTunnelStatus: (listener) =>
+    onEvent<TunnelStatus>(IPC_CHANNELS.tunnelStatusEvent, listener),
 });
 
 contextBridge.exposeInMainWorld("revaloopDesktop", bridge);

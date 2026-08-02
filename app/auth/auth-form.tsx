@@ -10,6 +10,7 @@ type AuthFormProps = {
   mode: "login" | "register";
   returnTo: string;
   registrationOpen?: boolean;
+  registrationUnavailableReason?: string;
   suggestedEmail?: string;
   sitesEmailVerified?: boolean;
   showLocalLegacyHint?: boolean;
@@ -23,6 +24,7 @@ export function AuthForm({
   mode,
   returnTo,
   registrationOpen = true,
+  registrationUnavailableReason,
   suggestedEmail,
   sitesEmailVerified = false,
   showLocalLegacyHint = false,
@@ -159,10 +161,14 @@ export function AuthForm({
 
           {isRegistration && !registrationOpen ? (
             <div className={styles.closed} role="status">
-              <strong>Cette instance est déjà initialisée.</strong>
+              <strong>
+                {registrationUnavailableReason
+                  ? "Initialisation publique verrouillée."
+                  : "Cette instance est déjà initialisée."}
+              </strong>
               <p>
-                Les nouvelles inscriptions sont fermées. Un propriétaire peut
-                les réactiver depuis la configuration du serveur.
+                {registrationUnavailableReason ??
+                  "Les nouvelles inscriptions sont fermées. Utilisez le compte propriétaire déjà créé."}
               </p>
               <Link href={`/login?return_to=${encodeURIComponent(returnTo)}`}>
                 Aller à la connexion
@@ -300,7 +306,7 @@ export function AuthForm({
             </form>
           )}
 
-          {(!isRegistration || registrationOpen) && (
+          {registrationOpen ? (
             <p className={styles.switchMode}>
               {isRegistration ? (
                 <>
@@ -322,7 +328,12 @@ export function AuthForm({
                 </>
               )}
             </p>
-          )}
+          ) : !isRegistration ? (
+            <p className={styles.switchMode}>
+              Cette instance est déjà initialisée ou son bootstrap public est
+              verrouillé.
+            </p>
+          ) : null}
         </div>
       </section>
 

@@ -6,6 +6,7 @@ import type {
   ProbeResult,
   ProjectInfo,
   RuntimeStatus,
+  TunnelStatus,
 } from "../electron/shared/contract";
 
 declare global {
@@ -27,6 +28,20 @@ function isTauriRuntime(): boolean {
 
 export function hasNativeRuntime(): boolean {
   return Boolean(electronBridge()) || isTauriRuntime();
+}
+
+export function hasTunnelRuntime(): boolean {
+  return Boolean(electronBridge());
+}
+
+function requireElectronBridge(): DesktopBridge {
+  const bridge = electronBridge();
+  if (!bridge) {
+    throw new Error(
+      "Le tunnel temporaire est disponible uniquement avec le compagnon Electron.",
+    );
+  }
+  return bridge;
 }
 
 async function tauriInvoke<T>(
@@ -107,6 +122,30 @@ export async function probeNativePreview(url: string): Promise<ProbeResult> {
   return tauriInvoke<ProbeResult>("probe_preview", { url });
 }
 
+export async function getTunnelStatus(): Promise<TunnelStatus> {
+  return requireElectronBridge().tunnelStatus();
+}
+
+export async function startNativeTunnel(): Promise<TunnelStatus> {
+  return requireElectronBridge().startTunnel();
+}
+
+export async function stopNativeTunnel(): Promise<TunnelStatus> {
+  return requireElectronBridge().stopTunnel();
+}
+
+export async function copyNativeTunnelUrl(): Promise<void> {
+  return requireElectronBridge().copyTunnelUrl();
+}
+
+export async function openNativeTunnelPreview(): Promise<void> {
+  return requireElectronBridge().openTunnelPreview();
+}
+
+export async function openNativeTunnelWorkspace(): Promise<void> {
+  return requireElectronBridge().openTunnelWorkspace();
+}
+
 export async function openNativeExternal(
   target: ExternalTarget,
 ): Promise<void> {
@@ -135,6 +174,12 @@ export async function onNativeRuntimeStatus(
   );
 }
 
+export async function onNativeTunnelStatus(
+  listener: (status: TunnelStatus) => void,
+): Promise<() => void> {
+  return requireElectronBridge().onTunnelStatus(listener);
+}
+
 export type {
   DesktopSettings,
   ExternalTarget,
@@ -142,4 +187,5 @@ export type {
   ProbeResult,
   ProjectInfo,
   RuntimeStatus,
+  TunnelStatus,
 };

@@ -23,10 +23,44 @@ export const metadata: Metadata = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string; release?: string }>;
+  searchParams: Promise<{
+    project?: string;
+    release?: string;
+    connect_preview?: string;
+  }>;
 }) {
-  const user = await requireDeveloperIdentity("/dashboard");
-  const { project, release } = await searchParams;
+  const { project, release, connect_preview: connectPreview } =
+    await searchParams;
+
+  return (
+    <DashboardContent
+      project={project}
+      release={release}
+      connectPreview={connectPreview}
+    />
+  );
+}
+
+async function DashboardContent({
+  project,
+  release,
+  connectPreview,
+}: {
+  project?: string;
+  release?: string;
+  connectPreview?: string;
+}) {
+  const returnParameters = new URLSearchParams();
+
+  if (project) returnParameters.set("project", project);
+  if (release) returnParameters.set("release", release);
+  if (connectPreview === "1") {
+    returnParameters.set("connect_preview", "1");
+  }
+
+  const user = await requireDeveloperIdentity(
+    `/dashboard${returnParameters.size ? `?${returnParameters.toString()}` : ""}`,
+  );
   const workspace = await getDeveloperWorkspace(
     {
       displayName: user.displayName,
@@ -44,6 +78,7 @@ export default async function DashboardPage({
       initialWorkspace={workspace}
       renderedAt={new Date().toISOString()}
       signOutPath={developerLogoutPath("/")}
+      connectPreviewRequested={connectPreview === "1"}
     />
   );
 }

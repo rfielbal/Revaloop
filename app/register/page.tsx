@@ -6,6 +6,7 @@ import { getRecoverableLocalDeveloperPlaceholderEmail } from "../../db/repositor
 import {
   canonicalRequestHostname,
   developerRegistrationIsOpen,
+  developerRegistrationRequestIsAuthorized,
   getDeveloperIdentity,
   isLoopbackRequestHostname,
   safeAuthReturnPath,
@@ -40,6 +41,9 @@ export default async function RegisterPage({
   }
 
   const registrationOpen = await developerRegistrationIsOpen();
+  const registrationAuthorized =
+    registrationOpen &&
+    (await developerRegistrationRequestIsAuthorized(requestHeaders));
   const hostname = canonicalRequestHostname(requestHeaders);
   const sitesAuthenticatedEmail =
     sitesAuthenticatedEmailFromHeaders(requestHeaders);
@@ -54,12 +58,19 @@ export default async function RegisterPage({
     <AuthForm
       mode="register"
       returnTo={returnTo}
-      registrationOpen={registrationOpen}
+      registrationOpen={registrationAuthorized}
+      registrationUnavailableReason={
+        registrationOpen && !registrationAuthorized
+          ? "L’initialisation anonyme est désactivée sur cette instance publique. Ouvrez cette page avec l’identité propriétaire Sites ou utilisez le mode bootstrap opérateur depuis un environnement maîtrisé."
+          : undefined
+      }
       suggestedEmail={
         sitesAuthenticatedEmail ?? localPlaceholderEmail ?? undefined
       }
       sitesEmailVerified={Boolean(sitesAuthenticatedEmail)}
-      showLocalLegacyHint={Boolean(localPlaceholderEmail)}
+      showLocalLegacyHint={
+        registrationAuthorized && Boolean(localPlaceholderEmail)
+      }
     />
   );
 }

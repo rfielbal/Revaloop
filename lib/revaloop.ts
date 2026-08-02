@@ -114,6 +114,26 @@ export interface DeveloperProjectSummary {
   } | null;
 }
 
+export interface DeveloperClientAccessSummary {
+  status:
+    | "none"
+    | "invited"
+    | "opened"
+    | "inactive"
+    | "expired"
+    | "revoked";
+  reviewerName?: string;
+  reviewerEmail?: string;
+  createdAt?: string;
+  expiresAt?: string;
+  openedAt?: string;
+  lastSeenAt?: string;
+}
+
+export interface DeveloperReviewPayload extends ReviewPayload {
+  clientAccess: DeveloperClientAccessSummary;
+}
+
 export interface DeveloperWorkspace {
   viewer: {
     id: string;
@@ -125,7 +145,7 @@ export interface DeveloperWorkspace {
     name: string;
   };
   projects: DeveloperProjectSummary[];
-  activeReview: ReviewPayload | null;
+  activeReview: DeveloperReviewPayload | null;
 }
 
 export interface CreatedInvitation {

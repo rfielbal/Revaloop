@@ -104,6 +104,37 @@ export function sitesAuthenticatedEmailFromHeaders(
   );
 }
 
+export function developerBootstrapRequestIsAuthorized(
+  headers: Pick<Headers, "get">,
+) {
+  if (
+    process.env.NODE_ENV !== "production" &&
+    isLoopbackRequestHostname(canonicalRequestHostname(headers))
+  ) {
+    return true;
+  }
+
+  if (sitesAuthenticatedEmailFromHeaders(headers)) {
+    return true;
+  }
+
+  return process.env.REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP === "true";
+}
+
+export function developerRegistrationPolicyAllowsRequest(
+  headers: Pick<Headers, "get">,
+  hasExistingCredentials: boolean,
+) {
+  if (developerBootstrapRequestIsAuthorized(headers)) {
+    return true;
+  }
+
+  return (
+    hasExistingCredentials &&
+    process.env.REVALOOP_ALLOW_REGISTRATION === "true"
+  );
+}
+
 export function validateDeveloperPassword(value: unknown) {
   if (typeof value !== "string") {
     throw new DeveloperAuthError(

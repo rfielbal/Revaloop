@@ -4,7 +4,10 @@ import {
   ArrowUpRight,
   Check,
   CircleStop,
+  Cloud,
+  CloudOff,
   Code2,
+  Copy,
   FolderOpen,
   Globe2,
   KeyRound,
@@ -16,6 +19,7 @@ import {
   Radio,
   RefreshCw,
   ShieldCheck,
+  Share2,
   SquareTerminal,
 } from "lucide-react";
 import {
@@ -24,22 +28,31 @@ import {
 } from "../electron/shared/contract";
 import {
   chooseNativeProject,
+  copyNativeTunnelUrl,
   getRuntimeStatus,
+  getTunnelStatus,
   hasNativeRuntime,
+  hasTunnelRuntime,
   inspectStoredProject,
   loadDesktopSettings,
   onNativePreviewLog,
   onNativeRuntimeStatus,
+  onNativeTunnelStatus,
   openNativeExternal,
+  openNativeTunnelPreview,
+  openNativeTunnelWorkspace,
   probeNativePreview,
   saveDesktopSettings,
   startNativeDevServer,
+  startNativeTunnel,
   stopNativeDevServer,
+  stopNativeTunnel,
   type DesktopSettings,
   type LogLine,
   type ProbeResult,
   type ProjectInfo,
   type RuntimeStatus,
+  type TunnelStatus,
 } from "./desktop-runtime";
 import {
   DESKTOP_SECTION_IDS,
@@ -54,6 +67,13 @@ const DEFAULT_SETTINGS: DesktopSettings = {
   projectPath: null,
   previewUrl: DEFAULT_PREVIEW_URL,
   controlPlaneUrl: DEFAULT_CONTROL_PLANE_URL,
+};
+
+const DEFAULT_TUNNEL_STATUS: TunnelStatus = {
+  state: "checking",
+  available: null,
+  url: null,
+  message: "Recherche de cloudflared sur ce poste…",
 };
 
 function errorMessage(error: unknown) {
@@ -89,6 +109,7 @@ function StatusGlyph({
 
 export function App() {
   const nativeRuntime = hasNativeRuntime();
+  const tunnelRuntime = hasTunnelRuntime();
   const [settings, setSettings] =
     useState<DesktopSettings>(DEFAULT_SETTINGS);
   const [project, setProject] = useState<ProjectInfo | null>(null);
@@ -97,6 +118,9 @@ export function App() {
     pid: null,
   });
   const [probe, setProbe] = useState<ProbeResult | null>(null);
+  const [tunnel, setTunnel] = useState<TunnelStatus>(
+    DEFAULT_TUNNEL_STATUS,
+  );
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [consent, setConsent] = useState(false);
   const [activeSection, setActiveSection] =
@@ -152,7 +176,8 @@ export function App() {
         setProbe({
           reachable: false,
           normalizedUrl: settings.previewUrl,
-          message: "La vérification du port nécessite l’application native.",
+          message:
+            "La vérification nécessite l’application Electron ou le fallback Tauri.",
         });
         return;
       }
@@ -176,6 +201,7 @@ export function App() {
     let mounted = true;
     let unlistenLog: (() => void) | undefined;
     let unlistenStatus: (() => void) | undefined;
+    let unlistenTunnelStatus: (() => void) | undefined;
 
     async function initialise() {
       if (!nativeRuntime) {
@@ -187,30 +213,105 @@ export function App() {
       }
 
       try {
-        const [stored, status] = await Promise.all([
+        const subscriptions = await Promise.allSettled([
+          onNativePreviewLog((line) => {
+            if (mounted) appendLog(line);
+          }),
+          onNativeRuntimeStatus((status) => {
+            if (mounted) setRuntime(status);
+          }),
+          tunnelRuntime
+            ? onNativeTunnelStatus((status) => {
+                if (mounted) setTunnel(status);
+              })
+            : Promise.resolve(undefined),
+        ]);
+
+        if (!mounted) {
+          for (const subscription of subscriptions) {
+            if (
+              subscription.status === "fulfilled" &&
+              typeof subscription.value === "function"
+            ) {
+              subscription.value();
+            }
+          }
+          return;
+        }
+
+        if (subscriptions[0].status === "fulfilled") {
+          unlistenLog = subscriptions[0].value;
+        }
+        if (subscriptions[1].status === "fulfilled") {
+          unlistenStatus = subscriptions[1].value;
+        }
+        if (
+          subscriptions[2].status === "fulfilled" &&
+          typeof subscriptions[2].value === "function"
+        ) {
+          unlistenTunnelStatus = subscriptions[2].value;
+        }
+
+        const [storedResult, statusResult, tunnelResult] =
+          await Promise.allSettled([
           loadDesktopSettings(),
           getRuntimeStatus(),
-        ]);
+          tunnelRuntime
+            ? getTunnelStatus()
+            : Promise.resolve<TunnelStatus>({
+                state: "unavailable",
+                available: false,
+                url: null,
+                message:
+                  "Le tunnel temporaire nécessite le compagnon Electron.",
+              }),
+          ]);
         if (!mounted) return;
-        persistedSettingsRef.current = stored;
-        setSettings(stored);
-        setRuntime(status);
-        if (stored.projectPath) {
+
+        const initialisationErrors = subscriptions
+          .filter((result) => result.status === "rejected")
+          .map((result) => errorMessage(result.reason));
+
+        if (storedResult.status === "fulfilled") {
+          persistedSettingsRef.current = storedResult.value;
+          setSettings(storedResult.value);
+        } else {
+          initialisationErrors.push(errorMessage(storedResult.reason));
+        }
+        if (statusResult.status === "fulfilled") {
+          setRuntime(statusResult.value);
+        } else {
+          initialisationErrors.push(errorMessage(statusResult.reason));
+        }
+        if (tunnelResult.status === "fulfilled") {
+          setTunnel(tunnelResult.value);
+        } else {
+          setTunnel({
+            state: "error",
+            available: null,
+            url: null,
+            message:
+              "Le diagnostic cloudflared a échoué. Le projet local reste utilisable.",
+          });
+          initialisationErrors.push(errorMessage(tunnelResult.reason));
+        }
+
+        if (initialisationErrors.length) {
+          setError([...new Set(initialisationErrors)].join(" "));
+        }
+
+        if (
+          storedResult.status === "fulfilled" &&
+          storedResult.value.projectPath
+        ) {
           try {
-            await inspectProject(stored.projectPath);
+            await inspectProject(storedResult.value.projectPath);
           } catch {
             setNotice(
               "Le projet mémorisé n’est plus accessible. Choisissez son dossier à nouveau.",
             );
           }
         }
-
-        unlistenLog = await onNativePreviewLog((line) => {
-          if (mounted) appendLog(line);
-        });
-        unlistenStatus = await onNativeRuntimeStatus((status) => {
-          if (mounted) setRuntime(status);
-        });
       } catch (currentError) {
         if (mounted) setError(errorMessage(currentError));
       } finally {
@@ -223,8 +324,9 @@ export function App() {
       mounted = false;
       unlistenLog?.();
       unlistenStatus?.();
+      unlistenTunnelStatus?.();
     };
-  }, [appendLog, inspectProject, nativeRuntime]);
+  }, [appendLog, inspectProject, nativeRuntime, tunnelRuntime]);
 
   useEffect(() => {
     if (logs.length && logContainerRef.current) {
@@ -376,6 +478,96 @@ export function App() {
       setError(errorMessage(currentError));
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function refreshTunnel() {
+    if (!tunnelRuntime) {
+      setNotice(
+        "Le tunnel temporaire nécessite Electron (npm run desktop:dev).",
+      );
+      return;
+    }
+    setBusy("tunnel-check");
+    setError(null);
+    try {
+      setTunnel(await getTunnelStatus());
+    } catch (currentError) {
+      setError(errorMessage(currentError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function startTunnel() {
+    if (!tunnelRuntime) return;
+    setBusy("tunnel-start");
+    setError(null);
+    setNotice(null);
+    try {
+      if (!(await persistPreviewUrl())) return;
+      const localProbe = await probeNativePreview(settings.previewUrl);
+      setProbe(localProbe);
+      if (!localProbe.reachable) {
+        throw new Error(
+          "La preview locale ne répond pas encore en HTTP. Vérifiez son adresse avant de la partager.",
+        );
+      }
+      const status = await startNativeTunnel();
+      setTunnel(status);
+      setNotice(
+        "Lien temporaire créé. Il reste public jusqu’à l’arrêt du tunnel ou du projet.",
+      );
+    } catch (currentError) {
+      setError(errorMessage(currentError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function stopTunnel() {
+    if (!tunnelRuntime) return;
+    setBusy("tunnel-stop");
+    setError(null);
+    try {
+      const status = await stopNativeTunnel();
+      setTunnel(status);
+      setNotice("Le lien public temporaire a été révoqué.");
+    } catch (currentError) {
+      setError(errorMessage(currentError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function copyTunnelUrl() {
+    setError(null);
+    try {
+      await copyNativeTunnelUrl();
+      setNotice(
+        "Adresse publique copiée pour vérification. Transmettez ensuite l’invitation Revaloop à la cliente.",
+      );
+    } catch (currentError) {
+      setError(errorMessage(currentError));
+    }
+  }
+
+  async function openTunnelPreview() {
+    setError(null);
+    try {
+      await openNativeTunnelPreview();
+    } catch (currentError) {
+      setError(errorMessage(currentError));
+    }
+  }
+
+  async function continueWithTunnel() {
+    setError(null);
+    try {
+      if (!(await persistControlPlaneUrl())) return;
+      await openNativeTunnelWorkspace();
+    } catch (currentError) {
+      setError(errorMessage(currentError));
     }
   }
 
@@ -811,12 +1003,14 @@ export function App() {
                   {probe?.reachable
                     ? "La preview répond"
                     : runtime.running
-                      ? "Serveur lancé, port à vérifier"
+                      ? "Serveur lancé, preview à vérifier"
                       : "Preview hors ligne"}
                 </strong>
                 <p>
                   {probe?.message ??
-                    "Le test ouvre seulement une connexion TCP locale courte."}
+                    (tunnelRuntime
+                      ? "Electron vérifie une réponse HTTP locale sans suivre de redirection."
+                      : "Le fallback Tauri vérifie seulement l’ouverture TCP du port local.")}
                 </p>
               </div>
             </div>
@@ -833,7 +1027,7 @@ export function App() {
                 ) : (
                   <RefreshCw aria-hidden="true" />
                 )}
-                Vérifier le port
+                Vérifier la preview
               </button>
               <button
                 className="quiet-button"
@@ -846,12 +1040,167 @@ export function App() {
               </button>
             </div>
 
+            <div
+              className={`tunnel-panel tunnel-panel-${tunnel.state}`}
+              aria-live="polite"
+            >
+              <header className="tunnel-heading">
+                <span className="tunnel-icon" aria-hidden="true">
+                  {tunnel.state === "starting" ||
+                  tunnel.state === "stopping" ||
+                  tunnel.state === "checking" ? (
+                    <LoaderCircle className="spin" />
+                  ) : tunnel.state === "online" ? (
+                    <Cloud />
+                  ) : (
+                    <CloudOff />
+                  )}
+                </span>
+                <div>
+                  <span className="eyebrow">Adresse publique temporaire</span>
+                  <strong>
+                    {tunnel.state === "online"
+                      ? "Adresse publique créée"
+                      : tunnel.state === "starting"
+                        ? "Création du lien en cours"
+                        : tunnel.state === "stopping"
+                          ? "Révocation du lien en cours"
+                          : tunnel.state === "unavailable"
+                            ? "cloudflared doit être installé"
+                            : "Aucun lien public actif"}
+                  </strong>
+                </div>
+              </header>
+
+              <p className="tunnel-message">{tunnel.message}</p>
+
+              {tunnel.state === "unavailable" && tunnelRuntime && (
+                <div className="tunnel-install" role="note">
+                  <strong>Installation manuelle requise</strong>
+                  <code>brew install cloudflared</code>
+                  <small>
+                    Windows : <code>winget install Cloudflare.cloudflared</code>.
+                    Revaloop ne télécharge, n’installe et ne met jamais à jour
+                    cet outil silencieusement.
+                  </small>
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={() => void refreshTunnel()}
+                    disabled={busy !== null}
+                  >
+                    <RefreshCw aria-hidden="true" />
+                    Revérifier
+                  </button>
+                </div>
+              )}
+
+              {tunnel.state === "unavailable" && !tunnelRuntime && (
+                <div className="tunnel-install" role="note">
+                  <strong>Ouvrez la version Electron</strong>
+                  <code>npm run desktop:dev</code>
+                  <small>
+                    La variante Tauri reste limitée au lancement local dans ce
+                    pilote ; elle ne démarre aucun tunnel.
+                  </small>
+                </div>
+              )}
+
+              {tunnel.state === "online" && tunnel.url && (
+                <div className="tunnel-link">
+                  <label htmlFor="tunnel-public-url">
+                    Adresse de preview à vérifier
+                  </label>
+                  <input
+                    id="tunnel-public-url"
+                    type="url"
+                    value={tunnel.url}
+                    readOnly
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                  <div className="tunnel-link-actions">
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void copyTunnelUrl()}
+                    >
+                      <Copy aria-hidden="true" />
+                      Copier pour vérifier
+                    </button>
+                    <button
+                      className="quiet-button"
+                      type="button"
+                      onClick={() => void openTunnelPreview()}
+                    >
+                      Ouvrir
+                      <ArrowUpRight aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="tunnel-actions">
+                {tunnel.state === "online" ||
+                tunnel.state === "starting" ||
+                tunnel.state === "stopping" ? (
+                  <button
+                    className="secondary-button tunnel-stop-button"
+                    type="button"
+                    onClick={() => void stopTunnel()}
+                    disabled={
+                      tunnel.state === "stopping" || busy === "tunnel-stop"
+                    }
+                  >
+                    {tunnel.state === "stopping" ? (
+                      <LoaderCircle className="spin" aria-hidden="true" />
+                    ) : (
+                      <CircleStop aria-hidden="true" />
+                    )}
+                    Révoquer le lien
+                  </button>
+                ) : (
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={() => void startTunnel()}
+                    disabled={
+                      !tunnelRuntime ||
+                      !runtime.running ||
+                      tunnel.available === false ||
+                      busy !== null
+                    }
+                  >
+                    {busy === "tunnel-start" ? (
+                      <LoaderCircle className="spin" aria-hidden="true" />
+                    ) : (
+                      <Share2 aria-hidden="true" />
+                    )}
+                    Partager cette preview
+                  </button>
+                )}
+                {tunnel.state === "online" && (
+                  <button
+                    className="primary-button tunnel-continue-button"
+                    type="button"
+                    onClick={() => void continueWithTunnel()}
+                  >
+                    Continuer dans Revaloop
+                    <ArrowUpRight aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            </div>
+
             <div className="boundary-note">
               <LockKeyhole aria-hidden="true" />
               <p>
-                Cette alpha ne publie pas encore <code>localhost</code> sur
-                Internet. Le futur tunnel utilisera une connexion sortante et
-                une autorisation courte, jamais un port entrant.
+                Le sous-domaine <code>trycloudflare.com</code> est public,
+                aléatoire et non durable. Revaloop redemande avant chaque
+                partage de confirmer une base isolée, des données fictives et
+                des intégrations sandbox ; il ne peut pas isoler automatiquement
+                la base d’un projet arbitraire. Après vérification, transmettez
+                normalement l’invitation Revaloop à la cliente, pas cette
+                adresse brute.
               </p>
             </div>
           </article>
@@ -915,7 +1264,9 @@ export function App() {
               </div>
               <p className="workspace-instance-help">
                 Cette origine vise le service Revaloop, jamais la preview locale.
-                Vous pouvez la remplacer par votre propre instance HTTPS.
+                Vous pouvez indiquer une autre instance HTTPS compatible, mais
+                l’auto-hébergement hors Sites n’est pas encore qualifié par le
+                projet.
               </p>
               {controlPlaneFeedback && (
                 <p
@@ -1022,10 +1373,10 @@ export function App() {
 
         <footer className="desktop-footer">
           <p>
-            Revaloop desktop ne remplace pas le service partagé : il prépare le
-            futur agent local sans affaiblir la sécurité du site.
+            Le compagnon garde le code sur ce poste et ne publie la preview
+            qu’après une confirmation native explicite et temporaire.
           </p>
-          <span>Open source · alpha locale</span>
+          <span>Open source · pilote sécurisé</span>
         </footer>
       </main>
     </div>

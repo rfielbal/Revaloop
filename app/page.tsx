@@ -49,11 +49,12 @@ const currentCapabilities = [
   "Invitations éphémères à usage unique",
   "Retours contextualisés, statuts et revalidation",
   "Compagnon desktop pour le projet local",
+  "Lien HTTPS temporaire depuis le compagnon Electron",
   "Décision finale, révocation et export",
 ];
 
 const upcomingCapabilities = [
-  "Tunnel privé depuis le compagnon desktop",
+  "Tunnel nommé avec contrôle d’accès dédié",
   "Captures d’écran jointes aux retours",
   "Notifications et intégrations Git",
   "Déploiement autonome simplifié",
@@ -132,8 +133,9 @@ export default function Home() {
           </div>
           <p className="flow-truth-line">
             Aujourd’hui : invitation et retours sécurisés autour d’une preview
-            HTTPS protégée séparément, plus un compagnon desktop local.
-            <span> Ensuite : tunnel privé vers le client.</span>
+            HTTPS. Le compagnon Electron peut exposer temporairement un projet
+            de test isolé via Cloudflare.
+            <span> Le tunnel est public et ne remplace pas la protection du staging.</span>
           </p>
         </div>
 
@@ -327,10 +329,11 @@ export default function Home() {
           <p>
             L’application Electron peut déjà être lancée depuis le dépôt, sans
             réinstaller une nouvelle version à chaque évolution. Elle vous aide
-            à choisir le projet, confirme la commande à exécuter puis ouvre
-            Revaloop dans le navigateur. Cette alpha ne téléverse pas le code,
-            ne crée pas de tunnel et ne lit pas encore les retours dans
-            l’application native.
+            à choisir le projet, confirme la commande à exécuter, crée sur
+            demande un lien HTTPS temporaire puis le transfère au dashboard
+            Revaloop. Cette alpha ne téléverse pas le code et ne lit pas encore
+            les retours dans l’application native. Le partage exige une base de
+            test isolée, des comptes fictifs et aucun secret de production.
           </p>
           <div className="desktop-actions">
             <a

@@ -11,6 +11,7 @@ Ils ne prouvent pas que la décision est déjà implémentée.
 | [0004](0004-developer-authentication.md) | accepté, implémenté en 0.3 | compte et session développeur first-party |
 | [0005](0005-desktop-companion.md) | accepté, séparation maintenue ; choix Tauri complété par 0006 | séparer le desktop, le site et le tunnel |
 | [0006](0006-electron-development-runtime.md) | accepté, décision opérationnelle temporaire | utiliser Electron pour la boucle de développement et conserver Tauri en fallback |
+| [0007](0007-quick-tunnel-pilot.md) | accepté, alpha limitée au pilote contrôlé | utiliser un Quick Tunnel tiers sans le confondre avec un relais privé |
 
 Statuts possibles :
 

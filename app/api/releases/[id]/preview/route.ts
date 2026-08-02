@@ -7,8 +7,11 @@ import {
   developerIdentityFromRequest,
   unauthorizedResponse,
 } from "../../../../../lib/auth";
+import { isLoopbackRequestHostname } from "../../../../../lib/developer-auth-core";
 import {
   assertSameOrigin,
+  normalizeExternalPreviewUrl,
+  readJsonObject,
   validationErrorResponse,
 } from "../../../../../lib/security";
 
@@ -35,7 +38,37 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     const { id: releaseId } = await context.params;
-    const release = await incrementPreviewRevision(identity, releaseId);
+    const hasJsonBody = /^application\/json(?:\s*;|$)/i.test(
+      request.headers.get("content-type") ?? "",
+    );
+    const body = hasJsonBody ? await readJsonObject(request, 4_000) : {};
+    const hasPreviewUrl = Object.prototype.hasOwnProperty.call(
+      body,
+      "previewUrl",
+    );
+
+    if (
+      hasPreviewUrl &&
+      (typeof body.previewUrl !== "string" || !body.previewUrl.trim())
+    ) {
+      return Response.json(
+        { error: "La nouvelle URL de preview est obligatoire." },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    const previewUrl =
+      hasPreviewUrl && typeof body.previewUrl === "string"
+          ? normalizeExternalPreviewUrl(
+              body.previewUrl,
+              isLoopbackRequestHostname(new URL(request.url).hostname),
+            )
+        : undefined;
+    const release = await incrementPreviewRevision(
+      identity,
+      releaseId,
+      previewUrl,
+    );
 
     return Response.json(release, {
       headers: { "Cache-Control": "private, no-store, max-age=0" },

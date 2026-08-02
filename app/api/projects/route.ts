@@ -7,6 +7,7 @@ import {
   developerIdentityFromRequest,
   unauthorizedResponse,
 } from "../../../lib/auth";
+import { isLoopbackRequestHostname } from "../../../lib/developer-auth-core";
 import {
   assertSameOrigin,
   cleanText,
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
     const testItems = parseTestItems(body.testItems);
     const previewUrl = normalizeExternalPreviewUrl(
       body.previewUrl,
-      new URL(request.url).hostname === "localhost",
+      isLoopbackRequestHostname(new URL(request.url).hostname),
     );
     const expiresInDays = Math.min(
       30,

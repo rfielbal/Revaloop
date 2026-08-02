@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Vue d’ensemble · Atelier Onda — démo Revaloop</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body data-revaloop-origin="{{REVALOOP_ORIGIN}}" data-pilot-variant="{{PILOT_VARIANT}}">
+    <a class="skip-link" href="#contenu">Aller au contenu</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navigation principale">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">O</span>
+          <div>
+            <strong>Atelier Onda</strong>
+            <span>Studio floral · démo</span>
+          </div>
+        </div>
+
+        <nav class="main-nav" aria-label="Espaces de la démo">
+          <button class="nav-item is-current" type="button" data-view="overview" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">01</span>
+            Vue d’ensemble
+          </button>
+          <button class="nav-item" type="button" data-view="orders">
+            <span class="nav-icon" aria-hidden="true">02</span>
+            Commandes
+            <span class="nav-count" id="order-count">4</span>
+          </button>
+          <button class="nav-item" type="button" data-view="clients">
+            <span class="nav-icon" aria-hidden="true">03</span>
+            Clients
+          </button>
+        </nav>
+
+        <div class="sandbox-note">
+          <span class="sandbox-dot" aria-hidden="true"></span>
+          <div>
+            <strong>Bac à sable</strong>
+            <span>Aucune donnée réelle</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content" id="contenu" tabindex="-1">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Pilote client · version fictive</p>
+            <h1 id="page-title">Vue d’ensemble</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-button" id="reset-demo" type="button">Réinitialiser</button>
+            <button class="primary-button" id="open-order" type="button">
+              <span aria-hidden="true">＋</span>
+              Nouvelle commande
+            </button>
+          </div>
+        </header>
+
+        <div class="variant-banner" id="variant-banner" hidden>
+          <span aria-hidden="true">✓</span>
+          Mise à jour pilote appliquée : l’action de préparation a été clarifiée.
+        </div>
+
+        <section class="view-panel" id="view-overview" data-panel="overview" aria-labelledby="page-title">
+          <div class="intro-row" data-review-zone="introduction">
+            <div>
+              <p class="section-kicker">Dimanche 2 août</p>
+              <h2>Bonjour, l’atelier est prêt.</h2>
+              <p>Suivez les commandes fictives, testez les actions et annotez les zones à clarifier.</p>
+            </div>
+            <div class="period-switcher" aria-label="Période des indicateurs">
+              <button type="button" data-period="week" aria-pressed="true">7 jours</button>
+              <button type="button" data-period="month" aria-pressed="false">30 jours</button>
+            </div>
+          </div>
+
+          <div class="metric-grid" aria-label="Indicateurs de démonstration">
+            <article class="metric-card metric-card-accent" data-review-zone="chiffre-affaires">
+              <div class="metric-heading">
+                <span>Chiffre d’affaires fictif</span>
+                <span class="trend">+ 12 %</span>
+              </div>
+              <strong id="revenue-value">4 280 €</strong>
+              <p>Objectif hebdomadaire : 5 000 €</p>
+              <div class="progress-track" aria-label="86 % de l’objectif">
+                <span id="revenue-progress"></span>
+              </div>
+            </article>
+
+            <article class="metric-card" data-review-zone="commandes-actives">
+              <div class="metric-heading">
+                <span>Commandes actives</span>
+                <span class="metric-symbol" aria-hidden="true">↗</span>
+              </div>
+              <strong id="active-orders-value">14</strong>
+              <p>4 sont à préparer aujourd’hui</p>
+            </article>
+
+            <article class="metric-card" data-review-zone="satisfaction">
+              <div class="metric-heading">
+                <span>Satisfaction démo</span>
+                <span class="metric-symbol" aria-hidden="true">◎</span>
+              </div>
+              <strong id="satisfaction-value">4,8<span>/5</span></strong>
+              <p>Calculée sur 32 avis fictifs</p>
+            </article>
+          </div>
+
+          <div class="overview-grid">
+            <article class="surface chart-card" data-review-zone="activite">
+              <div class="surface-heading">
+                <div>
+                  <p class="section-kicker">Activité</p>
+                  <h3>Commandes confirmées</h3>
+                </div>
+                <span class="surface-meta" id="chart-summary">28 cette semaine</span>
+              </div>
+              <div class="bar-chart" id="bar-chart" role="img" aria-label="Histogramme des commandes confirmées sur sept jours"></div>
+              <div class="chart-labels" id="chart-labels" aria-hidden="true"></div>
+            </article>
+
+            <article class="surface next-order-card" data-review-zone="prochaine-livraison">
+              <div class="surface-heading">
+                <div>
+                  <p class="section-kicker">À suivre</p>
+                  <h3>Prochaine livraison</h3>
+                </div>
+                <span class="status-pill">Confirmée</span>
+              </div>
+              <div class="delivery-time">
+                <strong>14:30</strong>
+                <span>Aujourd’hui</span>
+              </div>
+              <div class="delivery-card">
+                <span class="client-monogram" aria-hidden="true">MR</span>
+                <div>
+                  <strong>Maison Rivage</strong>
+                  <span>Composition « Dune » · 12 pièces</span>
+                </div>
+              </div>
+              <button class="secondary-button full-width" id="prepare-selection" type="button">Préparer la sélection</button>
+            </article>
+          </div>
+
+          <article class="surface agenda-card" data-review-zone="agenda">
+            <div class="surface-heading">
+              <div>
+                <p class="section-kicker">Aujourd’hui</p>
+                <h3>Agenda de l’atelier</h3>
+              </div>
+              <button class="text-button" type="button" data-view-link="orders">Voir toutes les commandes</button>
+            </div>
+            <div class="agenda-list">
+              <div class="agenda-item">
+                <span class="agenda-time">09:00</span>
+                <span class="agenda-line agenda-line-sage" aria-hidden="true"></span>
+                <div><strong>Préparation « Écume »</strong><span>Studio Sillage · retrait atelier</span></div>
+                <span class="status-pill status-neutral">En cours</span>
+              </div>
+              <div class="agenda-item">
+                <span class="agenda-time">14:30</span>
+                <span class="agenda-line agenda-line-coral" aria-hidden="true"></span>
+                <div><strong>Livraison « Dune »</strong><span>Maison Rivage · coursier fictif</span></div>
+                <span class="status-pill">Confirmée</span>
+              </div>
+              <div class="agenda-item">
+                <span class="agenda-time">17:00</span>
+                <span class="agenda-line agenda-line-gold" aria-hidden="true"></span>
+                <div><strong>Appel de cadrage</strong><span>Hôtel Serein · événement test</span></div>
+                <span class="status-pill status-warm">À préparer</span>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="view-panel" id="view-orders" data-panel="orders" aria-labelledby="page-title" hidden>
+          <div class="section-toolbar" data-review-zone="filtres-commandes">
+            <div>
+              <p class="section-kicker">Suivi de production</p>
+              <h2>Commandes de démonstration</h2>
+              <p>Les changements restent uniquement dans cet onglet et disparaissent au rechargement.</p>
+            </div>
+            <label class="select-field">
+              <span>Filtrer par statut</span>
+              <select id="order-filter">
+                <option value="all">Tous les statuts</option>
+                <option value="À préparer">À préparer</option>
+                <option value="En cours">En cours</option>
+                <option value="Prête">Prête</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="surface table-card" data-review-zone="tableau-commandes">
+            <div class="table-scroll">
+              <table>
+                <caption class="sr-only">Liste fictive des commandes de l’atelier</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Commande</th>
+                    <th scope="col">Client fictif</th>
+                    <th scope="col">Livraison</th>
+                    <th scope="col">Statut</th>
+                    <th scope="col"><span class="sr-only">Action</span></th>
+                  </tr>
+                </thead>
+                <tbody id="orders-body"></tbody>
+              </table>
+            </div>
+            <p class="empty-state" id="orders-empty" hidden>Aucune commande ne correspond à ce filtre.</p>
+          </div>
+        </section>
+
+        <section class="view-panel" id="view-clients" data-panel="clients" aria-labelledby="page-title" hidden>
+          <div class="section-toolbar" data-review-zone="recherche-clients">
+            <div>
+              <p class="section-kicker">Répertoire fictif</p>
+              <h2>Relations clients</h2>
+              <p>Une vue simple pour tester la lisibilité, la recherche et le responsive.</p>
+            </div>
+            <label class="search-field">
+              <span class="sr-only">Rechercher une organisation fictive</span>
+              <input id="client-search" type="search" placeholder="Rechercher une organisation" autocomplete="off" />
+            </label>
+          </div>
+
+          <div class="client-grid" id="client-grid" data-review-zone="cartes-clients"></div>
+          <p class="empty-state surface" id="clients-empty" hidden>Aucune organisation fictive ne correspond à cette recherche.</p>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="order-dialog" id="order-dialog" aria-labelledby="dialog-title">
+      <form method="dialog" id="order-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="section-kicker">Donnée temporaire</p>
+            <h2 id="dialog-title">Nouvelle commande fictive</h2>
+          </div>
+          <button class="icon-button" id="close-dialog" type="button" aria-label="Fermer">×</button>
+        </div>
+        <p class="dialog-note">N’utilisez aucun nom, e-mail ou contenu réel dans cette démonstration.</p>
+        <div class="form-grid">
+          <label>
+            <span>Organisation fictive</span>
+            <input name="client" required maxlength="60" placeholder="Ex. Maison Horizon" />
+          </label>
+          <label>
+            <span>Collection</span>
+            <select name="product" required>
+              <option value="">Choisir une collection</option>
+              <option>Écume</option>
+              <option>Dune</option>
+              <option>Oasis</option>
+            </select>
+          </label>
+          <label>
+            <span>Date souhaitée</span>
+            <input name="date" type="date" required />
+          </label>
+          <label>
+            <span>Format</span>
+            <select name="format" required>
+              <option>Retrait atelier</option>
+              <option>Livraison fictive</option>
+            </select>
+          </label>
+          <label class="full-field">
+            <span>Note de test <small>(facultatif)</small></span>
+            <textarea name="note" rows="3" maxlength="160" placeholder="Une indication entièrement fictive"></textarea>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="ghost-button" id="cancel-dialog" type="button">Annuler</button>
+          <button class="primary-button" type="submit">Ajouter à la démo</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>

@@ -10,8 +10,9 @@ reste valide.
 > **Statut : alpha 0.3 en cours, pour pilote contrôlé.**
 > Le review plane est utilisable avec une preview HTTPS et une base de test.
 > Le compagnon desktop peut sélectionner, lancer et surveiller un projet local,
-> mais Revaloop ne partage pas encore ce serveur `localhost` et n’est pas un
-> proxy.
+> puis créer un Quick Tunnel HTTPS temporaire avec une installation locale de
+> `cloudflared`. Ce lien est public, aléatoire, non durable et destiné aux tests,
+> pas à la production.
 > L’invitation protège l’espace de revue, pas l’URL de staging : celle-ci doit
 > disposer de sa propre protection d’accès.
 > N’utilisez jamais une base de production, un secret réel ou des données
@@ -82,24 +83,45 @@ reste valide.
   commande shell arbitraire venant de l’interface ;
 - arrêt limité au processus lancé par Revaloop et à ses descendants ;
 - cible de preview limitée à `127.0.0.1`, `localhost` ou `::1` ;
-- test TCP local court, logs en mémoire et masquage des lignes potentiellement
-  sensibles ;
+- probe HTTP local court dans Electron (`HEAD`, puis `GET` seulement si le
+  serveur refuse `HEAD`) ; le fallback Tauri se limite à vérifier la connexion
+  TCP et ne prouve pas qu’une page web valide répond ;
+- logs en mémoire et masquage des lignes potentiellement sensibles ;
+- détection d’une installation locale de `cloudflared`, sans téléchargement,
+  compte Cloudflare, jeton ou configuration persistée par Revaloop ;
+- confirmation native et checklist de sécurité obligatoires à chaque création
+  d’un Quick Tunnel, puis URL limitée à `https://*.trycloudflare.com` ;
+- arrêt du tunnel avec le projet, la fenêtre ou l’application, et révocation
+  manuelle disponible à tout moment ;
+- transfert de l’URL au dashboard via le fragment de `/connect-preview`, puis
+  stockage transitoire dans `sessionStorage` jusqu’au préremplissage ;
 - ouverture du dashboard, du login et de la preview dans le navigateur système,
   où restent les cookies web ;
 - configuration locale limitée au chemin du projet et à des URL non secrètes ;
 - fuses de distribution configurés pour interdire notamment RunAsNode,
   `NODE_OPTIONS`, l’inspection CLI et le chargement hors ASAR.
 
-Cette première alpha est un compagnon développeur, pas encore le tunnel. Elle
-n’appelle pas encore l’API Revaloop, ne stocke aucun credential et n’affiche pas
-les retours dans sa fenêtre native. Les actions « connexion » et « retours »
-ouvrent l’instance web configurée dans le navigateur système. Le client
-continue d’utiliser le site sans rien installer.
+Cette première alpha reste un compagnon développeur : elle ne stocke aucun
+credential Revaloop et n’affiche pas les retours dans sa fenêtre native. Le
+tunnel ne donne pas de session API au desktop ; l’URL est remise au dashboard
+dans le navigateur, où le développeur la confirme puis crée l’invitation
+cliente. Les actions « connexion » et « retours » ouvrent également l’instance
+web configurée. Le client continue d’utiliser le site sans rien installer.
+
+Le Quick Tunnel n’est pas « privé » : toute personne qui connaît son URL peut
+atteindre directement la preview tant qu’il reste actif. Revaloop exige donc une
+confirmation explicite, mais ne peut pas détecter ni isoler automatiquement la
+base d’un projet arbitraire. Réservez-le à une fixture ou à un environnement de
+test sans secret, données réelles ni service de production. Pour une vraie
+recette, préférez un staging isolé ou un tunnel nommé protégé par un contrôle
+d’accès compatible avec l’iframe.
 
 Le runtime Tauri 2 historique reste maintenu comme fallback de compatibilité
 pour la SPA, mais il n’offre pas encore l’autorité du chemin dans le processus
-principal ni la confirmation native à usage unique d’Electron. Utilisez
-`desktop:dev` pour lancer un projet ; ce chemin Electron accélère aussi la boucle
+principal, la vérification HTTP de la preview ni la confirmation native à usage
+unique d’Electron. Son probe ouvre seulement une connexion TCP loopback et il ne
+démarre aucun tunnel. Utilisez `desktop:dev` pour lancer un projet ; ce chemin
+Electron accélère aussi la boucle
 locale sans installation ni réinstallation d’un binaire. Voir
 [ADR-0006](docs/adr/0006-electron-development-runtime.md).
 
@@ -170,8 +192,8 @@ exporte la recette
 Toutes les mutations exigent une origine same-origin. L’auteur client vient de
 la session serveur, jamais du corps envoyé par le navigateur. Le nom de cette
 session est saisi par le développeur lors de l’invitation : il est déclaratif et
-ne prouve pas l’identité de la personne qui utilise le lien. L’interface
-actuelle ne demande aucune adresse e-mail cliente.
+ne prouve pas l’identité de la personne qui utilise le lien. Un e-mail de suivi
+peut être renseigné, mais Revaloop ne le vérifie pas et n’envoie aucun message.
 
 Les routes d’authentification développeur limitent les tentatives par compte et
 adresse réseau. Revaloop ne fournit pas encore de vérification d’e-mail, de
@@ -181,9 +203,10 @@ conserver un accès sûr à l’adresse et au mot de passe initialisés.
 ## Brancher une vraie preview
 
 Revaloop attend une URL HTTPS dédiée, sans identifiant, mot de passe ni query
-string. Cette URL reste directement accessible selon les règles de la preview :
-Revaloop ne lui ajoute ni authentification, ni confidentialité. La preview doit
-utiliser :
+string. Elle peut provenir d’un staging ou, pour un essai contrôlé, du Quick
+Tunnel créé par le compagnon Electron. Cette URL reste directement accessible
+selon les règles de la preview : Revaloop ne lui ajoute ni authentification, ni
+confidentialité. La preview doit utiliser :
 
 - une base de test isolée ;
 - des services d’e-mail, paiement et stockage en mode sandbox ;
@@ -236,27 +259,34 @@ staging restent sous la responsabilité de son exploitant. Le rechargement
 remonte la même URL dans l’iframe : Revaloop ne peut pas garantir le
 contournement du cache HTTP, d’un CDN ou d’un Service Worker de la preview.
 
+Si un Quick Tunnel redémarre, son hostname change. L’action « Remplacer l’URL »
+met alors à jour atomiquement l’adresse et `preview_revision` sur la release
+active : la session cliente, les messages et les retours restent rattachés au
+même espace. Le développeur doit confirmer ce remplacement ; le compagnon ne
+modifie jamais la release silencieusement.
+
 ## Ce qui reste à construire
 
 | Capacité | Statut |
 |---|---|
-| Partager directement `localhost` | non implémenté |
+| Partager `localhost` par Quick Tunnel | alpha Electron implémentée |
 | CLI `revaloop share` | non implémentée |
 | Compagnon desktop local | alpha implémentée |
-| Agent de tunnel et relais HTTP/WebSocket | non implémentés |
+| Tunnel nommé protégé et relais maîtrisé | non implémentés |
 | Build ou hébergement intégré de previews | non implémenté |
 | Captures et pièces jointes | non implémentées |
 | Notifications e-mail/Slack/GitHub | non implémentées |
 | Discussion générale release client ↔ développeur | implémentée |
 | Fils de discussion attachés à chaque retour | non implémentés |
-| Historique navigable de toutes les releases | limité à la plus récente |
-| Auto-hébergement hors Sites | à documenter et tester |
+| Historique navigable de toutes les releases | implémenté dans le projet actif |
+| Auto-hébergement hors Sites | non qualifié ; à documenter et tester |
 | Vérification d’e-mail, reset de mot de passe et MFA | non implémentés |
 | OIDC générique, PostgreSQL et S3 | prévus |
 | TLS passthrough de bout en bout | recherche |
 
-L’URL de preview reste mutable : Revaloop prouve quelle URL et quelle référence
-Git ont été déclarées, pas que le contenu externe n’a jamais changé.
+L’URL de preview reste mutable sur une release active : Revaloop journalise le
+fait qu’elle a changé et incrémente sa révision, mais ne prouve ni son contenu ni
+le commit réellement servi.
 La possession d’une invitation Revaloop n’accorde aucune protection
 supplémentaire à cette URL.
 
@@ -287,17 +317,19 @@ Compagnon desktop Electron
 ├── dossier choisi, autorité du chemin dans le processus principal
 ├── lancement explicite du seul script dev
 ├── logs éphémères et test loopback
-└── ouverture du plan de revue dans le navigateur système
+├── Quick Tunnel cloudflared optionnel, public et révocable
+└── transfert du lien vers le dashboard dans le navigateur système
 
 Fallback Tauri 2
 └── même SPA, backend historique sans parité de sécurité avec Electron
 
-Preview HTTPS tierce
-└── chargée directement par le navigateur, jamais proxifiée par Revaloop
+Preview HTTPS tierce ou Quick Tunnel
+└── chargée directement par le navigateur, jamais proxifiée par le site Revaloop
 ```
 
-Le futur agent/tunnel constitue un data plane séparé. Voir
-[Architecture](docs/ARCHITECTURE.md).
+Le processus `cloudflared` constitue un data plane local séparé du site. Voir
+[Architecture](docs/ARCHITECTURE.md) et le
+[guide du premier pilote](docs/FIRST_CLIENT_PILOT.md).
 
 ## Développement local — site
 
@@ -349,7 +381,7 @@ npm run db:generate
 `npm test` construit le Worker puis vérifie les routes publiques, la protection
 du dashboard, les en-têtes, les migrations, les primitives d’authentification,
 la génération des secrets, les cookies, les URLs de preview, l’origine des
-mutations et la validation JSON.
+mutations, la validation JSON et le serveur de fixture du pilote.
 
 ## Développement local — application desktop
 
@@ -374,8 +406,17 @@ Dans la fenêtre Revaloop :
 3. confirmez explicitement son exécution ;
 4. lancez le projet ;
 5. conservez `http://127.0.0.1:3000` ou indiquez son vrai port ;
-6. utilisez « Ouvrir le tableau de bord web » pour retrouver l’instance
-   configurée dans le navigateur et vous y connecter.
+6. installez vous-même `cloudflared` si le diagnostic le demande ;
+7. créez le lien temporaire après avoir confirmé la checklist native ;
+8. vérifiez la preview puis utilisez « Continuer dans Revaloop » pour préremplir
+   le projet ou remplacer l’URL de la release active ;
+9. créez enfin une invitation Revaloop : c’est ce lien d’invitation, et non
+   l’URL brute du tunnel, que vous transmettez normalement à la cliente.
+
+Sur macOS, l’installation manuelle la plus simple est
+`brew install cloudflared`. Sur Windows, utilisez
+`winget install Cloudflare.cloudflared`.
+Revaloop n’installe rien silencieusement et n’enregistre aucun jeton Cloudflare.
 
 Validation et build local :
 
@@ -428,6 +469,7 @@ frontières.
 
 Documents de référence :
 
+- [Premier pilote réel sur fixture isolée](docs/FIRST_CLIENT_PILOT.md)
 - [Guide du pilote](docs/PILOT_GUIDE.md)
 - [Politique de sécurité](SECURITY.md)
 - [Modèle de menace](docs/THREAT_MODEL.md)

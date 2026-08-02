@@ -194,7 +194,7 @@ test("désactive les actions développeur lorsque la release n’est plus active
 
   assert.match(
     dashboard,
-    /disabled=\{isUpdating \|\| !isActiveRelease\}[\s\S]{0,180}onClick=\{signalPreviewUpdate\}/,
+    /disabled=\{isUpdating \|\| !isActiveRelease\}[\s\S]{0,180}onClick=\{\(\) => signalPreviewUpdate\(\)\}/,
   );
   assert.match(
     dashboard,
@@ -389,7 +389,7 @@ test("conserve et permet de consulter les retours de chaque version autorisée",
 
   assert.match(
     dashboardPage,
-    /searchParams: Promise<\{ project\?: string; release\?: string \}>/,
+    /searchParams: Promise<\{[\s\S]*project\?: string;[\s\S]*release\?: string;[\s\S]*connect_preview\?: string;/,
   );
   assert.match(
     dashboardPage,
@@ -406,4 +406,131 @@ test("conserve et permet de consulter les retours de chaque version autorisée",
     reviewClient,
     /async function submitFeedback[\s\S]*beginReviewMutation\(\)[\s\S]*finishReviewMutation\(\)/,
   );
+});
+
+test("relie une URL de tunnel sans la placer dans une requête serveur", async () => {
+  const [connectClient, dashboard, dashboardPage] = await Promise.all([
+    source("../app/connect-preview/connect-preview-client.tsx"),
+    source("../app/dashboard/dashboard-client.tsx"),
+    source("../app/dashboard/page.tsx"),
+  ]);
+
+  assert.match(connectClient, /window\.location\.hash\.slice\(1\)/);
+  assert.match(connectClient, /fragment\.get\("url"\)/);
+  assert.match(connectClient, /window\.history\.replaceState\(null, "", "\/connect-preview"\)/);
+  assert.match(
+    connectClient,
+    /window\.sessionStorage\.setItem\([\s\S]*CONNECTED_PREVIEW_STORAGE_KEY/,
+  );
+  assert.match(
+    connectClient,
+    /window\.location\.replace\("\/dashboard\?connect_preview=1"\)/,
+  );
+  assert.doesNotMatch(connectClient, /fetch\(/);
+
+  assert.match(
+    dashboardPage,
+    /returnParameters\.set\("connect_preview", "1"\)/,
+  );
+  assert.match(
+    dashboard,
+    /window\.sessionStorage\.removeItem\(CONNECTED_PREVIEW_STORAGE_KEY\)/,
+  );
+  assert.match(
+    dashboard,
+    /initialPreviewUrl=\{connectedPreviewUrl\}/,
+  );
+});
+
+test("remplace atomiquement l’URL de preview d’une release autorisée", async () => {
+  const [previewRoute, repository, dashboard] = await Promise.all([
+    source("../app/api/releases/[id]/preview/route.ts"),
+    source("../db/repository.ts"),
+    source("../app/dashboard/dashboard-client.tsx"),
+  ]);
+  const update = between(
+    repository,
+    "export async function incrementPreviewRevision",
+    "export async function getReviewForReviewer",
+  );
+
+  assert.match(previewRoute, /developerIdentityFromRequest\(request\)/);
+  assert.match(previewRoute, /assertSameOrigin\(request\)/);
+  assert.match(previewRoute, /normalizeExternalPreviewUrl\(/);
+  assert.match(previewRoute, /incrementPreviewRevision\([\s\S]*previewUrl/);
+
+  assert.match(
+    update,
+    /SET preview_url = COALESCE\(\?, preview_url\),[\s\S]*preview_revision = preview_revision \+ 1/,
+  );
+  assert.match(update, /RETURNING preview_url, preview_revision/);
+  assert.match(update, /revisionResult\.results\[0\]/);
+  assert.doesNotMatch(update, /SELECT preview_url, preview_revision/);
+  assert.match(
+    update,
+    /status IN \('in_review', 'changes_requested'\)/,
+  );
+  assert.match(update, /organization_members\.user_id = \?/);
+  assert.match(update, /'preview\.revised'/);
+  assert.match(update, /previewUrlChanged/);
+  assert.match(dashboard, /Remplacer l’URL et prévenir la cliente/);
+});
+
+test("attend la confirmation cliente avant de charger une nouvelle preview", async () => {
+  const reviewClient = await source(
+    "../app/review/[token]/review-client.tsx",
+  );
+  const reload = between(
+    reviewClient,
+    "function reloadUpdatedPreview",
+    "useEffect(() =>",
+  );
+
+  assert.match(
+    reviewClient,
+    /const \[loadedExternalPreviewUrl, setLoadedExternalPreviewUrl\] = useState/,
+  );
+  assert.match(reload, /setLoadedExternalPreviewUrl\(latestExternalPreviewUrl\)/);
+  assert.match(
+    reviewClient,
+    /<iframe[\s\S]*src=\{loadedExternalPreviewUrl\}/,
+  );
+  assert.doesNotMatch(
+    reviewClient,
+    /<iframe[\s\S]{0,300}src=\{latestExternalPreviewUrl\}/,
+  );
+});
+
+test("expose uniquement un résumé d’accès client au dashboard protégé", async () => {
+  const repository = await source("../db/repository.ts");
+  const workspace = between(
+    repository,
+    "export async function getDeveloperWorkspace",
+    "export type ReleaseInput",
+  );
+
+  assert.match(workspace, /active_session_last_seen_at/);
+  assert.match(workspace, /reviewer_sessions\.revoked_at IS NULL/);
+  assert.match(workspace, /reviewer_sessions\.expires_at > \?/);
+  assert.match(workspace, /status: invitation\.revoked_at/);
+  assert.match(workspace, /\? "opened"/);
+  assert.match(workspace, /\? "inactive"/);
+  assert.match(workspace, /activeReview = \{ \.\.\.review, clientAccess \}/);
+  assert.doesNotMatch(workspace, /token_hash/);
+});
+
+test("décrit sans ambiguïté la durée de la session cliente", async () => {
+  const dashboard = await source("../app/dashboard/dashboard-client.tsx");
+
+  assert.match(dashboard, /Session cliente inactive/);
+  assert.match(
+    dashboard,
+    /session, valable 24 heures maximum, est terminée ou n’est plus active/,
+  );
+  assert.match(
+    dashboard,
+    /session, valable 24 heures maximum, est encore valide pourra recharger la preview/,
+  );
+  assert.doesNotMatch(dashboard, /Session fermée par la cliente/);
+  assert.doesNotMatch(dashboard, /sans perdre sa session/);
 });

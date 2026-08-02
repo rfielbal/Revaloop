@@ -5,6 +5,7 @@ import {
 import {
   canonicalRequestHostname,
   developerAuthErrorResponse,
+  developerRegistrationRequestIsAuthorized,
   isLoopbackRequestHostname,
   registerDeveloper,
   serializeDeveloperSessionCookie,
@@ -39,6 +40,17 @@ function isLocalDevelopmentRequest(request: Request) {
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
+
+    if (!(await developerRegistrationRequestIsAuthorized(request.headers))) {
+      return Response.json(
+        {
+          error:
+            "L’initialisation publique est verrouillée. Ouvrez cette page avec l’identité propriétaire Sites ou activez explicitement le bootstrap opérateur.",
+        },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     await consumeRateLimit({
       namespace: "developer-register-ip",
       identifier: clientAddress(request),

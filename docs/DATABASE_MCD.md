@@ -3,7 +3,7 @@
 - **Système :** Revaloop
 - **Périmètre :** review plane alpha 0.3
 - **Stockage actuel :** Cloudflare D1, dialecte SQLite
-- **Dernière vérification :** 25 juillet 2026
+- **Dernière vérification :** 2 août 2026
 
 ## Objet du document
 
@@ -110,6 +110,11 @@ session. Le schéma physique ne place toutefois pas de contrainte unique sur
 L’usage unique est aujourd’hui garanti par le batch d’échange, qui revérifie
 `used_at`, les révocations, les expirations et l’état de la release avant
 d’insérer la session puis de consommer l’invitation.
+
+`review_invitations.reviewer_email` est un e-mail de suivi facultatif saisi par
+le développeur. Il reste une métadonnée du dashboard réservée à l’équipe
+autorisée : il n’est pas copié dans `reviewer_sessions`, n’est pas renvoyé dans
+le contexte client, ne vérifie aucune identité et ne déclenche aucun envoi.
 
 ### Collaboration et validation
 
@@ -317,7 +322,8 @@ D1 conserve sous une forme exploitable :
 - nom d’organisation ;
 - noms et descriptions de projets ;
 - URL de staging, commit et message de release ;
-- nom reviewer déclaratif et éventuel e-mail fourni par un client API ;
+- nom reviewer déclaratif et éventuel e-mail de suivi saisi par le développeur,
+  visible seulement par l’équipe autorisée ;
 - texte et contexte des retours ;
 - messages et décisions ;
 - dates et événements d’audit.

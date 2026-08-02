@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import type { DeveloperIdentity } from "../lib/auth";
 import {
   type CreatedInvitation,
+  type DeveloperClientAccessSummary,
   type DeveloperProjectSummary,
   type DeveloperWorkspace,
   type FeedbackItem,
@@ -59,6 +60,10 @@ export type ReviewPayloadWithMessages = Omit<
 > & {
   release: ReleaseWithRevision;
   messages: ReleaseMessage[];
+};
+
+export type DeveloperReviewPayloadWithMessages = ReviewPayloadWithMessages & {
+  clientAccess: DeveloperClientAccessSummary;
 };
 
 type ProjectRow = {
@@ -148,6 +153,16 @@ type InvitationExchangeRow = {
   release_id: string;
   reviewer_name: string;
   expires_at: string;
+};
+
+type DeveloperInvitationRow = {
+  reviewer_name: string;
+  reviewer_email: string | null;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+  revoked_at: string | null;
+  active_session_last_seen_at: string | null;
 };
 
 type FeedbackAccessRow = FeedbackRow & {
@@ -1449,7 +1464,7 @@ export async function getDeveloperWorkspace(
 ): Promise<
   DeveloperWorkspace & {
     releases: DeveloperReleaseSummary[];
-    activeReview: ReviewPayloadWithMessages | null;
+    activeReview: DeveloperReviewPayloadWithMessages | null;
   }
 > {
   const member = await provisionDeveloper(identity);
@@ -1517,7 +1532,7 @@ export async function getDeveloperWorkspace(
 
   const activeProjectId = preferredProject?.id ?? projects[0]?.id;
   let releases: DeveloperReleaseSummary[] = [];
-  let activeReview: ReviewPayloadWithMessages | null = null;
+  let activeReview: DeveloperReviewPayloadWithMessages | null = null;
 
   if (activeProjectId) {
     const project = await getAuthorizedProject(member, activeProjectId);
@@ -1551,22 +1566,60 @@ export async function getDeveloperWorkspace(
     }
 
     if (release) {
+      const now = new Date().toISOString();
       const invitation = await db
         .prepare(
-          `SELECT reviewer_name
+          `SELECT
+             review_invitations.reviewer_name,
+             review_invitations.reviewer_email,
+             review_invitations.created_at,
+             review_invitations.expires_at,
+             review_invitations.used_at,
+             review_invitations.revoked_at,
+             (
+               SELECT reviewer_sessions.last_seen_at
+               FROM reviewer_sessions
+               WHERE reviewer_sessions.invitation_id = review_invitations.id
+                 AND reviewer_sessions.release_id = review_invitations.release_id
+                 AND reviewer_sessions.revoked_at IS NULL
+                 AND reviewer_sessions.expires_at > ?
+               ORDER BY reviewer_sessions.last_seen_at DESC
+               LIMIT 1
+             ) AS active_session_last_seen_at
            FROM review_invitations
-           WHERE release_id = ?
-           ORDER BY created_at DESC
+           WHERE review_invitations.release_id = ?
+           ORDER BY review_invitations.created_at DESC
            LIMIT 1`,
         )
-        .bind(release.id)
-        .first<{ reviewer_name: string }>();
+        .bind(now, release.id)
+        .first<DeveloperInvitationRow>();
 
-      activeReview = await loadReviewPayload({
+      const clientAccess: DeveloperClientAccessSummary = invitation
+        ? {
+            status: invitation.revoked_at
+              ? "revoked"
+              : invitation.expires_at <= now
+                ? "expired"
+                : invitation.active_session_last_seen_at
+                  ? "opened"
+                  : invitation.used_at
+                    ? "inactive"
+                    : "invited",
+            reviewerName: invitation.reviewer_name,
+            reviewerEmail: invitation.reviewer_email ?? undefined,
+            createdAt: invitation.created_at,
+            expiresAt: invitation.expires_at,
+            openedAt: invitation.used_at ?? undefined,
+            lastSeenAt: invitation.active_session_last_seen_at ?? undefined,
+          }
+        : { status: "none" };
+
+      const review = await loadReviewPayload({
         project,
         release,
         reviewerName: invitation?.reviewer_name,
       });
+      activeReview = { ...review, clientAccess };
     }
   } else if (preferredReleaseId) {
     throw new ReviewNotFoundError("Version introuvable.");
@@ -2425,6 +2478,7 @@ export async function createReleaseMessageAsReviewer(
 export async function incrementPreviewRevision(
   identity: DeveloperIdentity,
   releaseId: string,
+  previewUrl?: string,
 ) {
   const member = await provisionDeveloper(identity);
   const release = await getAuthorizedRelease(member, releaseId);
@@ -2434,7 +2488,9 @@ export async function incrementPreviewRevision(
     db
       .prepare(
         `UPDATE review_releases
-         SET preview_revision = preview_revision + 1, updated_at = ?
+         SET preview_url = COALESCE(?, preview_url),
+             preview_revision = preview_revision + 1,
+             updated_at = ?
          WHERE id = ?
            AND status IN ('in_review', 'changes_requested')
            AND expires_at > ?
@@ -2449,9 +2505,11 @@ export async function incrementPreviewRevision(
                AND organization_members.organization_id = ?
                AND client_projects.organization_id = ?
            )
-         RETURNING preview_revision`,
+         RETURNING preview_url, preview_revision
+         `,
       )
       .bind(
+        previewUrl ?? null,
         now,
         release.id,
         now,
@@ -2464,7 +2522,7 @@ export async function incrementPreviewRevision(
         `INSERT INTO audit_events
           (id, organization_id, project_id, release_id, actor_type, actor_id,
            action, metadata_json, created_at)
-         SELECT ?, ?, ?, ?, 'developer', ?, 'preview.revised', '{}', ?
+         SELECT ?, ?, ?, ?, 'developer', ?, 'preview.revised', ?, ?
          FROM review_releases
          WHERE review_releases.id = ?
            AND review_releases.updated_at = ?`,
@@ -2475,16 +2533,16 @@ export async function incrementPreviewRevision(
         release.project_id,
         release.id,
         member.userId,
+        JSON.stringify({ previewUrlChanged: Boolean(previewUrl) }),
         now,
         release.id,
         now,
       ),
   ]);
-  const revision = (
-    revisionResult.results[0] as { preview_revision: number } | undefined
-  )?.preview_revision;
-
-  if (typeof revision !== "number") {
+  const updatedPreview = revisionResult.results[0] as
+    | { preview_url: string; preview_revision: number }
+    | undefined;
+  if (revisionResult.meta.changes !== 1 || !updatedPreview) {
     throw new ReviewConflictError(
       "Cette version est clôturée, expirée ou n’est plus accessible.",
     );
@@ -2492,7 +2550,8 @@ export async function incrementPreviewRevision(
 
   return {
     releaseId: release.id,
-    previewRevision: revision,
+    previewUrl: updatedPreview.preview_url,
+    previewRevision: updatedPreview.preview_revision,
     updatedAt: now,
   };
 }

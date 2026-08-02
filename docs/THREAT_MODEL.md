@@ -2,13 +2,14 @@
 
 - **Système :** Revaloop
 - **Version :** 0.3 en cours
-- **Dernière vérification :** 25 juillet 2026
+- **Dernière vérification :** 2 août 2026
 - **Statut :** alpha pour pilote contrôlé, aucune donnée sensible
 
 ## Objectif
 
-Ce document distingue les contrôles réellement implémentés des exigences du
-futur tunnel. Il ne remplace ni revue de code, ni pentest, ni analyse juridique.
+Ce document distingue le Quick Tunnel de pilote réellement implémenté des
+exigences d’un futur relais Revaloop. Il ne remplace ni revue de code, ni
+pentest, ni analyse juridique.
 
 ## Périmètre actuel
 
@@ -24,13 +25,12 @@ Inclus :
 - API et D1 ;
 - Worker et en-têtes ;
 - compagnon desktop Electron local, sélection de projet, processus, logs en
-  mémoire et ouverture du navigateur système ; runtime Tauri 2 conservé comme
-  fallback.
+  mémoire, Quick Tunnel `cloudflared` optionnel et ouverture du navigateur
+  système ; runtime Tauri 2 conservé comme fallback.
 
 Hors périmètre :
 
-- proxy ou tunnel vers `localhost` ;
-- agent et relais ;
+- relais Revaloop, tunnel nommé protégé et agent authentifié ;
 - capture ou R2 ;
 - preview construite dans un runner ;
 - auto-hébergement qualifié ;
@@ -44,8 +44,7 @@ Hors périmètre :
 - séparation entre organisations et projets ;
 - secret d’invitation et token de session ;
 - nom déclaratif du reviewer ;
-- e-mail reviewer nullable pour clients API personnalisés, non collecté par
-  l’interface fournie ;
+- e-mail reviewer nullable et déclaratif, optionnel dans l’interface ;
 - URL, commit et consignes de release ;
 - contenu et contexte des retours ;
 - discussion partagée d’une release ;
@@ -56,6 +55,7 @@ Hors périmètre :
 - chemin du projet local, script `dev`, URL loopback et origine Revaloop
   configurée ;
 - processus enfant lancé par le compagnon et journal local éphémère ;
+- URL Quick Tunnel publique, processus `cloudflared` et consentement de partage ;
 - confiance dans les limites affichées.
 
 Le contenu, les cookies et la base de la preview sont des actifs de
@@ -72,6 +72,7 @@ l’application tierce. Revaloop ne doit pas les collecter.
 - reviewer malveillant ;
 - preview tierce compromise ;
 - opérateur Sites/Cloudflare ;
+- opérateur du service Quick Tunnel et toute personne qui découvre son URL ;
 - dépendance ou chaîne de build compromise ;
 - projet local malveillant ou compromis ;
 - autre processus du compte système et poste local compromis ;
@@ -217,6 +218,20 @@ reviewer → token hash → session → invitation → release → ressource
 - origine du review plane en HTTPS, HTTP limité au loopback ;
 - destinations externes en liste fermée puis ouvertes dans le navigateur
   système ;
+- `cloudflared` détecté localement, jamais téléchargé automatiquement, puis
+  lancé sans token ni configuration utilisateur avec une allowlist de variables
+  d’environnement ;
+- confirmation native avec checklist à chaque partage et autorisation de dix
+  secondes, à usage unique, liée à l’URL loopback ;
+- URL distante limitée à la racine HTTPS d’un sous-domaine
+  `trycloudflare.com`, sans credential, port, query ni fragment ;
+- tunnel arrêté avec le projet, la fenêtre ou l’application ; terminaison
+  `SIGTERM` puis `SIGKILL` bornée si nécessaire ;
+- logs `cloudflared` drainés, limités et masqués, URL publique jamais écrite
+  dans les logs de l’interface ;
+- transfert de l’URL vers le navigateur uniquement par le fragment de
+  `/connect-preview`, puis suppression et stockage transitoire dans
+  `sessionStorage` ;
 - aucun appel API, token ou cookie web dans le desktop ;
 - configuration locale sans secret, fichier `0600` sur Unix ;
 - logs en mémoire : ligne limitée à 2 000 caractères, marqueurs sensibles
@@ -233,7 +248,7 @@ reviewer → token hash → session → invitation → release → ressource
 
 | ID | Menace | Contrôle | Risque résiduel / action |
 |---|---|---|---|
-| T01 | prise de contrôle du bootstrap | inscription fermée après le premier credential, condition finale en D1 | initialiser le compte avant ouverture publique |
+| T01 | prise de contrôle du bootstrap | bootstrap anonyme public refusé par défaut, identité Sites/localhost/mode opérateur explicite, inscription fermée après le premier credential et condition finale en D1 | conserver le mode opérateur désactivé hors initialisation maîtrisée |
 | T02 | accès croisé tenant | joins membre/org/projet | ajouter tests intégration à deux identités |
 | T03 | rejeu invitation | `used_at`, hash, batch atomique | bearer transférable avant premier usage |
 | T04 | vol session reviewer | HttpOnly/Secure/Strict, 24 h, révocation | possession du navigateur suffit pendant la durée |
@@ -259,12 +274,17 @@ reviewer → token hash → session → invitation → release → ressource
 | T24 | message attribué au mauvais acteur | auteur dérivé de la session et release autorisée | nom reviewer déclaratif, pas d’identité forte |
 | T25 | projet local malveillant, secret ambiant ou écoute LAN | sélection, affichage du script, consentement, hooks npm adjacents désactivés, options Node/Electron internes retirées et `HOST=127.0.0.1` fourni | le script `dev` garde les droits du compte, reçoit les autres variables ambiantes et peut ignorer `HOST` ou ouvrir une autre interface |
 | T26 | renderer Electron compromis ou abus IPC | assets locaux, sandbox/context isolation, bridge sémantique, sender/frame/URL exacts, aucune primitive shell ou filesystem générique | une XSS locale pourrait appeler les commandes autorisées ; Chromium + Node augmentent la surface de dépendances par rapport à Tauri |
-| T27 | pivot réseau depuis le probe | IP loopback et port explicites, aucun redirect HTTP suivi | un service local accessible au compte peut recevoir une connexion TCP |
+| T27 | pivot réseau depuis le probe | cible loopback et port explicite ; Electron envoie un `HEAD`, puis un `GET` seulement après `405`/`501`, sans suivre de redirection ; Tauri reste un fallback TCP | un service local accessible au compte peut recevoir la requête HTTP Electron ou la connexion TCP Tauri ; le succès TCP ne valide pas une preview web |
 | T28 | fuite dans les logs desktop | mémoire uniquement, plafond de lignes, masquage de marqueurs sensibles | un secret sans marqueur reconnu peut encore être affiché par le projet |
 | T29 | persistance locale excessive | chemin et URL non secrètes uniquement, permissions compte | le chemin peut révéler un nom de client à un autre processus du même compte |
 | T30 | binaire desktop altéré | aucun artefact public annoncé, fuses configurés pour le packaging local | signature, notarisation, provenance, validation des fuses et updater signé requis avant distribution |
 | T31 | affaiblissement de l’auth pour le natif | aucune API native actuelle, cookies confinés au navigateur | implémenter PKCE, tokens appareils et révocation avant tout accès API desktop |
 | T32 | renderer compromis dans le fallback Tauri | manifeste relu, commande `dev` fixe et cible loopback | chemin fourni par le renderer et absence de confirmation native indépendante ; réserver ce runtime aux projets fiables |
+| T33 | exposition accidentelle de données par Quick Tunnel | cible loopback, confirmation native et checklist non persistée | Revaloop ne peut inspecter ni isoler la DB, les secrets ou les services d’un projet arbitraire |
+| T34 | URL de tunnel forgée ou détournée | hostname `trycloudflare.com` strict, URL racine HTTPS, valeur détenue par le main et IPC sans URL renderer | toute personne connaissant l’URL légitime atteint directement la preview |
+| T35 | tunnel survivant au projet | arrêt couplé au runtime, à la fenêtre et à l’app, kill borné, états hors ligne/erreur | crash OS ou processus impossible à terminer : vérifier manuellement les processus et l’URL |
+| T36 | fuite via logs ou environnement cloudflared | environnement en allowlist, aucun token, logs masqués et bornés | le fournisseur voit le trafic du tunnel et ses propres métadonnées selon ses conditions |
+| T37 | changement d’URL appliqué au mauvais espace | URL transférée par fragment, confirmation développeur, autorisation organisation/release et update atomique | le contenu externe reste mutable et l’historique ne constitue pas une preuve cryptographique |
 
 T01, T02, T06, T07, T19, T21 et T22 demandent une validation d’intégration avant une
 publication générale.
@@ -320,7 +340,12 @@ La suite doit continuellement tester :
 - demandes d’ajustements successives puis approbation ;
 - deux tenants avec identifiants connus.
 
-## Futur data plane
+## Futur data plane Revaloop
+
+Le Quick Tunnel alpha ne réalise pas cette architecture : il connecte
+directement Cloudflare au loopback sans lease, identité d’appareil, hostname
+stable ou contrôle d’accès Revaloop. Les exigences ci-dessous restent donc
+futures malgré l’existence du pilote temporaire.
 
 ```mermaid
 flowchart LR

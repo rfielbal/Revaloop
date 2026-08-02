@@ -27,6 +27,22 @@ export type RuntimeStatus = {
   pid: number | null;
 };
 
+export type TunnelState =
+  | "checking"
+  | "unavailable"
+  | "offline"
+  | "starting"
+  | "online"
+  | "stopping"
+  | "error";
+
+export type TunnelStatus = {
+  state: TunnelState;
+  available: boolean | null;
+  url: string | null;
+  message: string;
+};
+
 export type ProbeResult = {
   reachable: boolean;
   normalizedUrl: string;
@@ -49,9 +65,16 @@ export const IPC_CHANNELS = Object.freeze({
   startDevServer: "revaloop:runtime:start",
   stopDevServer: "revaloop:runtime:stop",
   probePreview: "revaloop:preview:probe",
+  tunnelStatus: "revaloop:tunnel:status",
+  startTunnel: "revaloop:tunnel:start",
+  stopTunnel: "revaloop:tunnel:stop",
+  copyTunnelUrl: "revaloop:tunnel:copy-url",
+  openTunnelPreview: "revaloop:tunnel:open-preview",
+  openTunnelWorkspace: "revaloop:tunnel:open-workspace",
   openExternal: "revaloop:external:open",
   previewLogEvent: "revaloop:event:preview-log",
   runtimeStatusEvent: "revaloop:event:runtime-status",
+  tunnelStatusEvent: "revaloop:event:tunnel-status",
 } as const);
 
 export type DesktopBridge = Readonly<{
@@ -64,9 +87,18 @@ export type DesktopBridge = Readonly<{
   startDevServer: (expectedScript: string) => Promise<RuntimeStatus>;
   stopDevServer: () => Promise<RuntimeStatus>;
   probePreview: (url: string) => Promise<ProbeResult>;
+  tunnelStatus: () => Promise<TunnelStatus>;
+  startTunnel: () => Promise<TunnelStatus>;
+  stopTunnel: () => Promise<TunnelStatus>;
+  copyTunnelUrl: () => Promise<void>;
+  openTunnelPreview: () => Promise<void>;
+  openTunnelWorkspace: () => Promise<void>;
   openExternal: (target: ExternalTarget) => Promise<void>;
   onPreviewLog: (listener: (line: LogLine) => void) => () => void;
   onRuntimeStatus: (
     listener: (status: RuntimeStatus) => void,
+  ) => () => void;
+  onTunnelStatus: (
+    listener: (status: TunnelStatus) => void,
   ) => () => void;
 }>;

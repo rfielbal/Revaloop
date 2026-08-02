@@ -1115,6 +1115,213 @@ button:disabled {
   gap: 9px;
 }
 
+.tunnel-panel {
+  position: relative;
+  margin-top: 24px;
+  padding: 20px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 25px 25px 8px 25px;
+  background: rgba(255, 253, 249, 0.92);
+  box-shadow: 0 14px 32px rgba(36, 52, 58, 0.07);
+}
+
+.tunnel-panel::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 4px;
+  content: "";
+  background: var(--line-strong);
+}
+
+.tunnel-panel-online::before {
+  background: var(--success);
+}
+
+.tunnel-panel-starting::before,
+.tunnel-panel-stopping::before {
+  background: var(--petrol);
+}
+
+.tunnel-panel-unavailable::before,
+.tunnel-panel-error::before {
+  background: var(--terracotta);
+}
+
+.tunnel-heading {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.tunnel-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: var(--petrol);
+  border-radius: 15px 15px 5px 15px;
+  background: var(--petrol-pale);
+}
+
+.tunnel-panel-online .tunnel-icon {
+  color: white;
+  background: var(--success);
+}
+
+.tunnel-panel-unavailable .tunnel-icon,
+.tunnel-panel-error .tunnel-icon {
+  color: var(--terracotta-strong);
+  background: var(--terracotta-pale);
+}
+
+.tunnel-icon svg {
+  width: 20px;
+}
+
+.tunnel-heading .eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.58rem;
+}
+
+.tunnel-heading strong {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.tunnel-message {
+  margin: 13px 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.tunnel-install {
+  display: grid;
+  margin-top: 14px;
+  padding: 14px;
+  gap: 8px;
+  border: 1px solid rgba(120, 88, 23, 0.15);
+  border-radius: 17px 17px 6px 17px;
+  background: #f3ead5;
+}
+
+.tunnel-install strong {
+  color: #6b4a1f;
+  font-size: 0.69rem;
+}
+
+.tunnel-install > code {
+  width: fit-content;
+  max-width: 100%;
+  padding: 7px 9px;
+  overflow: auto;
+  border-radius: 8px;
+  color: white;
+  background: var(--petrol-deep);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.67rem;
+  white-space: nowrap;
+}
+
+.tunnel-install small {
+  color: var(--ink-soft);
+  font-size: 0.63rem;
+  line-height: 1.5;
+}
+
+.tunnel-install small code {
+  color: var(--ink);
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.tunnel-install .text-button {
+  display: inline-flex;
+  width: fit-content;
+  padding-left: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.tunnel-install .text-button svg {
+  width: 14px;
+}
+
+.tunnel-link {
+  margin-top: 15px;
+  padding: 14px;
+  border: 1px solid rgba(47, 105, 79, 0.18);
+  border-radius: 18px 18px 6px 18px;
+  background: #e5eee8;
+}
+
+.tunnel-link label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--success);
+  font-size: 0.65rem;
+  font-weight: 760;
+}
+
+.tunnel-link input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(47, 105, 79, 0.25);
+  border-radius: 12px 12px 4px 12px;
+  outline: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.66rem;
+}
+
+.tunnel-link input:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--success);
+}
+
+.tunnel-link-actions,
+.tunnel-actions {
+  display: flex;
+  margin-top: 11px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tunnel-actions {
+  margin-top: 16px;
+}
+
+.tunnel-stop-button {
+  color: var(--danger);
+}
+
+.tunnel-stop-button:hover:not(:disabled) {
+  color: white;
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+.tunnel-continue-button {
+  border-color: var(--terracotta-strong);
+  background: var(--terracotta-strong);
+  box-shadow: 0 10px 24px rgba(170, 80, 62, 0.17);
+}
+
+.tunnel-continue-button:hover:not(:disabled) {
+  border-color: var(--terracotta-strong);
+  background: #934534;
+  box-shadow: 0 14px 28px rgba(170, 80, 62, 0.22);
+}
+
 .secondary-button {
   border: 1px solid var(--line-strong);
   color: var(--petrol);
@@ -1721,6 +1928,8 @@ button:disabled {
 
   .project-actions,
   .preview-actions,
+  .tunnel-actions,
+  .tunnel-link-actions,
   .desktop-footer {
     align-items: stretch;
     flex-direction: column;

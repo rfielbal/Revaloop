@@ -1,0 +1,132 @@
+.page {
+  align-items: center;
+  background:
+    radial-gradient(circle at 14% 16%, rgba(223, 236, 235, 0.95), transparent 34%),
+    #f5f0e6;
+  color: #193c3c;
+  display: grid;
+  font-family: var(--font-hanken-grotesk), sans-serif;
+  min-height: 100svh;
+  padding: 28px;
+  place-items: center;
+  position: relative;
+}
+
+.brand {
+  color: inherit;
+  left: clamp(24px, 4vw, 64px);
+  position: absolute;
+  text-decoration: none;
+  top: 30px;
+}
+
+.card {
+  background: #fffdf9;
+  border: 1px solid rgba(25, 60, 60, 0.13);
+  border-radius: 38px 58px 30px 18px;
+  box-shadow: 0 28px 80px rgba(25, 60, 60, 0.13);
+  max-width: 650px;
+  padding: clamp(34px, 7vw, 68px);
+  width: 100%;
+}
+
+.icon {
+  align-items: center;
+  background: #dfeceb;
+  border-radius: 50% 50% 50% 13px;
+  color: #24696a;
+  display: flex;
+  height: 56px;
+  justify-content: center;
+  width: 56px;
+}
+
+.icon svg {
+  height: 23px;
+  width: 23px;
+}
+
+.eyebrow {
+  color: #24696a;
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  margin: 28px 0 12px;
+  text-transform: uppercase;
+}
+
+.card h1 {
+  font-family: var(--font-instrument-serif), serif;
+  font-size: clamp(42px, 8vw, 66px);
+  font-weight: 400;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+  margin: 0;
+}
+
+.card > p:not(.eyebrow) {
+  color: #536968;
+  line-height: 1.65;
+  margin: 22px 0;
+}
+
+.safety {
+  align-items: flex-start;
+  background: #f1dfdc;
+  border-radius: 20px 28px 20px 8px;
+  display: flex;
+  gap: 12px;
+  line-height: 1.5;
+  padding: 16px;
+}
+
+.safety svg {
+  flex: 0 0 auto;
+  height: 20px;
+  width: 20px;
+}
+
+.actions {
+  margin-top: 22px;
+}
+
+.actions a {
+  align-items: center;
+  background: #24696a;
+  border-radius: 18px 24px 18px 7px;
+  color: #fff;
+  display: inline-flex;
+  font-weight: 700;
+  gap: 9px;
+  min-height: 48px;
+  padding: 0 18px;
+  text-decoration: none;
+}
+
+.actions a svg {
+  height: 18px;
+  width: 18px;
+}
+
+.actions p {
+  color: #536968;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 560px) {
+  .page {
+    align-items: start;
+    padding: 94px 14px 14px;
+  }
+
+  .brand {
+    left: 20px;
+    top: 24px;
+  }
+
+  .card {
+    border-radius: 30px 42px 26px 12px;
+    padding: 30px 24px;
+  }
+}

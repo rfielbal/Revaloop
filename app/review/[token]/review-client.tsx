@@ -206,16 +206,22 @@ export function ReviewClient({
     review.release.status === "approved";
   const isReviewClosed =
     isReviewApproved || review.release.status === "superseded";
-  const externalPreviewUrl =
+  const latestExternalPreviewUrl =
     review.release.previewKind === "external"
       ? review.release.previewUrl
       : undefined;
+  const [loadedExternalPreviewUrl, setLoadedExternalPreviewUrl] = useState(
+    () =>
+      initialReview.release.previewKind === "external"
+        ? initialReview.release.previewUrl
+        : undefined,
+  );
   const [previewContext, setPreviewContext] = useState(() => {
-    if (!externalPreviewUrl) {
+    if (!loadedExternalPreviewUrl) {
       return { path: "/", title: "Page d’accueil" };
     }
 
-    const url = new URL(externalPreviewUrl);
+    const url = new URL(loadedExternalPreviewUrl);
     return {
       path: url.pathname,
       title: url.hostname,
@@ -329,6 +335,14 @@ export function ReviewClient({
   }, [experienceMode, token]);
 
   function reloadUpdatedPreview() {
+    setLoadedExternalPreviewUrl(latestExternalPreviewUrl);
+    if (latestExternalPreviewUrl) {
+      const nextPreview = new URL(latestExternalPreviewUrl);
+      setPreviewContext({
+        path: nextPreview.pathname,
+        title: nextPreview.hostname,
+      });
+    }
     loadedPreviewRevisionRef.current = review.release.previewRevision ?? 0;
     setPreviewReloadKey((key) => key + 1);
     setPreviewUpdateAvailable(false);
@@ -339,11 +353,11 @@ export function ReviewClient({
   }
 
   useEffect(() => {
-    if (!externalPreviewUrl) {
+    if (!loadedExternalPreviewUrl) {
       return;
     }
 
-    const previewUrl = new URL(externalPreviewUrl);
+    const previewUrl = new URL(loadedExternalPreviewUrl);
     const previewOrigin = previewUrl.origin;
     const previewHostname = previewUrl.hostname;
 
@@ -377,16 +391,16 @@ export function ReviewClient({
 
     window.addEventListener("message", receivePreviewContext);
     return () => window.removeEventListener("message", receivePreviewContext);
-  }, [externalPreviewUrl]);
+  }, [loadedExternalPreviewUrl]);
 
   useEffect(() => {
-    if (!externalPreviewUrl) {
+    if (!loadedExternalPreviewUrl) {
       return;
     }
 
     const timeout = window.setTimeout(() => setPreviewHelpVisible(true), 8_000);
     return () => window.clearTimeout(timeout);
-  }, [externalPreviewUrl]);
+  }, [loadedExternalPreviewUrl]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -1188,14 +1202,14 @@ export function ReviewClient({
         aria-hidden={composer || showFinishDialog ? true : undefined}
       >
         <div className="preview-area">
-          {externalPreviewUrl ? (
+          {loadedExternalPreviewUrl ? (
             <div className="external-preview-bar">
               <span>
                 <ShieldCheck aria-hidden="true" />
                 Site de test externe · cette page peut évoluer
               </span>
               <a
-                href={externalPreviewUrl}
+                href={loadedExternalPreviewUrl}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -1214,13 +1228,13 @@ export function ReviewClient({
               ref={previewRef}
               onClickCapture={handlePreviewClick}
             >
-              {externalPreviewUrl ? (
+              {loadedExternalPreviewUrl ? (
                 <>
                   <iframe
                     key={previewReloadKey}
                     ref={iframeRef}
                     className="external-preview-frame"
-                    src={externalPreviewUrl}
+                    src={loadedExternalPreviewUrl}
                     title={`Preview ${review.project.name}`}
                     sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
                     referrerPolicy="no-referrer"
@@ -1241,7 +1255,7 @@ export function ReviewClient({
                         général ».
                       </span>
                       <a
-                        href={externalPreviewUrl}
+                        href={loadedExternalPreviewUrl}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -1604,7 +1618,7 @@ export function ReviewClient({
               <div className="known-limits">
                 <strong>Limites connues</strong>
                 <ul>
-                  {externalPreviewUrl ? (
+                  {loadedExternalPreviewUrl ? (
                     <>
                       <li>Le site externe peut évoluer pendant le test.</li>
                       <li>

@@ -247,8 +247,22 @@ test("rend la page d’échange sans exposer le secret côté serveur", async ()
   assertAccessibleStructure(html);
   assert.match(text, /Votre espace de test est prêt/);
   assert.match(text, /Le secret est retiré de l’adresse/);
+  assert.match(text, /session valable 24 heures maximum sur cet appareil/);
   assertInternalLink(html, "/privacy");
   assert.doesNotMatch(html, /token=/);
+});
+
+test("rend le relais de preview sans accepter l’URL dans la requête", async () => {
+  const { response, html } = await render("/connect-preview");
+  const text = visibleText(html);
+
+  assertHtmlResponse(response);
+  assertSecurityHeaders(response);
+  assertTitle(html, "Relier une preview · Revaloop");
+  assertNamedMeta(html, "robots", "noindex, nofollow, noarchive, nosnippet");
+  assertAccessibleStructure(html);
+  assert.match(text, /Connexion de la preview/);
+  assert.doesNotMatch(html, /trycloudflare\.com/);
 });
 
 test("rend la notice de confidentialité de l’instance", async () => {
@@ -261,7 +275,9 @@ test("rend la notice de confidentialité de l’instance", async () => {
   assertAccessibleStructure(html);
   assert.match(text, /Ce que Revaloop conserve pendant un test/);
   assert.match(text, /responsable des données/);
-  assert.match(text, /La preview de staging est un service séparé/);
+  assert.match(text, /La preview est un service séparé/);
+  assert.match(text, /e-mail reste visible uniquement par l’équipe autorisée/);
+  assert.match(text, /Cloudflare termine la connexion TLS/);
 });
 
 test("autorise uniquement le bridge public à être chargé en cross-origin", async () => {
@@ -288,6 +304,16 @@ test("protège le dashboard par la connexion Revaloop en production", async () =
   );
 });
 
+test("conserve la reprise de preview à travers la connexion", async () => {
+  const { response } = await render("/dashboard?connect_preview=1");
+
+  assert.ok([303, 307, 308].includes(response.status));
+  assert.match(
+    response.headers.get("location") ?? "",
+    /return_to=%2Fdashboard%3Fconnect_preview%3D1$/,
+  );
+});
+
 test("rend la connexion propriétaire sans dépendre d’un compte tiers", async () => {
   const { response, html } = await render(
     "/login?return_to=%2Fdashboard",
@@ -303,13 +329,19 @@ test("rend la connexion propriétaire sans dépendre d’un compte tiers", async
   assert.match(text, /Saisissez vos identifiants Revaloop/);
   assert.match(html, /name=["']email["']/i);
   assert.match(html, /name=["']password["']/i);
-  assertInternalLink(html, "/register?return_to=%2Fdashboard");
+  assert.match(text, /bootstrap public est verrouillé/);
+  assert.doesNotMatch(html, /href=["']\/register\?return_to=/i);
   assertNoDemoIdentity(html);
 });
 
 test("rend l’initialisation sécurisée du premier compte", async () => {
   const { response, html } = await render(
     "/register?return_to=%2Fdashboard",
+    {
+      "oai-authenticated-user-email": "owner@example.test",
+      host: "revaloop-rfielbal.moulbyte.chatgpt.site",
+    },
+    "https://revaloop-rfielbal.moulbyte.chatgpt.site",
   );
   const text = visibleText(html);
 
@@ -376,11 +408,15 @@ test("n’annonce pas une identité Sites sur la seule foi du proxy", async () =
 test("refuse une confirmation de mot de passe différente dans l’API", async () => {
   const worker = await getWorker();
   const response = await worker.fetch(
-    new Request("https://revaloop.test/api/auth/register", {
+    new Request(
+      "https://revaloop-rfielbal.moulbyte.chatgpt.site/api/auth/register",
+      {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Origin: "https://revaloop.test",
+        Origin: "https://revaloop-rfielbal.moulbyte.chatgpt.site",
+        Host: "revaloop-rfielbal.moulbyte.chatgpt.site",
+        "oai-authenticated-user-email": "owner@example.test",
       },
       body: JSON.stringify({
         displayName: "Studio",
@@ -388,7 +424,8 @@ test("refuse une confirmation de mot de passe différente dans l’API", async (
         password: "une phrase de passe",
         passwordConfirmation: "une autre phrase",
       }),
-    }),
+      },
+    ),
     {
       ASSETS: {
         fetch: async () => new Response("Not found", { status: 404 }),
@@ -403,6 +440,38 @@ test("refuse une confirmation de mot de passe différente dans l’API", async (
 
   assert.equal(response.status, 400);
   assert.match(payload.error, /ne correspondent pas/);
+});
+
+test("refuse le bootstrap anonyme sur une instance publique neuve", async () => {
+  const worker = await getWorker();
+  const response = await worker.fetch(
+    new Request("https://revaloop.test/api/auth/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://revaloop.test",
+      },
+      body: JSON.stringify({
+        displayName: "Studio",
+        email: "owner@example.test",
+        password: "une phrase de passe",
+        passwordConfirmation: "une phrase de passe",
+      }),
+    }),
+    {
+      ASSETS: {
+        fetch: async () => new Response("Not found", { status: 404 }),
+      },
+    },
+    {
+      waitUntil() {},
+      passThroughOnException() {},
+    },
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.match(payload.error, /initialisation publique est verrouillée/i);
 });
 
 test("versionne les vingt tables D1 et les migrations de sécurité", async () => {

@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   canonicalRequestHostname,
   DEVELOPER_PASSWORD_ITERATIONS,
+  developerBootstrapRequestIsAuthorized,
+  developerRegistrationPolicyAllowsRequest,
   DeveloperAuthError,
   hashDeveloperPassword,
   isLoopbackRequestHostname,
@@ -163,6 +165,128 @@ test("ignore le hostname transféré et utilise le même Host canonique partout"
     ),
     true,
   );
+});
+
+test("verrouille le bootstrap public anonyme par défaut", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorMode =
+    process.env.REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP;
+  process.env.NODE_ENV = "production";
+  delete process.env.REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP;
+
+  try {
+    assert.equal(
+      developerBootstrapRequestIsAuthorized(
+        new Headers({ host: "revaloop-rfielbal.moulbyte.chatgpt.site" }),
+      ),
+      false,
+    );
+    assert.equal(
+      developerBootstrapRequestIsAuthorized(
+        new Headers({
+          host: "revaloop-rfielbal.moulbyte.chatgpt.site",
+          "oai-authenticated-user-email": "owner@example.test",
+        }),
+      ),
+      true,
+    );
+    assert.equal(
+      developerBootstrapRequestIsAuthorized(
+        new Headers({
+          host: "public.example.test",
+          "x-forwarded-host":
+            "revaloop-rfielbal.moulbyte.chatgpt.site",
+          "oai-authenticated-user-email": "owner@example.test",
+        }),
+      ),
+      false,
+    );
+
+    process.env.REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP = "true";
+    assert.equal(
+      developerBootstrapRequestIsAuthorized(
+        new Headers({ host: "public.example.test" }),
+      ),
+      true,
+    );
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+
+    if (previousOperatorMode === undefined) {
+      delete process.env.REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP;
+    } else {
+      process.env.REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP =
+        previousOperatorMode;
+    }
+  }
+});
+
+test("garde le bootstrap localhost pour le développement", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "development";
+
+  try {
+    assert.equal(
+      developerBootstrapRequestIsAuthorized(
+        new Headers({ host: "localhost:3000" }),
+      ),
+      true,
+    );
+    assert.equal(
+      developerBootstrapRequestIsAuthorized(
+        new Headers({ host: "public.example.test" }),
+      ),
+      false,
+    );
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+});
+
+test("autorise les inscriptions additionnelles sans rouvrir le bootstrap initial", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousRegistration = process.env.REVALOOP_ALLOW_REGISTRATION;
+  const previousBootstrap =
+    process.env.REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP;
+  process.env.NODE_ENV = "production";
+  process.env.REVALOOP_ALLOW_REGISTRATION = "true";
+  delete process.env.REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP;
+  const publicHeaders = new Headers({ host: "public.example.test" });
+
+  try {
+    assert.equal(
+      developerRegistrationPolicyAllowsRequest(publicHeaders, false),
+      false,
+    );
+    assert.equal(
+      developerRegistrationPolicyAllowsRequest(publicHeaders, true),
+      true,
+    );
+
+    delete process.env.REVALOOP_ALLOW_REGISTRATION;
+    assert.equal(
+      developerRegistrationPolicyAllowsRequest(publicHeaders, true),
+      false,
+    );
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+
+    if (previousRegistration === undefined) {
+      delete process.env.REVALOOP_ALLOW_REGISTRATION;
+    } else {
+      process.env.REVALOOP_ALLOW_REGISTRATION = previousRegistration;
+    }
+
+    if (previousBootstrap === undefined) {
+      delete process.env.REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP;
+    } else {
+      process.env.REVALOOP_ALLOW_UNAUTHENTICATED_BOOTSTRAP =
+        previousBootstrap;
+    }
+  }
 });
 
 test("refuse un ancien coût PBKDF2 incompatible avant Web Crypto", async () => {

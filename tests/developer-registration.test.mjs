@@ -20,8 +20,16 @@ class TestD1Statement {
   }
 
   run() {
-    const result = testDatabase.prepare(this.sql).run(...this.parameters);
-    return { meta: { changes: Number(result.changes) } };
+    const statement = testDatabase.prepare(this.sql);
+    if (this.sql.toUpperCase().includes("RETURNING")) {
+      const results = statement.all(...this.parameters);
+      const changes = testDatabase
+        .prepare("SELECT changes() AS changes")
+        .get().changes;
+      return { meta: { changes: Number(changes) }, results };
+    }
+    const result = statement.run(...this.parameters);
+    return { meta: { changes: Number(result.changes) }, results: [] };
   }
 
   all() {
@@ -417,4 +425,134 @@ test("une preuve de reprise reste nécessaire même lorsque les inscriptions son
       .get().user_id,
     "user_legacy",
   );
+});
+
+test("conserve la session cliente lorsque le tunnel change d’adresse", async () => {
+  resetData();
+  const identity = await repository.registerDeveloperCredential(
+    credentialInput(),
+  );
+  const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
+  const created = await repository.createProjectWithRelease(identity, {
+    name: "Pilote cliente",
+    description: "Parcours réel de validation",
+    accent: "#ddebec",
+    release: {
+      version: "v0.1",
+      title: "Première recette",
+      commitSha: "",
+      previewUrl: "https://first.trycloudflare.com/",
+      reviewerMessage: "Testez librement le parcours.",
+      testItems: [],
+      expiresAt,
+    },
+  });
+
+  let workspace = await repository.getDeveloperWorkspace(
+    identity,
+    created.projectId,
+    created.releaseId,
+  );
+  assert.equal(workspace.activeReview.clientAccess.status, "none");
+
+  const invitation = await repository.createInvitation(identity, {
+    releaseId: created.releaseId,
+    reviewerName: "Cliente pilote",
+    reviewerEmail: "cliente@example.test",
+    expiresAt,
+  });
+  workspace = await repository.getDeveloperWorkspace(
+    identity,
+    created.projectId,
+    created.releaseId,
+  );
+  assert.deepEqual(
+    {
+      status: workspace.activeReview.clientAccess.status,
+      reviewerName: workspace.activeReview.clientAccess.reviewerName,
+      reviewerEmail: workspace.activeReview.clientAccess.reviewerEmail,
+    },
+    {
+      status: "invited",
+      reviewerName: "Cliente pilote",
+      reviewerEmail: "cliente@example.test",
+    },
+  );
+
+  const session = await repository.exchangeInvitation(invitation.secret);
+  assert.ok(session);
+  workspace = await repository.getDeveloperWorkspace(
+    identity,
+    created.projectId,
+    created.releaseId,
+  );
+  assert.equal(workspace.activeReview.clientAccess.status, "opened");
+
+  const updated = await repository.incrementPreviewRevision(
+    identity,
+    created.releaseId,
+    "https://second.trycloudflare.com/",
+  );
+  assert.equal(updated.previewUrl, "https://second.trycloudflare.com/");
+  assert.equal(updated.previewRevision, 1);
+
+  const reviewerView = await repository.getReviewForReviewer(
+    session.releaseId,
+    session.sessionToken,
+  );
+  assert.equal(
+    reviewerView.release.previewUrl,
+    "https://second.trycloudflare.com/",
+  );
+  assert.equal(reviewerView.release.previewRevision, 1);
+});
+
+test("n’attribue pas à la cliente une session automatiquement expirée", async () => {
+  resetData();
+  const identity = await repository.registerDeveloperCredential(
+    credentialInput(),
+  );
+  const invitationExpiresAt = new Date(
+    Date.now() + 7 * 86_400_000,
+  ).toISOString();
+  const created = await repository.createProjectWithRelease(identity, {
+    name: "Pilote cliente",
+    description: "Parcours réel de validation",
+    accent: "#ddebec",
+    release: {
+      version: "v0.1",
+      title: "Première recette",
+      commitSha: "",
+      previewUrl: "https://first.trycloudflare.com/",
+      reviewerMessage: "Testez librement le parcours.",
+      testItems: [],
+      expiresAt: invitationExpiresAt,
+    },
+  });
+  const invitation = await repository.createInvitation(identity, {
+    releaseId: created.releaseId,
+    reviewerName: "Cliente pilote",
+    reviewerEmail: "cliente@example.test",
+    expiresAt: invitationExpiresAt,
+  });
+
+  await repository.exchangeInvitation(invitation.secret);
+  testDatabase
+    .prepare(
+      `UPDATE reviewer_sessions
+       SET expires_at = ?
+       WHERE release_id = ?`,
+    )
+    .run(
+      new Date(Date.now() - 60_000).toISOString(),
+      created.releaseId,
+    );
+
+  const workspace = await repository.getDeveloperWorkspace(
+    identity,
+    created.projectId,
+    created.releaseId,
+  );
+
+  assert.equal(workspace.activeReview.clientAccess.status, "inactive");
 });

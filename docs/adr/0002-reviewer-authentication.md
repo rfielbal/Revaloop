@@ -3,7 +3,7 @@
 - **Statut de la décision :** accepté
 - **Statut d’implémentation :** implémenté en 0.2, étendu aux messages en 0.3
 - **Date :** 24 juillet 2026
-- **Mise à jour :** 25 juillet 2026
+- **Mise à jour :** 2 août 2026
 
 ## Contexte
 
@@ -63,9 +63,11 @@ release, revalidation et décision. Elle n’accorde aucun accès au dashboard.
 
 Le développeur saisit un nom affiché lors de l’invitation. Le serveur le porte
 dans la session et l’utilise comme auteur, sans authentifier la personne qui
-possède le lien. L’interface fournie ne demande aucune adresse e-mail cliente.
-L’API conserve un champ e-mail nullable pour compatibilité avec un client
-personnalisé, mais il n’accorde aucun droit.
+possède le lien. Il peut également saisir un e-mail de suivi optionnel dans le
+champ nullable de l’invitation. Cette valeur reste visible uniquement par
+l’équipe autorisée dans le dashboard : elle n’est pas copiée dans la session
+reviewer, n’est pas incluse dans le contexte client, n’est pas vérifiée,
+n’envoie aucun message et n’accorde aucun droit.
 
 ## Déconnexion
 
@@ -90,8 +92,8 @@ n’aurait pas suffi contre une copie volée.
 - un script compromis sur `/join` pourrait lire le fragment ;
 - une session de 24 h implique de recréer une invitation après expiration ;
 - le nom déclaré ne prouve pas l’identité de la personne ;
-- un e-mail éventuellement fourni par un client API personnalisé ne la prouve
-  pas davantage ;
+- l’e-mail de suivi éventuellement saisi par le développeur ne la prouve pas
+  davantage et impose une finalité et une rétention annoncées ;
 - un déploiement globalement privé empêche une cliente extérieure d’accéder à
   `/join`.
 

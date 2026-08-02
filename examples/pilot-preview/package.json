@@ -1,0 +1,16 @@
+{
+  "name": "@revaloop/pilot-preview",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Preview locale fictive et isolée pour le premier pilote Revaloop.",
+  "type": "module",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "node server.mjs",
+    "dev:corrected": "node server.mjs --corrected",
+    "test": "node --test server.test.mjs"
+  }
+}

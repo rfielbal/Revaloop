@@ -36,16 +36,26 @@ import {
   formatCalendarDate,
   formatRelativeDate,
   statusLabels,
+  type DeveloperClientAccessSummary,
   type DeveloperWorkspace,
   type FeedbackItem,
   type FeedbackStatus,
   type ReleaseMessage,
   type ReviewPayload,
 } from "../../lib/revaloop";
+import {
+  CONNECTED_PREVIEW_STORAGE_KEY,
+  normalizeConnectedPreviewUrl,
+} from "../../lib/preview-url";
 import { Brand } from "../components/brand";
 
 type FeedbackFilter = "all" | "todo" | "to_review" | "resolved";
-type DialogName = "project" | "release" | "invitation" | null;
+type DialogName =
+  | "project"
+  | "release"
+  | "preview"
+  | "invitation"
+  | null;
 type WorkspaceTab = "feedback" | "discussion";
 type DeveloperReleaseSummary = {
   id: string;
@@ -122,14 +132,63 @@ function releaseStatusLabel(status: ReviewPayload["release"]["status"]) {
   return "En recette";
 }
 
+function clientAccessLabel(
+  status: DeveloperClientAccessSummary["status"],
+) {
+  if (status === "invited") return "Lien créé, pas encore ouvert";
+  if (status === "opened") return "Espace ouvert par la cliente";
+  if (status === "inactive") return "Session cliente inactive";
+  if (status === "expired") return "Invitation expirée";
+  if (status === "revoked") return "Accès révoqué";
+  return "Invitation à créer";
+}
+
+function clientAccessNote(access: DeveloperClientAccessSummary) {
+  if (access.status === "none") {
+    return "Créez le lien seulement lorsque la preview est prête.";
+  }
+
+  const reviewer = access.reviewerName ?? "Session cliente";
+
+  if (access.status === "invited") {
+    return `${reviewer} · le lien secret ne pourra pas être réaffiché s’il est perdu`;
+  }
+
+  if (access.status === "inactive") {
+    return `${reviewer} · la session, valable 24 heures maximum, est terminée ou n’est plus active`;
+  }
+
+  return `${reviewer} · identité déclarée, non vérifiée`;
+}
+
+function previewAvailabilityNote(previewUrl: string | undefined) {
+  if (!previewUrl) {
+    return "Aucune adresse de test configurée.";
+  }
+
+  try {
+    const hostname = new URL(previewUrl).hostname;
+
+    if (hostname.endsWith(".trycloudflare.com")) {
+      return "Disponibilité non vérifiée : le serveur local, le tunnel et votre ordinateur doivent rester allumés.";
+    }
+
+    return `URL configurée sur ${hostname}. Sa disponibilité n’est pas vérifiée par Revaloop.`;
+  } catch {
+    return "L’adresse de test doit être corrigée avant l’invitation.";
+  }
+}
+
 export function DashboardClient({
   initialWorkspace,
   renderedAt,
   signOutPath,
+  connectPreviewRequested,
 }: {
   initialWorkspace: DashboardWorkspace;
   renderedAt: string;
   signOutPath: string;
+  connectPreviewRequested: boolean;
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [now, setNow] = useState(() => Date.parse(renderedAt));
@@ -149,6 +208,7 @@ export function DashboardClient({
   const [formError, setFormError] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
   const [inviteExpiresAt, setInviteExpiresAt] = useState("");
+  const [connectedPreviewUrl, setConnectedPreviewUrl] = useState("");
   const dialogTriggerRef = useRef<HTMLButtonElement>(null);
   const messageThreadRef = useRef<HTMLOListElement>(null);
   const workspaceRequestSequenceRef = useRef(0);
@@ -156,6 +216,7 @@ export function DashboardClient({
     initialWorkspace.activeReview?.release.id,
   );
   const releaseHistoryRef = useRef(initialWorkspace.releases);
+  const connectedPreviewHandledRef = useRef(false);
 
   const review = workspace.activeReview;
   const activeProjectId = review?.project.id ?? workspace.projects[0]?.id;
@@ -174,6 +235,12 @@ export function DashboardClient({
       ["in_review", "changes_requested"].includes(release.status),
   );
   const canPublishRelease = Boolean(activeProjectId && !hasActiveRelease);
+  const clientAccess = review?.clientAccess ?? { status: "none" as const };
+  const hasClientActivity = Boolean(
+    review?.feedback.some((item) => item.authorRole === "reviewer") ||
+      review?.messages?.some((message) => message.authorRole === "reviewer") ||
+      review?.decisions.length,
+  );
 
   const refreshWorkspace = useCallback(
     async (preferredReleaseId?: string) => {
@@ -226,6 +293,80 @@ export function DashboardClient({
     const clock = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(clock);
   }, []);
+
+  useEffect(() => {
+    if (
+      !connectPreviewRequested ||
+      connectedPreviewHandledRef.current
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.delete("connect_preview");
+    window.history.replaceState(
+      null,
+      "",
+      `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`,
+    );
+
+    try {
+      const storedPreviewUrl = window.sessionStorage.getItem(
+        CONNECTED_PREVIEW_STORAGE_KEY,
+      );
+      const previewUrl = normalizeConnectedPreviewUrl(storedPreviewUrl);
+
+      queueMicrotask(() => {
+        if (cancelled || connectedPreviewHandledRef.current) return;
+        connectedPreviewHandledRef.current = true;
+        window.sessionStorage.removeItem(CONNECTED_PREVIEW_STORAGE_KEY);
+        setConnectedPreviewUrl(previewUrl);
+        setFormError("");
+
+        if (!review) {
+          setDialog("project");
+          setNotice(
+            "Preview HTTPS reliée. Complétez le projet avant de créer le lien client.",
+          );
+        } else if (isActiveRelease) {
+          setDialog("preview");
+          setNotice(
+            "Nouvelle adresse reçue. Confirmez son remplacement. La cliente conservera son accès seulement si sa session, valable 24 heures maximum, est encore valide.",
+          );
+        } else if (canPublishRelease) {
+          setDialog("release");
+          setNotice(
+            "Preview HTTPS reliée. Publiez-la comme nouvelle version de recette.",
+          );
+        } else {
+          setNotice(
+            "Preview HTTPS reliée. Terminez la version actuelle avant de la publier.",
+          );
+        }
+      });
+    } catch (error) {
+      queueMicrotask(() => {
+        if (cancelled || connectedPreviewHandledRef.current) return;
+        connectedPreviewHandledRef.current = true;
+        window.sessionStorage.removeItem(CONNECTED_PREVIEW_STORAGE_KEY);
+        setNotice(
+          error instanceof Error
+            ? error.message
+            : "L’adresse transmise par le compagnon est invalide.",
+        );
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canPublishRelease,
+    connectPreviewRequested,
+    isActiveRelease,
+    review,
+  ]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -622,7 +763,7 @@ export function DashboardClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             reviewerName: String(data.get("reviewerName") ?? "").trim(),
-            reviewerEmail: "",
+            reviewerEmail: String(data.get("reviewerEmail") ?? "").trim(),
             expiresInDays: Number(data.get("expiresInDays") ?? 7),
           }),
         },
@@ -681,6 +822,7 @@ export function DashboardClient({
         );
       }
 
+      await refreshWorkspace();
       setNotice("Toutes les invitations et sessions de cette version sont révoquées.");
     } catch (error) {
       setNotice(
@@ -691,16 +833,21 @@ export function DashboardClient({
     }
   }
 
-  async function signalPreviewUpdate() {
+  async function signalPreviewUpdate(previewUrl?: string) {
     if (!review || isUpdating || !isActiveRelease) return;
 
     const targetReleaseId = review.release.id;
     setIsUpdating(true);
+    setFormError("");
 
     try {
       const response = await fetch(
         `/api/releases/${encodeURIComponent(review.release.id)}/preview`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(previewUrl ? { previewUrl } : {}),
+        },
       );
 
       if (!response.ok) {
@@ -714,6 +861,7 @@ export function DashboardClient({
 
       const updated = (await response.json()) as {
         releaseId: string;
+        previewUrl: string;
         previewRevision: number;
         updatedAt: string;
       };
@@ -726,6 +874,7 @@ export function DashboardClient({
                 ...current.activeReview,
                 release: {
                   ...current.activeReview.release,
+                  previewUrl: updated.previewUrl,
                   previewRevision: updated.previewRevision,
                   updatedAt: updated.updatedAt,
                 },
@@ -733,18 +882,35 @@ export function DashboardClient({
             }
           : current,
       );
+      setConnectedPreviewUrl("");
+      if (previewUrl && dialog === "preview") {
+        closeDialog();
+      }
       setNotice(
-        "Mise à jour signalée. Le client pourra demander le rechargement de la preview dans son espace.",
+        previewUrl
+          ? "Nouvelle URL enregistrée. Une cliente dont la session, valable 24 heures maximum, est encore valide pourra recharger la preview ; sinon, créez une nouvelle invitation."
+          : "Mise à jour signalée. La cliente pourra recharger la preview tant que sa session, valable 24 heures maximum, reste valide.",
       );
     } catch (error) {
-      setNotice(
+      const message =
         error instanceof Error
           ? error.message
-          : "La mise à jour n’a pas pu être signalée au client.",
-      );
+          : "La mise à jour n’a pas pu être signalée au client.";
+
+      if (previewUrl && dialog === "preview") {
+        setFormError(message);
+      } else {
+        setNotice(message);
+      }
     } finally {
       setIsUpdating(false);
     }
+  }
+
+  async function submitPreviewUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    await signalPreviewUpdate(String(data.get("previewUrl") ?? "").trim());
   }
 
   async function sendDeveloperMessage(event: FormEvent<HTMLFormElement>) {
@@ -1150,15 +1316,103 @@ export function DashboardClient({
               </a>
             </section>
 
+            <section
+              className="pilot-readiness"
+              aria-labelledby="pilot-readiness-title"
+            >
+              <header>
+                <div>
+                  <p className="eyebrow">Diagnostic du pilote</p>
+                  <h2 id="pilot-readiness-title">
+                    {isActiveRelease
+                      ? "Recette ouverte. Vérifiez la preview avant d’inviter."
+                      : "Cette version n’accepte plus de nouveau test."}
+                  </h2>
+                </div>
+                <span className={isActiveRelease ? "is-ready" : "is-closed"}>
+                  {isActiveRelease ? "Recette ouverte" : "Recette clôturée"}
+                </span>
+              </header>
+              <div className="pilot-readiness-steps">
+                <article className={review.release.previewUrl ? "is-done" : ""}>
+                  <span>01</span>
+                  <div>
+                    <strong>URL HTTPS configurée</strong>
+                    <p>{previewAvailabilityNote(review.release.previewUrl)}</p>
+                  </div>
+                </article>
+                <article
+                  className={
+                    ["invited", "opened"].includes(clientAccess.status)
+                      ? "is-done"
+                      : ""
+                  }
+                >
+                  <span>02</span>
+                  <div>
+                    <strong>{clientAccessLabel(clientAccess.status)}</strong>
+                    <p>{clientAccessNote(clientAccess)}</p>
+                  </div>
+                </article>
+                <article className={hasClientActivity ? "is-done" : ""}>
+                  <span>03</span>
+                  <div>
+                    <strong>
+                      {hasClientActivity
+                        ? "Première activité reçue"
+                        : "En attente du premier retour"}
+                    </strong>
+                    <p>
+                      Les commentaires, messages et décisions apparaissent ici
+                      sans compte client.
+                    </p>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            {connectedPreviewUrl ? (
+              <section className="connected-preview-notice" role="status">
+                <div>
+                  <strong>Une nouvelle adresse HTTPS attend votre confirmation.</strong>
+                  <code>{connectedPreviewUrl}</code>
+                </div>
+                <button
+                  className="button button-primary"
+                  type="button"
+                  disabled={!isActiveRelease}
+                  onClick={() => openDialog("preview")}
+                >
+                  Remplacer l’URL
+                  <RefreshCw aria-hidden="true" />
+                </button>
+                <button
+                  className="button button-ghost"
+                  type="button"
+                  onClick={() => setConnectedPreviewUrl("")}
+                >
+                  Ignorer
+                </button>
+              </section>
+            ) : null}
+
             <div className="workspace-utility-bar">
               <button
                 type="button"
                 disabled={isUpdating || !isActiveRelease}
-                onClick={signalPreviewUpdate}
+                onClick={() => signalPreviewUpdate()}
                 title="Déployez d’abord vos correctifs sur la même URL de staging, puis prévenez le client ici."
               >
                 <RefreshCw aria-hidden="true" />
                 Signaler les correctifs
+              </button>
+              <button
+                type="button"
+                disabled={isUpdating || !isActiveRelease}
+                onClick={() => openDialog("preview")}
+              >
+                <Link2 aria-hidden="true" />
+                Remplacer l’URL
               </button>
               <button type="button" onClick={exportReview}>
                 <Download aria-hidden="true" />
@@ -1515,6 +1769,7 @@ export function DashboardClient({
                 inviteUrl={inviteUrl}
                 isUpdating={isUpdating}
                 reviewerName={review?.reviewerName}
+                reviewerEmail={review?.clientAccess.reviewerEmail}
                 onSubmit={submitInvitation}
                 onCopy={() => {
                   navigator.clipboard
@@ -1527,10 +1782,19 @@ export function DashboardClient({
                     );
                 }}
               />
+            ) : dialog === "preview" && review ? (
+              <PreviewUpdateForm
+                currentPreviewUrl={review.release.previewUrl ?? ""}
+                initialPreviewUrl={connectedPreviewUrl}
+                error={formError}
+                isUpdating={isUpdating}
+                onSubmit={submitPreviewUpdate}
+              />
             ) : (
               <ReleaseForm
                 error={formError}
                 includeProject={dialog === "project"}
+                initialPreviewUrl={connectedPreviewUrl}
                 isUpdating={isUpdating}
                 onSubmit={
                   dialog === "project" ? submitProject : submitRelease
@@ -1546,11 +1810,13 @@ export function DashboardClient({
 
 function ReleaseForm({
   includeProject,
+  initialPreviewUrl,
   isUpdating,
   error,
   onSubmit,
 }: {
   includeProject: boolean;
+  initialPreviewUrl: string;
   isUpdating: boolean;
   error: string;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1598,6 +1864,7 @@ function ReleaseForm({
         <input
           name="previewUrl"
           type="url"
+          defaultValue={initialPreviewUrl}
           placeholder="https://staging.exemple.fr"
           required
         />
@@ -1683,9 +1950,68 @@ function ReleaseForm({
   );
 }
 
+function PreviewUpdateForm({
+  currentPreviewUrl,
+  initialPreviewUrl,
+  isUpdating,
+  error,
+  onSubmit,
+}: {
+  currentPreviewUrl: string;
+  initialPreviewUrl: string;
+  isUpdating: boolean;
+  error: string;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="secure-form" onSubmit={onSubmit}>
+      <span className="dialog-icon">
+        <RefreshCw aria-hidden="true" />
+      </span>
+      <p className="eyebrow">Preview de la version actuelle</p>
+      <h2 id="secure-dialog-title">Remplacez l’adresse sans perdre les retours.</h2>
+      <p className="secure-dialog-lead">
+        Utilisez cette action lorsqu’un tunnel temporaire redémarre ou lorsque
+        votre staging change d’adresse. Le projet, les retours et les messages
+        restent liés à cette version. La cliente conserve son accès uniquement
+        tant que sa session, valable 24 heures maximum, est encore valide.
+      </p>
+      <label>
+        <span>Nouvelle URL HTTPS de la preview</span>
+        <input
+          name="previewUrl"
+          type="url"
+          defaultValue={initialPreviewUrl || currentPreviewUrl}
+          placeholder="https://nouveau-tunnel.trycloudflare.com"
+          required
+        />
+      </label>
+      <div className="dialog-safety">
+        <ShieldCheck aria-hidden="true" />
+        <p>
+          L’adresse doit être publique, sans identifiant ni paramètre. La
+          cliente recevra une demande de rechargement si sa session est encore
+          valide. Sinon, créez une nouvelle invitation.
+        </p>
+      </div>
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      <button
+        className="button button-primary button-full"
+        type="submit"
+        disabled={isUpdating}
+        aria-busy={isUpdating}
+      >
+        {isUpdating ? "Mise à jour…" : "Remplacer l’URL et prévenir la cliente"}
+        <RefreshCw aria-hidden="true" />
+      </button>
+    </form>
+  );
+}
+
 function InvitationDialog({
   isUpdating,
   reviewerName,
+  reviewerEmail,
   inviteUrl,
   expiresAt,
   error,
@@ -1694,6 +2020,7 @@ function InvitationDialog({
 }: {
   isUpdating: boolean;
   reviewerName?: string;
+  reviewerEmail?: string;
   inviteUrl: string;
   expiresAt: string;
   error: string;
@@ -1720,7 +2047,9 @@ function InvitationDialog({
           </button>
         </div>
         <p className="invitation-expiry">
-          Expire le {formatCalendarDate(expiresAt)}.
+          Expire le {formatCalendarDate(expiresAt)}. Revaloop n’envoie aucun
+          e-mail : transmettez maintenant ce lien à la bonne personne via
+          votre canal habituel.
         </p>
       </div>
     );
@@ -1735,7 +2064,9 @@ function InvitationDialog({
       <h2 id="secure-dialog-title">Créez une invitation à usage unique.</h2>
       <p className="secure-dialog-lead">
         Le lien est échangé contre une session privée. Son secret n’est jamais
-        conservé en clair par Revaloop.
+        conservé en clair par Revaloop. Le nom et l’e-mail servent seulement à
+        identifier la session dans votre suivi : ils ne prouvent pas l’identité
+        de la personne qui ouvre le lien.
       </p>
       <label>
         <span>Nom affiché pour la session invitée</span>
@@ -1745,6 +2076,17 @@ function InvitationDialog({
           required
           minLength={2}
           maxLength={100}
+        />
+      </label>
+      <label>
+        <span>Adresse e-mail de suivi · optionnelle</span>
+        <input
+          name="reviewerEmail"
+          type="email"
+          inputMode="email"
+          defaultValue={reviewerEmail ?? ""}
+          maxLength={254}
+          placeholder="cliente@exemple.fr"
         />
       </label>
       <label className="secure-form-compact">

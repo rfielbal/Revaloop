@@ -4,7 +4,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { assetPathForUrl } from "./protocol.ts";
-import { externalUrlFor } from "./navigation.ts";
+import {
+  connectPreviewUrlFor,
+  externalUrlFor,
+  quickTunnelPreviewUrl,
+} from "./navigation.ts";
 
 test("sert uniquement les assets contenus dans le bundle", async () => {
   const directory = await mkdtemp(join(tmpdir(), "revaloop-assets-"));
@@ -25,6 +29,32 @@ test("sert uniquement les assets contenus dans le bundle", async () => {
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("transmet uniquement un quick tunnel actif via le fragment local", () => {
+  const settings = {
+    projectPath: null,
+    previewUrl: "http://127.0.0.1:3000/",
+    controlPlaneUrl: "https://revaloop.example/",
+  };
+  const publicUrl = "https://calm-demo-tree.trycloudflare.com/";
+  assert.equal(quickTunnelPreviewUrl(publicUrl).toString(), publicUrl);
+  const destination = connectPreviewUrlFor(settings, publicUrl);
+  assert.equal(destination.origin, "https://revaloop.example");
+  assert.equal(destination.pathname, "/connect-preview");
+  assert.equal(
+    new URLSearchParams(destination.hash.slice(1)).get("url"),
+    publicUrl,
+  );
+  assert.equal(destination.search, "");
+
+  for (const invalid of [
+    "https://preview.example/",
+    "http://calm-demo-tree.trycloudflare.com/",
+    "https://calm-demo-tree.trycloudflare.com.evil.example/",
+  ]) {
+    assert.throws(() => connectPreviewUrlFor(settings, invalid));
   }
 });
 

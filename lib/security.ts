@@ -1,3 +1,5 @@
+import { normalizePreviewUrl, PreviewUrlError } from "./preview-url";
+
 const JSON_CONTENT_TYPE = /^application\/json(?:\s*;|$)/i;
 
 export class RequestValidationError extends Error {
@@ -183,46 +185,15 @@ export function normalizeExternalPreviewUrl(
   value: unknown,
   allowLocal = false,
 ) {
-  const raw = cleanText(value, 2_048);
-  let url: URL;
-
   try {
-    url = new URL(raw);
-  } catch {
-    throw new RequestValidationError("L’URL de preview n’est pas valide.");
+    return normalizePreviewUrl(value, { allowLocal });
+  } catch (error) {
+    if (error instanceof PreviewUrlError) {
+      throw new RequestValidationError(error.message);
+    }
+
+    throw error;
   }
-
-  const localHostname =
-    url.hostname === "localhost" ||
-    url.hostname === "127.0.0.1" ||
-    url.hostname === "::1";
-
-  if (url.username || url.password) {
-    throw new RequestValidationError(
-      "L’URL de preview ne doit contenir aucun identifiant.",
-    );
-  }
-
-  if (url.search) {
-    throw new RequestValidationError(
-      "L’URL de preview ne doit contenir aucun paramètre secret. Utilisez une URL de staging dédiée.",
-    );
-  }
-
-  if (localHostname && !allowLocal) {
-    throw new RequestValidationError(
-      "Une preview locale ne peut être utilisée que depuis Revaloop en local.",
-    );
-  }
-
-  if (url.protocol !== "https:" && !(allowLocal && localHostname)) {
-    throw new RequestValidationError(
-      "La preview doit utiliser HTTPS.",
-    );
-  }
-
-  url.hash = "";
-  return url.toString();
 }
 
 export function validationErrorResponse(error: unknown) {

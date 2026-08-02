@@ -4,13 +4,25 @@ Ce guide prépare une recette réelle, mais non sensible, avec une seule cliente
 
 ## 1. Préparer la preview
 
-Déployez le site client sur une URL HTTPS de staging. Cela peut être un VPS, un
-environnement de preview de votre hébergeur ou un serveur dédié à la recette.
-Revaloop 0.3 ne partage pas encore `localhost`.
+La voie recommandée reste une URL HTTPS de staging : VPS, environnement de
+preview de l’hébergeur ou serveur dédié à la recette. Pour un premier essai
+strictement non sensible, le compagnon Electron peut aussi exposer une cible
+loopback au moyen d’un Quick Tunnel `cloudflared` public et temporaire.
+
+Dans ce second cas, Revaloop ne téléverse pas le projet et n’installe pas
+`cloudflared`. Le développeur lance son projet depuis le compagnon, confirme la
+checklist native, crée le lien puis choisit « Continuer dans Revaloop ». Le
+dashboard récupère l’adresse depuis un fragment client-side et demande sa
+confirmation. Consultez le
+[parcours reproductible sur fixture isolée](FIRST_CLIENT_PILOT.md) avant de
+tester un vrai projet.
 
 L’invitation Revaloop protège l’espace de revue et ses commentaires. Elle ne
 protège pas l’URL de staging, ne la place pas derrière la session reviewer et ne
 remplace pas son authentification. Configurez cette protection séparément.
+Un Quick Tunnel est lui aussi directement accessible à toute personne qui
+connaît son URL ; ne l’utilisez jamais avec une base ou des secrets de
+production.
 
 La preview doit avoir :
 
@@ -87,7 +99,8 @@ extérieure ne pourra utiliser son invitation tant que ce mode reste actif.
 
 Avant de rendre l’instance joignable par une cliente :
 
-1. ouvrez `/register` sur la base vide ;
+1. ouvrez `/register` sur la base vide depuis localhost ou avec l’identité
+   propriétaire Sites ; le bootstrap anonyme public est bloqué par défaut ;
 2. créez le premier compte développeur avec une adresse que vous contrôlez et
    un mot de passe unique de 12 à 128 caractères ;
 3. vérifiez qu’une seconde inscription est refusée ;
@@ -129,7 +142,8 @@ préparez une procédure opérateur de récupération de la base.
 2. Connectez-vous.
 3. Choisissez « Créer mon projet ».
 4. Saisissez le nom et une description non sensible.
-5. Collez l’URL HTTPS de staging.
+5. Collez l’URL HTTPS de staging, ou utilisez l’adresse préremplie par le
+   compagnon.
 6. Donnez un numéro de version et, si possible, le commit.
 7. Écrivez un message clair pour la cliente.
 8. Si cela aide la recette, ajoutez un à trois points de vérification concrets.
@@ -149,15 +163,15 @@ N’écrivez jamais un vrai mot de passe dans les consignes.
 ## 6. Créer et transmettre l’invitation
 
 1. Cliquez « Créer un lien client ».
-2. Indiquez le nom affiché.
+2. Indiquez le nom affiché et, si utile, un e-mail de suivi optionnel.
 3. Choisissez 1 à 7 jours si possible.
 4. Copiez le lien avant de fermer : le secret ne sera pas réaffiché.
 5. Transmettez-le sur un canal approprié.
 
 Créer un second lien révoque immédiatement l’ancien lien et sa session.
 
-L’interface ne demande pas d’adresse e-mail. Le nom affiché est saisi par le
-développeur et Revaloop ne vérifie pas l’identité de la personne qui ouvre le
+Le nom et l’éventuel e-mail de suivi sont saisis par le développeur. Revaloop
+n’envoie aucun message et ne vérifie pas l’identité de la personne qui ouvre le
 lien. Partagez donc l’invitation par un canal qui vous permet d’identifier son
 destinataire.
 

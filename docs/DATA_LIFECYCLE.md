@@ -48,10 +48,9 @@ jamais stockés en clair. Le mot de passe développeur est reçu uniquement pour
 l’inscription ou la connexion puis dérivé avec Web Crypto ; D1 ne conserve que
 le dérivé PBKDF2, le sel et le nombre d’itérations.
 Le nom reviewer est saisi par le développeur et ne prouve pas l’identité de la
-personne qui utilise le lien. L’interface fournie ne collecte plus d’e-mail
-reviewer. L’API et le schéma conservent un champ nullable pour compatibilité
-avec des clients personnalisés ; s’il est alimenté, il ne déclenche aucun envoi
-et ne prouve pas davantage l’identité.
+personne qui utilise le lien. L’e-mail reviewer est optionnel, déclaratif et ne
+déclenche aucun envoi. Il aide seulement le développeur à suivre l’invitation et
+ne prouve pas davantage l’identité.
 
 ## Données locales du compagnon desktop
 
@@ -64,6 +63,13 @@ principal conserve dans le dossier de configuration de l’application :
 | chemin canonique du projet | retrouver le dossier choisi | jusqu’au changement, à la suppression du fichier ou de l’app |
 | URL loopback de preview | tester et ouvrir le port local explicite | même règle |
 | origine du site Revaloop | ouvrir `login` ou `dashboard` dans le navigateur | même règle |
+
+L’URL publique du Quick Tunnel n’est pas ajoutée à `settings.json`. Elle reste
+en mémoire dans le processus principal pendant la vie de `cloudflared`, puis est
+transmise au navigateur dans le fragment de `/connect-preview`. Le site la place
+temporairement dans `sessionStorage` jusqu’à son préremplissage et la supprime
+ensuite. Une fois confirmée, elle devient la `preview_url` de la release D1
+comme toute URL de staging.
 
 Ces valeurs sont sérialisées dans `settings.json`. Sur Unix, le fichier reçoit
 le mode `0600`. Ce ne sont pas des secrets, mais le chemin peut révéler un nom
@@ -212,7 +218,9 @@ retour, e-mail reviewer ni URL avec query.
 
 Le compagnon desktop n’écrit aucun log applicatif sur disque. Son panneau
 terminal reçoit uniquement la sortie du processus local et applique les limites
-décrites plus haut. Les logs de compilation Electron/Vite, npm, du fallback
+décrites plus haut. Les lignes `cloudflared` sont également drainées, bornées et
+masquées ; l’URL publique affichée dans l’interface n’est pas recopiée dans ce
+journal. Les logs de compilation Electron/Vite, npm, du fallback
 Tauri/Rust ou du système d’exploitation lancés en dehors de l’app suivent leur
 propre configuration.
 
@@ -236,9 +244,17 @@ Si R2 est ajouté :
 
 Les captures automatiques en arrière-plan restent hors périmètre.
 
-## Futur tunnel
+## Quick Tunnel actuel et futur relais
 
-Le mode managé pourra exposer le trafic au relais après terminaison TLS. Par
+Le Quick Tunnel alpha transmet le trafic de la preview par Cloudflare. Revaloop
+n’enregistre aucun token ou fichier de configuration Cloudflare, mais le
+fournisseur peut traiter trafic et métadonnées selon ses propres conditions. Le
+projet local, sa base et ses services restent sous la responsabilité du
+développeur. Le tunnel doit être réservé à des données fictives et arrêté dès la
+fin du test.
+
+Un futur relais Revaloop managé pourra lui aussi exposer le trafic après
+terminaison TLS. Par
 défaut, aucun corps, cookie, header d’autorisation ou contenu de formulaire ne
 devra être stocké.
 

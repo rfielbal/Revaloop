@@ -3,12 +3,14 @@
 - **Statut :** accepté, décision opérationnelle temporaire
 - **Date :** 25 juillet 2026
 - **Complète :** [ADR-0005](0005-desktop-companion.md)
+- **Complétée par :** [ADR-0007](0007-quick-tunnel-pilot.md)
 
 ## Contexte
 
 L’ADR-0005 a fixé une séparation durable : le site reste le review plane, le
-compagnon agit sur le poste du développeur et le futur tunnel forme un data
-plane distinct. Il a aussi retenu Tauri 2 pour la première implémentation locale.
+compagnon agit sur le poste du développeur et tout tunnel forme un data plane
+distinct. L’ADR-0007 encadre depuis le Quick Tunnel limité au pilote. L’ADR-0005
+a aussi retenu Tauri 2 pour la première implémentation locale.
 Ce document reste l’historique de cette décision et de ses motivations.
 
 Pendant la construction du produit, la contrainte immédiate est différente :
@@ -101,7 +103,8 @@ Le choix sera réévalué avant une première release publique, puis si l’un d
 événements suivants survient :
 
 - ajout d’une authentification native ou d’un token appareil ;
-- intégration de l’agent de tunnel au processus desktop ;
+- intégration d’un agent de tunnel authentifié ou d’un relais Revaloop au
+  processus desktop ;
 - besoin d’un updater automatique ;
 - coût de maintenance ou taille Electron incompatible avec les objectifs ;
 - parité Tauri suffisante pour retrouver une boucle de développement comparable.

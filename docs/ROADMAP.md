@@ -1,6 +1,6 @@
 # Feuille de route technique
 
-- **Dernière mise à jour :** 25 juillet 2026
+- **Dernière mise à jour :** 2 août 2026
 - **Principe :** aucun statut sans code, test et limite documentée
 
 ## Légende
@@ -36,6 +36,11 @@
 - ✅ discussion générale persistée par release entre client et développeur ;
 - ✅ signal de nouvelle `preview_revision` et rechargement client dans la même
   session valide ;
+- ✅ remplacement atomique de l’URL d’une release active lorsque le hostname du
+  tunnel change, sans perdre retours, messages ni session cliente ;
+- ✅ relais `/connect-preview` par fragment et préremplissage après connexion ;
+- ✅ diagnostic dashboard de la preview, de l’invitation et de la première
+  activité cliente ;
 - ✅ transitions séparées développeur/reviewer ;
 - ✅ synchronisation à cinq secondes ;
 - ✅ demande d’ajustements non terminale puis approbation finale atomique ;
@@ -63,7 +68,12 @@
 - ✅ lancement fixe de `npm --ignore-scripts run dev`, sans hooks adjacents, et
   arrêt de l’arbre de processus géré ;
 - ✅ logs éphémères bornés avec masquage défensif ;
-- ✅ validation d’une cible loopback et test TCP local ;
+- ✅ validation d’une cible loopback et probe HTTP `HEAD`/`GET` dans Electron ;
+- ✅ fallback Tauri limité à un probe TCP, sans validation de contenu HTTP ;
+- 🧪 Quick Tunnel `cloudflared` public et temporaire, créé après confirmation
+  native et checklist, sans token ni installation automatique ;
+- ✅ validation stricte du hostname `trycloudflare.com`, environnement minimisé,
+  logs masqués et arrêt lié au projet, à la fenêtre et à l’application ;
 - ✅ ouverture du site et de la preview dans le navigateur système ;
 - ✅ aucune API, aucun token natif et aucun cookie web dans l’app ;
 - ✅ fuses Electron durcis pour les artefacts empaquetés ;
@@ -86,11 +96,12 @@
 - l’invitation protège la revue, pas l’accès à l’URL de staging ;
 - iframe, authentification, cookies tiers, OAuth/SSO, popups, téléchargements,
   paiement et caméra restent dépendants de la preview et du navigateur ;
-- le nom reviewer est déclaratif et non vérifié ; l’interface ne collecte pas
-  d’adresse e-mail cliente ;
+- le nom et l’e-mail reviewer optionnel sont déclaratifs et non vérifiés ;
 - aucune capture ou pièce jointe ;
 - aucun e-mail n’est envoyé ;
-- aucun tunnel local ni synchronisation API native ;
+- le Quick Tunnel alpha reste public, non durable et sans contrôle d’accès ; il
+  ne remplace pas un relais Revaloop ou un staging protégé ;
+- aucune synchronisation API native ;
 - le compagnon desktop ne possède pas encore de session Revaloop et ouvre
   connexion, dashboard et retours dans le navigateur système ;
 - aucune distribution desktop signée ou notariée.
@@ -98,7 +109,7 @@
 ## Jalon 0.2.1 — fiabiliser le pilote
 
 - ⏳ tests automatisés D1 des doubles échanges et écritures concurrentes ;
-- ⏳ statut et dernière activité d’une invitation dans le dashboard ;
+- ✅ statut et dernière activité d’une invitation dans le dashboard ;
 - ✅ aide après délai et fallback explicite vers un nouvel onglet ;
 - ⏳ détection fiable du chargement ou du refus de framing, lorsque le navigateur
   permet de distinguer ces états ;
@@ -165,11 +176,13 @@ hors périmètre.
 
 ## Jalon 0.6 — compagnon connecté, agent et tunnel
 
-Objectif : rendre enfin possible `revaloop share 3000`.
+Objectif : remplacer le Quick Tunnel de pilote par un partage Revaloop durable,
+authentifié et révocable (`revaloop share 3000`).
 
 - ✅ socle Electron local et contrôle explicite du script `dev` ;
 - 🧪 fallback Tauri conservé sans parité complète des frontières de lancement ;
 - ✅ cible loopback et port explicitement autorisés dans le compagnon ;
+- 🧪 Quick Tunnel tiers sans compte pour le pilote contrôlé ;
 - ⏳ CLI `revaloop share` et agent de tunnel ;
 - ⏳ authentification d’appareil ;
 - ⏳ API desktop versionnée sans CORS et tokens opaques hachés ;
