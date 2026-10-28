@@ -18,6 +18,7 @@ import {
 } from "../lib/revaloop";
 import { generateSecret, sha256 } from "../lib/security";
 import { ensureDatabaseCompatibility } from "./compatibility-migrations";
+import { integrationSchemaStatements } from "./integration-schema";
 
 type MemberContext = {
   userId: string;
@@ -481,6 +482,13 @@ async function bootstrapDatabase() {
   }
 
   await ensureDatabaseCompatibility(db);
+  for (const statement of integrationSchemaStatements) {
+    await db.prepare(statement).run();
+  }
+  await db
+    .prepare("INSERT OR IGNORE INTO integration_instance(singleton, id) VALUES (1, ?)")
+    .bind(crypto.randomUUID())
+    .run();
 
   const now = new Date();
   const staleOperationalData = new Date(
@@ -2363,7 +2371,8 @@ export async function createReleaseMessageAsDeveloper(
       ),
   ]);
 
-  if (insertResult.meta.changes !== 1) {
+  // D1 counts revision-trigger writes in meta.changes; the target PK remains unique.
+  if (insertResult.meta.changes < 1) {
     throw new ReviewConflictError(
       "Cette version est clôturée, expirée ou n’est plus accessible.",
     );
@@ -2457,7 +2466,7 @@ export async function createReleaseMessageAsReviewer(
       ),
   ]);
 
-  if (insertResult.meta.changes !== 1) {
+  if (insertResult.meta.changes < 1) {
     throw new ReviewConflictError(
       "Cette version est clôturée ou la session vient d’être révoquée.",
     );
@@ -2542,7 +2551,7 @@ export async function incrementPreviewRevision(
   const updatedPreview = revisionResult.results[0] as
     | { preview_url: string; preview_revision: number }
     | undefined;
-  if (revisionResult.meta.changes !== 1 || !updatedPreview) {
+  if (revisionResult.meta.changes < 1 || !updatedPreview) {
     throw new ReviewConflictError(
       "Cette version est clôturée, expirée ou n’est plus accessible.",
     );
@@ -2733,7 +2742,7 @@ export async function createFeedbackAsReviewer(
       ),
   ]);
 
-  if (insertResult.meta.changes !== 1) {
+  if (insertResult.meta.changes < 1) {
     throw new ReviewConflictError(
       "Cette version est clôturée ou la session vient d’être révoquée.",
     );
@@ -2976,7 +2985,7 @@ async function applyFeedbackTransition(input: {
       ),
   ]);
 
-  if (result.meta.changes !== 1) {
+  if (result.meta.changes < 1) {
     throw new ReviewConflictError(
       "Le statut a changé entre-temps. Rechargez la recette.",
     );
@@ -3119,7 +3128,7 @@ export async function createDecisionAsReviewer(
       ),
   ]);
 
-  if (insertResult.meta.changes !== 1) {
+  if (insertResult.meta.changes < 1) {
     if (input.status === "approved") {
       const unresolved = await db
         .prepare(

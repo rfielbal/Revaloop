@@ -7892,3 +7892,62 @@ body:has(.review-flow) {
     width: 1px;
   }
 }
+
+/* Project-scoped integration credentials, never part of the reviewer UI. */
+.workspace-flow .integration-token-form,
+.workspace-flow .integration-secret,
+.workspace-flow .integration-token-list {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.workspace-flow .integration-token-form label,
+.workspace-flow .integration-secret label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.workspace-flow .integration-token-form .integration-write-option {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  line-height: 1.5;
+}
+.workspace-flow .integration-write-option input {
+  accent-color: var(--rv-color-action);
+  flex: 0 0 18px;
+  height: 18px;
+  margin-top: 2px;
+  min-height: 18px;
+  width: 18px;
+}
+.workspace-flow .integration-connections :is(p, label) {
+  overflow-wrap: anywhere;
+}
+.workspace-flow .integration-connections p {
+  color: var(--rv-color-content-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.workspace-flow .integration-connections .integration-error {
+  color: var(--danger);
+}
+.workspace-flow .integration-token-list {
+  border-top: 1px solid var(--rv-color-border);
+  margin-top: 8px;
+  padding-top: 20px;
+}
+.workspace-flow .integration-token-list h3 {
+  font-size: 14px;
+}
+.workspace-flow .integration-token-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+.workspace-flow .integration-token-row strong { font-size: 14px; }
+.workspace-flow .integration-token-row p { margin: 5px 0 0; }
+.workspace-flow .integration-secret textarea { font-family: var(--font-mono); font-size: 12px; }

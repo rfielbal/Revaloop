@@ -48,6 +48,7 @@ import {
   normalizeConnectedPreviewUrl,
 } from "../../lib/preview-url";
 import { Brand } from "../components/brand";
+import { IntegrationConnections } from "./integration-connections";
 
 type FeedbackFilter = "all" | "todo" | "to_review" | "resolved";
 type DialogName =
@@ -55,6 +56,7 @@ type DialogName =
   | "release"
   | "preview"
   | "invitation"
+  | "integration"
   | null;
 type WorkspaceTab = "feedback" | "discussion";
 type DeveloperReleaseSummary = {
@@ -1414,6 +1416,10 @@ export function DashboardClient({
                 <Link2 aria-hidden="true" />
                 Remplacer l’URL
               </button>
+              <button type="button" onClick={() => openDialog("integration")}>
+                <Link2 aria-hidden="true" />
+                Connecter un outil
+              </button>
               <button type="button" onClick={exportReview}>
                 <Download aria-hidden="true" />
                 Exporter la recette
@@ -1781,6 +1787,11 @@ export function DashboardClient({
                       ),
                     );
                 }}
+              />
+            ) : dialog === "integration" && activeProjectId ? (
+              <IntegrationConnections
+                key={activeProjectId}
+                projectId={activeProjectId}
               />
             ) : dialog === "preview" && review ? (
               <PreviewUpdateForm

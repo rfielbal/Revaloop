@@ -48,6 +48,7 @@
 - ✅ export Markdown ;
 - ✅ suppression d’un projet ;
 - ✅ audit minimal et rate limits ;
+- ✅ API d’intégration v1 par projet, jetons hachés révocables, snapshots bornés et commandes développeur idempotentes ([contrat](INTEGRATIONS.md)) ;
 - ✅ migrations D1 et purge opportuniste des données opérationnelles ;
 - ✅ en-têtes défensifs et absence de cache ;
 - 🧪 pilotage d’une vraie preview non sensible.

@@ -1,5 +1,6 @@
 import {
   index,
+  primaryKey,
   integer,
   sqliteTable,
   text,
@@ -475,3 +476,34 @@ export const rateLimitBuckets = sqliteTable("rate_limit_buckets", {
   count: integer("count").notNull().default(0),
   expiresAt: text("expires_at").notNull(),
 });
+
+/** Dedicated, revocable connectors; unrelated to browser/reviewer sessions. */
+export const integrationInstance = sqliteTable("integration_instance", {
+  singleton: integer("singleton").primaryKey(),
+  id: text("id").notNull().unique(),
+});
+export const integrationProjectRevisions = sqliteTable("integration_project_revisions", {
+  projectId: text("project_id").primaryKey().references(() => clientProjects.id,{onDelete:"cascade"}),
+  revision: integer("revision").notNull().default(0),
+});
+export const integrationTokens = sqliteTable("integration_tokens", {
+  id:text("id").primaryKey(),
+  tokenHash:text("token_hash").notNull().unique(),
+  userId:text("user_id").notNull().references(()=>appUsers.id,{onDelete:"cascade"}),
+  organizationId:text("organization_id").notNull().references(()=>organizations.id,{onDelete:"cascade"}),
+  projectId:text("project_id").notNull().references(()=>clientProjects.id,{onDelete:"cascade"}),
+  label:text("label").notNull(),
+  capabilitiesJson:text("capabilities_json").notNull(),
+  createdAt:text("created_at").notNull(),
+  expiresAt:text("expires_at").notNull(),
+  revokedAt:text("revoked_at"),
+  lastUsedAt:text("last_used_at"),
+},table=>[index("integration_tokens_project_idx").on(table.projectId,table.createdAt)]);
+export const integrationCommandReceipts = sqliteTable("integration_command_receipts", {
+  projectId:text("project_id").notNull().references(()=>clientProjects.id,{onDelete:"cascade"}),
+  requestId:text("request_id").notNull(),
+  fingerprint:text("fingerprint").notNull(),
+  executionId:text("execution_id").notNull(),
+  resultJson:text("result_json").notNull(),
+  createdAt:text("created_at").notNull(),
+},table=>[primaryKey({columns:[table.projectId,table.requestId]})]);

@@ -502,3 +502,7 @@ injection de bridge. Voir [ADR-0003](adr/0003-tls-termination-modes.md).
 
 Toute évolution d’identité, d’autorisation, de stockage, d’origine ou de
 transport doit mettre à jour ce document et le modèle de menace.
+
+## Intégrations serveur à serveur
+
+L’[API d’intégration v1](INTEGRATIONS.md) ajoute un canal distinct des cookies web et des sessions reviewer : jeton par projet, scopes fixes, expiration/révocation, lecture de snapshots et commandes développeur atomiques. Le compteur de révision est maintenu aussi pour les mutations web. Ce canal ne connecte pas automatiquement le compagnon Electron et ne modifie pas la protection de la preview externe.

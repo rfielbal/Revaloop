@@ -492,3 +492,7 @@ mettre à jour le modèle de menace ou un ADR.
 Revaloop est distribué sous [Apache License 2.0](LICENSE).
 
 Copyright 2026 Revaloop contributors.
+
+## Connecter un espace de travail
+
+Dans un projet, **Connecter un outil** crée un jeton dédié, révocable et limité au projet pour VisionBuild ou un autre client serveur. Lecture de la recette, messages partagés et transitions développeur sont disponibles via l’[API d’intégration v1](docs/INTEGRATIONS.md). La validation cliente et les comptes web restent séparés.
