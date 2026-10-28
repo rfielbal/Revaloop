@@ -57,6 +57,7 @@ type DialogName =
   | "preview"
   | "invitation"
   | "integration"
+  | "organization-integration"
   | null;
 type WorkspaceTab = "feedback" | "discussion";
 type DeveloperReleaseSummary = {
@@ -1146,6 +1147,17 @@ export function DashboardClient({
               Publier une version
             </button>
           ) : null}
+          <button
+            className="add-project-button"
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              openDialog("organization-integration");
+            }}
+          >
+            <Link2 aria-hidden="true" />
+            Connecter mon espace
+          </button>
         </nav>
 
         <div className="sidebar-profile">
@@ -1788,6 +1800,8 @@ export function DashboardClient({
                     );
                 }}
               />
+            ) : dialog === "organization-integration" ? (
+              <IntegrationConnections key="organization" scope="organization" />
             ) : dialog === "integration" && activeProjectId ? (
               <IntegrationConnections
                 key={activeProjectId}

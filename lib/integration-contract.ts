@@ -1,3 +1,7 @@
+import {
+  parseWorkflowCommand,
+  type WorkflowCommand,
+} from "./integration-workflow-contract";
 /** Public, additive integration contract. No browser sessions or reviewer authority. */
 export const integrationApiVersion = "1" as const;
 export const integrationReadCapabilities = [
@@ -8,10 +12,18 @@ export const integrationWriteCapabilities = [
   "feedback:write",
   "messages:write",
 ] as const;
+export const integrationLifecycleCapabilities = [
+  "projects:write",
+  "releases:write",
+  "invitations:write",
+  "preview:write",
+] as const;
 export type IntegrationCapability =
+  | (typeof integrationLifecycleCapabilities)[number]
   | (typeof integrationReadCapabilities)[number]
   | (typeof integrationWriteCapabilities)[number];
 export type IntegrationCommand =
+  | WorkflowCommand
   | {
       type: "feedback.transition";
       feedbackId: string;
@@ -80,12 +92,7 @@ export function parseIntegrationCommand(input: Record<string, unknown>) {
       releaseId: command.releaseId,
       body: command.body.trim(),
     };
-  } else
-    throw new IntegrationError(
-      400,
-      "invalid_command",
-      "Cette commande développeur n’est pas prise en charge.",
-    );
+  } else parsed = parseWorkflowCommand(command);
   return {
     requestId: input.requestId,
     expectedVersion: input.expectedVersion,

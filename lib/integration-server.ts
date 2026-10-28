@@ -26,7 +26,7 @@ export async function authorizeIntegration(request: Request) {
     );
   }
   const authorization = request.headers.get("authorization") ?? "";
-  const match = /^Bearer (rvi_[A-Za-z0-9_-]{43})$/.exec(authorization);
+  const match = /^Bearer (rv[io]_[A-Za-z0-9_-]{43})$/.exec(authorization);
   if (!match)
     throw new IntegrationError(
       401,

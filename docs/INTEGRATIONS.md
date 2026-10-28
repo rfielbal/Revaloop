@@ -1,56 +1,94 @@
 # API d’intégration v1
 
-Cette API additive relie un espace de travail interne à un projet Revaloop sans partager les sessions navigateur, invitations clientes ou bases de données. Revaloop reste utilisable seul. La première intégration est VisionBuild.
+L’API relie un espace interne, notamment VisionBuild, à Revaloop sans partager les sessions web ni les bases de données. Revaloop reste autonome. VisionBuild garde les clients, projets internes, notes privées et finances ; Revaloop reçoit uniquement les projets de recette, versions et informations explicitement partagées.
 
-## Créer une connexion
+## Connexions
 
-Dans le dashboard développeur, choisir le projet puis **Connecter un outil**. Donner un nom, une expiration (7, 30 ou 90 jours) et choisir lecture seule ou autorisation des actions développeur. Copier le jeton affiché une seule fois dans le serveur de l’outil connecté. Il est limité à ce projet, conservé uniquement sous forme SHA-256 côté Revaloop et révocable depuis le même écran. Le propriétaire de l’organisation peut révoquer toutes les connexions du projet ; un développeur uniquement les siennes.
+**Connecter mon espace**, dans la navigation développeur, crée un jeton d’organisation `rvo_…` pour retrouver les recettes et les gérer depuis un outil interne. L’option d’écriture autorise la création de projets/versions, les invitations, la mise à jour des previews, les messages et les transitions développeur. Elle ne donne jamais le rôle client.
 
-Le jeton donne accès aux informations de recette partagées : nom/description du projet, versions, retours, messages et décisions. Aucun mot de passe, secret d’invitation, cookie, e-mail reviewer ou donnée CRM n’est exporté. Les corps de retours et messages peuvent néanmoins contenir des données personnelles saisies par les utilisateurs : l’outil destinataire doit les traiter comme du contenu externe non fiable.
+**Connecter un outil**, dans un projet, conserve le jeton historique `rvi_…` limité à ce projet : lecture, puis messages/transitions si explicitement autorisés. Les anciens jetons ne gagnent aucune capacité supplémentaire.
 
-## Contrat HTTP
+Chaque jeton expire (7, 30 ou 90 jours), s’affiche une fois, est stocké uniquement sous forme SHA-256 et peut être révoqué depuis le même écran. Le propriétaire de l’organisation peut gérer toutes ses connexions ; un développeur seulement les siennes. Les routes web de gestion exigent une session développeur et conservent la vérification d’origine.
 
-Routes serveur à serveur, sans CORS permissif, avec `Authorization: Bearer <jeton>`. HTTPS est attendu en exploitation ; HTTP loopback est destiné au développement. Les cookies seuls ne donnent jamais accès à cette API. Un en-tête Origin présent doit correspondre exactement à Revaloop.
+`POST /api/integrations/tokens` accepte `{scope:"organization",label,write,expiresInDays}` pour l’organisation, ou `{projectId,label,write,expiresInDays}` pour un projet. GET utilise `?scope=organization` ou `?project=…`. DELETE reprend le périmètre et `tokenId`. Le jeton brut ne doit être conservé que dans le stockage sécurisé du serveur destinataire.
 
-- `GET /api/integrations/v1/capabilities` : `apiVersion: "1"`, `instanceId`, `organizationId`, `project: { id, name }`, `capabilities`.
-- `GET /api/integrations/v1/projects` : même identité et un tableau contenant uniquement le projet autorisé.
-- `GET /api/integrations/v1/projects/:id/snapshot` : identité, `project`, `version` opaque, `fetchedAt`, `releases`, `feedback`, `messages`, `decisions`, `limited`.
-- `POST /api/integrations/v1/projects/:id/commands` : `{requestId, expectedVersion, command}`. `requestId` est un UUID ; `expectedVersion` vient du dernier snapshot relu par l’utilisateur.
+## Lecture HTTP
 
-Commandes actuellement disponibles :
+Le serveur destinataire utilise `Authorization: Bearer <jeton>`, sans cookies ni CORS permissif. HTTPS est attendu en exploitation ; HTTP loopback sert aux tests locaux. Un en-tête Origin présent doit correspondre à Revaloop. Les réponses sont `private, no-store`.
+
+- `GET /api/integrations/v1/capabilities` : `{apiVersion:"1",instanceId,organizationId,scope,project,capabilities}`. `project` vaut `{id,name}` pour un jeton projet, `null` pour une organisation.
+- `GET /api/integrations/v1/projects` : identité, `version` opaque du catalogue, `projects:[{id,name,description}]`, `limited`. Le résultat reste limité à l’organisation autorisée, et au seul projet pour les anciens jetons.
+- `GET /api/integrations/v1/projects/:id/snapshot` : identité, `project`, `version`, `fetchedAt`, `releases`, `feedback`, `messages`, `decisions`, `invitations`, `limited`.
+
+Chaque release expose aussi `reviewerMessage` et `testItems:[{id,title,description,position}]`. Chaque invitation expose `{id,releaseId,reviewerName,expiresAt,revokedAt,usedAt}`. Aucun secret d’invitation, cookie, mot de passe ou e-mail reviewer n’apparaît dans les snapshots. Le contenu partagé peut contenir des données personnelles et reste du contenu externe non fiable pour un assistant.
+
+## Écriture HTTP
+
+Toutes les commandes utilisent `{requestId,expectedVersion,command}`. `requestId` est un UUID conservé pour les retries. `expectedVersion` vient de la dernière lecture présentée à l’utilisateur.
+
+`POST /api/integrations/v1/commands`, avec la version du **catalogue** et les capacités organisation `projects:write` et `releases:write`, accepte :
 
 ```json
 {
-  "type": "feedback.transition",
-  "feedbackId": "feedback_…",
-  "status": "in_progress"
+  "type": "project.create",
+  "name": "Site du client",
+  "description": "Périmètre partagé",
+  "release": {
+    "version": "v1",
+    "title": "Première recette",
+    "commitSha": "abc123",
+    "previewUrl": "https://staging.example.com/",
+    "reviewerMessage": "Vérifiez le formulaire de contact.",
+    "expiresInDays": 14,
+    "testItems": [
+      {
+        "title": "Envoyer un message",
+        "description": "Une confirmation apparaît."
+      }
+    ]
+  }
 }
 ```
 
-```json
-{
-  "type": "message.create",
-  "releaseId": "release_…",
-  "body": "Le correctif est prêt à vérifier."
-}
-```
+`release` est réutilisé pour `release.create` ; expiration entre 1 et 30 jours, 12 points à vérifier au maximum, URL HTTPS sans identifiants intégrés. Créer une release nécessite que la précédente soit approuvée ou expirée ; son numéro doit être unique pour ce projet.
 
-Les seules transitions développeur sont `open → in_progress → to_review`. `resolved`, l’approbation finale, les invitations, nouvelles releases, publications de build et suppressions ne sont pas exposés par cette V1. Un message est **visible au client**, limité à 2 000 caractères et accepté seulement pour une release active/non expirée.
+`POST /api/integrations/v1/projects/:id/commands`, avec la version du **snapshot projet**, accepte :
 
-La réponse d’écriture contient `{requestId, alreadyApplied, result, snapshot}`. Réessayer exactement la même commande et la même version avec le même UUID renvoie le reçu sans duplication, même après un redémarrage ou une rotation du jeton pour le même développeur/projet. Réutiliser cet UUID pour un autre contenu est refusé. Une erreur 409 nécessite une actualisation/relecture ; l’outil ne doit pas contourner ce conflit en créant silencieusement un nouvel UUID. Une réponse réseau incertaine se reprend avec le même UUID.
+| Commande              | Paramètres                                                                                        | Capacité            |
+| --------------------- | ------------------------------------------------------------------------------------------------- | ------------------- |
+| `release.create`      | `release`                                                                                         | `releases:write`    |
+| `invitation.create`   | `releaseId`, `reviewerName`, `reviewerEmail` (string ou null), `expiresInDays`, `replaceExisting` | `invitations:write` |
+| `invitation.revoke`   | `releaseId`                                                                                       | `invitations:write` |
+| `preview.update`      | `releaseId`, `previewUrl` optionnelle                                                             | `preview:write`     |
+| `feedback.transition` | `feedbackId`, `status`                                                                            | `feedback:write`    |
+| `message.create`      | `releaseId`, `body`                                                                               | `messages:write`    |
 
-Codes : 400 entrée invalide, 401 jeton inconnu/expiré/révoqué, 403 capacité ou origine refusée, 404 projet/ressource hors périmètre, 409 état obsolète/transition/conflit d’idempotence, 429 débit dépassé. Les réponses ne sont pas mises en cache.
+Seules les transitions `open → in_progress → to_review` sont autorisées. La résolution, la décision finale, les suppressions et les builds immuables ne sont pas exposés. Un message est **visible au client**, limité à 2 000 caractères. `preview.update` incrémente la révision de preview mais ne change pas le commit déclaré ni ne prouve son contenu.
 
-## Cohérence et stockage
+La réponse est `{requestId,alreadyApplied,result,snapshot}`. Le résultat de création de projet/release contient `projectId` et `releaseId`.
 
-Migration additive `0005_typical_stephen_strange.sql` : identité d’instance persistante, compteur de révision par projet, jetons et reçus de commande. Elle inclut des triggers sur projets, releases, retours, messages et décisions ; les modifications depuis l’interface web invalident donc aussi les versions précédentes. Le bootstrap local applique les mêmes tables/triggers de manière idempotente. Appliquer la migration avec le mécanisme D1 habituel avant publication du code ; aucun déploiement automatique n’est effectué par le connecteur.
+### Invitation : secret fourni une seule fois
 
-Le snapshot est lu dans un batch D1 cohérent. La version SHA-256 dérive de l’identité d’instance, du projet et de sa révision. La commande vérifie atomiquement cette révision, l’accès, l’expiration, le rôle et l’état métier, puis conserve son reçu et son audit dans le même batch. Les compteurs `meta.changes` de D1 incluent les écritures de triggers : les anciennes mutations ciblant une clé unique vérifient désormais qu’au moins une ligne a été modifiée, sans changer leurs prédicats d’accès.
+La première réponse réussie à `invitation.create` contient `result.invitePath`, un chemin `/join#token=…` à résoudre avec l’origine Revaloop validée. Le secret n’est jamais écrit dans le reçu D1, les audits ou les snapshots. Un replay renvoie les mêmes identifiants et `result.secretUnavailable:true`, sans régénérer ni révoquer de lien. Après une perte de réponse, l’utilisateur doit demander explicitement un remplacement : nouvelle commande, nouvelle version relue, `replaceExisting:true`.
 
-Limites : 100 versions récentes, 1 000 retours et 1 000 messages de ces versions, 100 décisions. `limited: true` indique une liste partielle ; les enfants ne sont jamais retournés sans leur version. Ordre des collections : date décroissante puis identifiant décroissant. Les reçus sont conservés avec le projet, jusqu’à 10 000 commandes ; vingt connexions non expirées/révoquées au maximum sont créables par projet. Révoquer un jeton conserve les reçus. Supprimer un projet les supprime avec les autres données de recette.
+`replaceExisting:false` refuse une invitation active existante. `true` révoque les anciennes invitations et sessions de cette release dans la même transaction. `invitation.revoke` révoque aussi les sessions. L’API n’envoie aucun e-mail ; le partage du lien relève d’une action distincte dans l’outil destinataire.
 
-Il n’y a pas encore de flux d’événements incrémental, webhook, synchronisation native du compagnon desktop ou système de builds immuables. Un connecteur local utilise des lectures sortantes de snapshots et indique sa dernière actualisation. Une validation Revaloop n’écrit pas automatiquement dans la comptabilité et ne prouve pas qu’une preview mutable correspond au commit déclaré.
+### Idempotence et conflits
+
+Même UUID, version et contenu : reçu durable sans duplication, y compris après rotation du jeton pour le même développeur. Un UUID réutilisé autrement est refusé. Une réponse réseau incertaine se reprend avec le même UUID. Un conflit 409 demande une actualisation et une relecture ; aucun nouvel UUID ne doit être généré silencieusement pour contourner le conflit.
+
+Codes : 400 entrée invalide, 401 jeton invalide/expiré/révoqué, 403 capacité/origine refusée, 404 ressource hors périmètre, 409 version/état/idempotence, 429 débit, 503 indisponibilité.
+
+## Migrations et limites
+
+Appliquer les migrations additives `0005_typical_stephen_strange.sql` puis `0006_steep_snowbird.sql` avant publication du code avec le mécanisme D1 prévu par l’hébergeur. La 0006 ajoute les jetons, révisions et reçus d’organisation et une vue d’authentification unifiée ; elle ne recrée ni ne vide les tables existantes. La migration 0006 ne contient aucun seed ni backfill. Les organisations existantes reçoivent leur première révision par une écriture de données bornée lors de la première lecture authentifiée du catalogue. Aucun DDL supplémentaire n’est exécuté dans les requêtes ; le bootstrap historique reste inchangé.
+
+Les mutations projets/releases/retours/messages/décisions/invitations/instructions alimentent les révisions projet et organisation, y compris depuis l’interface web. Le heartbeat d’une session ne modifie pas ces révisions. Les commandes vérifient atomiquement révision, accès, expiration et état métier, puis enregistrent reçu, mutations et audit dans un même batch D1. Les changements comptés par D1 incluent les triggers.
+
+Limites de lecture : 200 projets, 100 versions récentes, 1 000 retours, 1 000 messages, 100 décisions, 1 000 invitations et 1 200 points à vérifier. `limited:true` signale une lecture partielle ; les enfants ne sont pas retournés sans leur version. Collections par date décroissante puis ID décroissant ; points à vérifier par position. Limites de stockage : 20 jetons actifs par périmètre, 10 000 reçus par projet et par organisation. Révoquer conserve les reçus.
+
+Pas encore de webhook, flux incrémental, connexion automatique Electron, validation comptable ni garantie de build immuable. Un connecteur sortant affiche sa dernière actualisation.
 
 ## Vérification
 
-`node --test tests/integrations.test.mjs tests/database-migrations.test.mjs` vérifie les migrations réelles dans SQLite en mémoire, les limites de projet, jetons, expiration/révocation, statuts, reçus et conflits. Le shim de test compte les écritures de triggers comme D1. Un test HTTP avec le runtime Worker/D1 local reste nécessaire avant livraison ; ces tests ne prouvent pas le déploiement distant.
+`npm test` compile puis exécute les tests applicatifs et le pilote. Les tests d’intégration utilisent les vraies migrations SQLite et un adaptateur comptant les écritures de triggers comme D1 : limites d’accès, compatibilité des anciens jetons, révocation, créations concurrentes, conflits, statuts, secrets d’invitation et replays. Le parcours HTTP local doit aussi vérifier le runtime Worker/D1 et les sessions client distinctes ; ces vérifications locales ne prouvent pas le déploiement distant.

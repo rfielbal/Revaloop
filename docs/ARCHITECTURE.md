@@ -505,4 +505,4 @@ transport doit mettre à jour ce document et le modèle de menace.
 
 ## Intégrations serveur à serveur
 
-L’[API d’intégration v1](INTEGRATIONS.md) ajoute un canal distinct des cookies web et des sessions reviewer : jeton par projet, scopes fixes, expiration/révocation, lecture de snapshots et commandes développeur atomiques. Le compteur de révision est maintenu aussi pour les mutations web. Ce canal ne connecte pas automatiquement le compagnon Electron et ne modifie pas la protection de la preview externe.
+L’[API d’intégration v1](INTEGRATIONS.md) ajoute un canal distinct des cookies web et des sessions reviewer : jetons par projet ou organisation, capacités explicites, expiration/révocation, catalogue versionné, snapshots et commandes développeur atomiques. Les invitations sont fournies une seule fois et leurs secrets ne figurent jamais dans les reçus durables. Le compteur de révision est maintenu aussi pour les mutations web. Ce canal ne connecte pas automatiquement le compagnon Electron et ne modifie pas la protection de la preview externe.

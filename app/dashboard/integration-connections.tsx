@@ -8,7 +8,13 @@ type Token = {
   expiresAt: string;
   revokedAt: string | null;
 };
-export function IntegrationConnections({ projectId }: { projectId: string }) {
+export function IntegrationConnections({
+  projectId,
+  scope = "project",
+}: {
+  projectId?: string;
+  scope?: "project" | "organization";
+}) {
   const [tokens, setTokens] = useState<Token[]>([]),
     [label, setLabel] = useState("VisionBuild"),
     [write, setWrite] = useState(false),
@@ -20,7 +26,9 @@ export function IntegrationConnections({ projectId }: { projectId: string }) {
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       const response = await fetch(
-        `/api/integrations/tokens?project=${encodeURIComponent(projectId)}`,
+        scope === "organization"
+          ? "/api/integrations/tokens?scope=organization"
+          : `/api/integrations/tokens?project=${encodeURIComponent(projectId ?? "")}`,
         { cache: "no-store", signal },
       );
       const body = (await response.json()) as {
@@ -31,7 +39,7 @@ export function IntegrationConnections({ projectId }: { projectId: string }) {
         throw new Error(body.error || "Impossible de lire les connexions.");
       return body.tokens;
     },
-    [projectId],
+    [projectId, scope],
   );
   useEffect(() => {
     const controller = new AbortController();
@@ -57,7 +65,12 @@ export function IntegrationConnections({ projectId }: { projectId: string }) {
       const response = await fetch("/api/integrations/tokens", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, label, write, expiresInDays: days }),
+        body: JSON.stringify({
+          ...(scope === "organization" ? { scope } : { projectId }),
+          label,
+          write,
+          expiresInDays: days,
+        }),
       });
       const result = (await response.json()) as {
         error?: string;
@@ -84,7 +97,10 @@ export function IntegrationConnections({ projectId }: { projectId: string }) {
       const response = await fetch("/api/integrations/tokens", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, tokenId: id }),
+        body: JSON.stringify({
+          ...(scope === "organization" ? { scope } : { projectId }),
+          tokenId: id,
+        }),
       });
       const result = (await response.json()) as {
         error?: string;
@@ -110,8 +126,9 @@ export function IntegrationConnections({ projectId }: { projectId: string }) {
       </span>
       <h2 id="secure-dialog-title">Connecter votre espace de travail</h2>
       <p className="secure-dialog-lead">
-        Une connexion dédiée à ce projet. Les comptes et invitations clients
-        restent séparés.
+        {scope === "organization"
+          ? "Reliez votre espace de travail pour retrouver et gérer les recettes de vos projets."
+          : "Une connexion dédiée à ce projet. Les comptes et invitations clients restent séparés."}
       </p>
       {error ? (
         <p className="integration-error" role="alert">
@@ -178,7 +195,9 @@ export function IntegrationConnections({ projectId }: { projectId: string }) {
               checked={write}
               onChange={(e) => setWrite(e.target.checked)}
             />
-            Autoriser les messages et la prise en charge des retours
+            {scope === "organization"
+              ? "Autoriser la gestion des projets, versions et invitations"
+              : "Autoriser les messages et la prise en charge des retours"}
           </label>
           <p>
             Lecture seule par défaut. La validation des corrections reste
@@ -193,7 +212,11 @@ export function IntegrationConnections({ projectId }: { projectId: string }) {
         </form>
       )}
       <div className="integration-token-list">
-        <h3>Connexions du projet</h3>
+        <h3>
+          {scope === "organization"
+            ? "Connexions de l’espace"
+            : "Connexions du projet"}
+        </h3>
         {tokens.filter((t) => !t.revokedAt).length ? (
           tokens
             .filter((t) => !t.revokedAt)

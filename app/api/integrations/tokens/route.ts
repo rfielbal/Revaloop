@@ -24,10 +24,15 @@ export async function GET(request: Request) {
   try {
     const service = await integrationService();
     return integrationJson({
-      tokens: await service.listTokens(
-        await provisionDeveloper(identity),
-        new URL(request.url).searchParams.get("project") ?? "",
-      ),
+      tokens:
+        new URL(request.url).searchParams.get("scope") === "organization"
+          ? await service.listOrganizationTokens(
+              await provisionDeveloper(identity),
+            )
+          : await service.listTokens(
+              await provisionDeveloper(identity),
+              new URL(request.url).searchParams.get("project") ?? "",
+            ),
     });
   } catch (error) {
     return integrationErrorResponse(error);
@@ -48,9 +53,16 @@ export async function POST(request: Request) {
     if (
       Object.keys(body).some(
         (key) =>
-          !["projectId", "label", "write", "expiresInDays"].includes(key),
+          !["scope", "projectId", "label", "write", "expiresInDays"].includes(
+            key,
+          ),
       ) ||
-      typeof body.projectId !== "string" ||
+      (body.scope === "organization"
+        ? body.projectId !== undefined
+        : typeof body.projectId !== "string") ||
+      (body.scope !== undefined &&
+        body.scope !== "organization" &&
+        body.scope !== "project") ||
       typeof body.label !== "string" ||
       body.label.length > 80 ||
       typeof body.write !== "boolean" ||
@@ -73,12 +85,17 @@ export async function POST(request: Request) {
       );
     const service = await integrationService();
     return integrationJson(
-      await service.createToken(await provisionDeveloper(identity), {
-        projectId: body.projectId,
-        label,
-        write: body.write,
-        expiresInDays: body.expiresInDays,
-      }),
+      body.scope === "organization"
+        ? await service.createOrganizationToken(
+            await provisionDeveloper(identity),
+            { label, write: body.write, expiresInDays: body.expiresInDays },
+          )
+        : await service.createToken(await provisionDeveloper(identity), {
+            projectId: body.projectId as string,
+            label,
+            write: body.write,
+            expiresInDays: body.expiresInDays,
+          }),
       201,
     );
   } catch (error) {
@@ -93,9 +110,14 @@ export async function DELETE(request: Request) {
     const body = await readJsonObject(request);
     if (
       Object.keys(body).some(
-        (key) => !["projectId", "tokenId"].includes(key),
+        (key) => !["scope", "projectId", "tokenId"].includes(key),
       ) ||
-      typeof body.projectId !== "string" ||
+      (body.scope === "organization"
+        ? body.projectId !== undefined
+        : typeof body.projectId !== "string") ||
+      (body.scope !== undefined &&
+        body.scope !== "organization" &&
+        body.scope !== "project") ||
       typeof body.tokenId !== "string" ||
       !/^[A-Za-z0-9_-]{1,120}$/.test(body.tokenId)
     )
@@ -105,11 +127,17 @@ export async function DELETE(request: Request) {
         "Connexion invalide.",
       );
     const service = await integrationService();
-    await service.revokeToken(
-      await provisionDeveloper(identity),
-      body.projectId,
-      body.tokenId,
-    );
+    if (body.scope === "organization")
+      await service.revokeOrganizationToken(
+        await provisionDeveloper(identity),
+        body.tokenId,
+      );
+    else
+      await service.revokeToken(
+        await provisionDeveloper(identity),
+        body.projectId as string,
+        body.tokenId,
+      );
     return integrationJson({ revoked: true });
   } catch (error) {
     return integrationErrorResponse(error);

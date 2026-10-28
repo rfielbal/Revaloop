@@ -7,8 +7,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const { service, context } = await authorizeIntegration(request);
-    const identity = await service.capabilities(context);
-    return integrationJson({ ...identity, projects: [identity.project] });
+    return integrationJson(await service.catalog(context));
   } catch (error) {
     return integrationErrorResponse(error);
   }

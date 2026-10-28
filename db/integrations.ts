@@ -1,15 +1,17 @@
+import { createIntegrationWorkflow } from "./integration-workflow";
 import {
   IntegrationError,
   integrationApiVersion,
   integrationDigest,
   integrationReadCapabilities,
   integrationWriteCapabilities,
+  integrationLifecycleCapabilities,
   parseIntegrationCommand,
   type IntegrationCapability,
   type IntegrationCommand,
 } from "../lib/integration-contract";
 
-type Member = {
+export type IntegrationMember = {
   userId: string;
   organizationId: string;
   role: "owner" | "developer";
@@ -18,8 +20,9 @@ export type IntegrationTokenContext = {
   id: string;
   userId: string;
   organizationId: string;
-  projectId: string;
-  projectName: string;
+  projectId: string | null;
+  projectName: string | null;
+  scope: "project" | "organization";
   displayName: string;
   capabilities: IntegrationCapability[];
 };
@@ -41,6 +44,13 @@ export type IntegrationSnapshot = {
     createdAt: string;
     updatedAt: string;
     expiresAt: string;
+    reviewerMessage: string;
+    testItems: Array<{
+      id: string;
+      title: string;
+      description: string;
+      position: number;
+    }>;
   }>;
   feedback: Array<{
     id: string;
@@ -70,6 +80,14 @@ export type IntegrationSnapshot = {
     authorName: string;
     createdAt: string;
   }>;
+  invitations: Array<{
+    id: string;
+    releaseId: string;
+    reviewerName: string;
+    expiresAt: string;
+    revokedAt: string | null;
+    usedAt: string | null;
+  }>;
   limited: boolean;
 };
 type Receipt = { fingerprint: string; result_json: string };
@@ -91,7 +109,10 @@ export function createIntegrationService(
   db: D1Database,
   now = () => new Date().toISOString(),
 ) {
-  async function authorizeProject(member: Member, projectId: string) {
+  async function authorizeProject(
+    member: IntegrationMember,
+    projectId: string,
+  ) {
     if (!rowId(projectId))
       throw new IntegrationError(400, "invalid_project", "Projet invalide.");
     const project = await db
@@ -112,25 +133,26 @@ export function createIntegrationService(
   async function authenticate(
     secret: string,
   ): Promise<IntegrationTokenContext> {
-    if (!/^rvi_[A-Za-z0-9_-]{43}$/.test(secret)) throw invalidToken();
+    if (!/^rv[io]_[A-Za-z0-9_-]{43}$/.test(secret)) throw invalidToken();
     const token = await db
       .prepare(
         `SELECT t.id, t.user_id, t.organization_id, t.project_id, t.capabilities_json,
-      u.display_name, p.name AS project_name FROM integration_tokens t
+      u.display_name, p.name AS project_name, t.scope FROM integration_credentials t
       JOIN app_users u ON u.id = t.user_id
-      JOIN client_projects p ON p.id = t.project_id AND p.organization_id = t.organization_id
+      LEFT JOIN client_projects p ON p.id = t.project_id AND p.organization_id = t.organization_id
       JOIN organization_members m ON m.user_id = t.user_id AND m.organization_id = t.organization_id
-      WHERE t.token_hash = ? AND t.revoked_at IS NULL AND t.expires_at > ? LIMIT 1`,
+      WHERE t.token_hash = ? AND t.revoked_at IS NULL AND t.expires_at > ? AND (t.scope='organization' OR p.id IS NOT NULL) LIMIT 1`,
       )
       .bind(await integrationDigest(secret), now())
       .first<{
         id: string;
         user_id: string;
         organization_id: string;
-        project_id: string;
+        project_id: string | null;
         capabilities_json: string;
         display_name: string;
-        project_name: string;
+        project_name: string | null;
+        scope: "project" | "organization";
       }>();
     if (!token) throw invalidToken();
     let capabilities: IntegrationCapability[];
@@ -149,16 +171,20 @@ export function createIntegrationService(
           ![
             ...integrationReadCapabilities,
             ...integrationWriteCapabilities,
+            ...integrationLifecycleCapabilities,
           ].includes(scope),
       )
     )
       throw invalidToken();
     await db
-      .prepare("UPDATE integration_tokens SET last_used_at = ? WHERE id = ?")
+      .prepare(
+        `UPDATE ${token.scope === "organization" ? "integration_organization_tokens" : "integration_tokens"} SET last_used_at = ? WHERE id = ?`,
+      )
       .bind(now(), token.id)
       .run();
     return {
       id: token.id,
+      scope: token.scope,
       userId: token.user_id,
       organizationId: token.organization_id,
       projectId: token.project_id,
@@ -184,7 +210,10 @@ export function createIntegrationService(
       apiVersion: integrationApiVersion,
       instanceId: await instanceId(),
       organizationId: context.organizationId,
-      project: { id: context.projectId, name: context.projectName },
+      scope: context.scope,
+      project: context.projectId
+        ? { id: context.projectId, name: context.projectName }
+        : null,
       capabilities: context.capabilities,
     };
   }
@@ -192,7 +221,7 @@ export function createIntegrationService(
     context: IntegrationTokenContext,
     projectId: string,
   ) {
-    if (projectId !== context.projectId)
+    if (context.scope !== "organization" && projectId !== context.projectId)
       throw new IntegrationError(
         404,
         "project_not_found",
@@ -205,7 +234,7 @@ export function createIntegrationService(
         .prepare(
           `SELECT p.id, p.name, p.description, v.revision FROM client_projects p
         JOIN integration_project_revisions v ON v.project_id=p.id
-        JOIN integration_tokens t ON t.project_id=p.id AND t.organization_id=p.organization_id
+        JOIN integration_credentials t ON (t.project_id=p.id OR t.scope='organization') AND t.organization_id=p.organization_id
         JOIN organization_members m ON m.user_id=t.user_id AND m.organization_id=t.organization_id
         WHERE p.id=? AND t.id=? AND t.revoked_at IS NULL AND t.expires_at>?`,
         )
@@ -213,7 +242,7 @@ export function createIntegrationService(
       db
         .prepare(
           `SELECT id, version, title, status, commit_sha AS commitSha, preview_url AS previewUrl,
-        preview_revision AS previewRevision, created_at AS createdAt, updated_at AS updatedAt, expires_at AS expiresAt
+        reviewer_message AS reviewerMessage, preview_revision AS previewRevision, created_at AS createdAt, updated_at AS updatedAt, expires_at AS expiresAt
         FROM review_releases WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT 101`,
         )
         .bind(projectId),
@@ -242,8 +271,18 @@ export function createIntegrationService(
         ORDER BY d.created_at DESC,d.id DESC LIMIT 101`,
         )
         .bind(projectId, projectId),
+      db
+        .prepare(
+          `SELECT i.id,i.release_id AS releaseId,i.reviewer_name AS reviewerName,i.expires_at AS expiresAt,i.revoked_at AS revokedAt,i.used_at AS usedAt FROM review_invitations i JOIN review_releases r ON r.id=i.release_id WHERE r.project_id=? AND r.id IN (SELECT id FROM review_releases WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT 100) ORDER BY i.created_at DESC,i.id DESC LIMIT 1001`,
+        )
+        .bind(projectId, projectId),
+      db
+        .prepare(
+          `SELECT i.id,i.release_id AS releaseId,i.title,i.description,i.position FROM review_test_items i JOIN review_releases r ON r.id=i.release_id WHERE r.project_id=? AND r.id IN (SELECT id FROM review_releases WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT 100) ORDER BY i.position,i.id LIMIT 1201`,
+        )
+        .bind(projectId, projectId),
     ];
-    const rows = await db.batch(queries);
+    const rows = await db.batch<Record<string, unknown>>(queries);
     const project = rows[0].results[0] as
       | { id: string; name: string; description: string; revision: number }
       | undefined;
@@ -262,10 +301,17 @@ export function createIntegrationService(
         name: project.name,
         description: project.description,
       },
-      releases: rows[1].results.slice(
-        0,
-        100,
-      ) as IntegrationSnapshot["releases"],
+      releases: rows[1].results.slice(0, 100).map((row) => ({
+        ...row,
+        testItems: rows[6].results
+          .filter((item) => item.releaseId === row.id)
+          .map((item) => ({
+            id: item.id,
+            title: item.title,
+            description: item.description,
+            position: item.position,
+          })),
+      })) as IntegrationSnapshot["releases"],
       feedback: rows[2].results.slice(
         0,
         1000,
@@ -278,7 +324,13 @@ export function createIntegrationService(
         0,
         100,
       ) as IntegrationSnapshot["decisions"],
+      invitations: rows[5].results.slice(
+        0,
+        1000,
+      ) as IntegrationSnapshot["invitations"],
       limited:
+        rows[5].results.length > 1000 ||
+        rows[6].results.length > 1200 ||
         rows[1].results.length > 100 ||
         rows[2].results.length > 1000 ||
         rows[3].results.length > 1000 ||
@@ -286,7 +338,7 @@ export function createIntegrationService(
     };
     return { snapshot, revision: project.revision };
   }
-  async function listTokens(member: Member, projectId: string) {
+  async function listTokens(member: IntegrationMember, projectId: string) {
     await authorizeProject(member, projectId);
     const rows = await db
       .prepare(
@@ -310,7 +362,7 @@ export function createIntegrationService(
     }));
   }
   async function createToken(
-    member: Member,
+    member: IntegrationMember,
     input: {
       projectId: string;
       label: string;
@@ -371,7 +423,7 @@ export function createIntegrationService(
     };
   }
   async function revokeToken(
-    member: Member,
+    member: IntegrationMember,
     projectId: string,
     tokenId: string,
   ) {
@@ -407,7 +459,15 @@ export function createIntegrationService(
     },
   ) {
     input = parseIntegrationCommand({ ...input });
-    if (projectId !== context.projectId)
+    if (
+      input.command.type !== "feedback.transition" &&
+      input.command.type !== "message.create"
+    )
+      return workflow.projectCommand(context, projectId, {
+        ...input,
+        command: input.command,
+      });
+    if (context.scope !== "organization" && projectId !== context.projectId)
       throw new IntegrationError(
         404,
         "project_not_found",
@@ -541,9 +601,9 @@ export function createIntegrationService(
       .prepare(
         `INSERT OR IGNORE INTO integration_command_receipts(project_id,request_id,fingerprint,execution_id,result_json,created_at)
       SELECT ?,?,?,?,?,? FROM integration_project_revisions v
-      JOIN integration_tokens t ON t.project_id=v.project_id
+      JOIN integration_credentials t ON (t.project_id=v.project_id OR t.scope='organization')
       JOIN organization_members m ON m.user_id=t.user_id AND m.organization_id=t.organization_id
-      JOIN client_projects p ON p.id=t.project_id AND p.organization_id=t.organization_id
+      JOIN client_projects p ON p.id=v.project_id AND p.organization_id=t.organization_id
       WHERE v.project_id=? AND v.revision=? AND t.id=? AND t.revoked_at IS NULL AND t.expires_at>?
       AND ${eligibility}
       AND (SELECT COUNT(*) FROM integration_command_receipts WHERE project_id=?) < 10000`,
@@ -603,7 +663,13 @@ export function createIntegrationService(
       snapshot: (await readSnapshot(context, projectId)).snapshot,
     };
   }
+  const workflow = createIntegrationWorkflow(db, {
+    now,
+    readSnapshot,
+    instanceId,
+  });
   return {
+    ...workflow,
     authenticate,
     capabilities,
     snapshot: async (context: IntegrationTokenContext, id: string) =>

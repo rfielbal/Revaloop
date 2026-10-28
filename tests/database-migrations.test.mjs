@@ -11,6 +11,7 @@ const migrationFiles = [
   "0003_sparkling_wrecker.sql",
   "0004_new_ben_parker.sql",
   "0005_typical_stephen_strange.sql",
+  "0006_steep_snowbird.sql",
 ];
 
 function runMigration(database, sql) {
@@ -117,7 +118,7 @@ test("applique réellement toutes les migrations D1 dans l’ordre", async () =>
     .prepare("PRAGMA foreign_key_list(review_decisions)")
     .all();
 
-  assert.equal(tables.length, 24);
+  assert.equal(tables.length, 27);
   assert.ok(
     feedbackColumns.some(({ name }) => name === "author_type"),
   );

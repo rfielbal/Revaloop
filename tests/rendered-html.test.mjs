@@ -474,7 +474,7 @@ test("refuse le bootstrap anonyme sur une instance publique neuve", async () => 
   assert.match(payload.error, /initialisation publique est verrouillée/i);
 });
 
-test("versionne les vingt-quatre tables D1 et les migrations de sécurité", async () => {
+test("versionne les vingt-sept tables D1 et les migrations de sécurité", async () => {
   const [
     schema,
     legacy,
@@ -483,6 +483,7 @@ test("versionne les vingt-quatre tables D1 et les migrations de sécurité", asy
     collaboration,
     feedbackAuthors,
     integrations,
+    workflow,
     hosting,
   ] = await Promise.all([
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
@@ -507,17 +508,18 @@ test("versionne les vingt-quatre tables D1 et les migrations de sécurité", asy
       "utf8",
     ),
     readFile(new URL("../drizzle/0005_typical_stephen_strange.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0006_steep_snowbird.sql", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
   ]);
 
   const schemaTables = [
     ...schema.matchAll(/sqliteTable\(\s*["']([^"']+)["']/g),
   ].map((match) => match[1]);
-  const migratedTables = [legacy, secure, collaboration, integrations]
+  const migratedTables = [legacy, secure, collaboration, integrations, workflow]
     .flatMap((sql) => [...sql.matchAll(/CREATE TABLE `([^`]+)`/g)])
     .map((match) => match[1]);
 
-  assert.equal(schemaTables.length, 24);
+  assert.equal(schemaTables.length, 27);
   assert.deepEqual(
     [...new Set(migratedTables)].sort(),
     [...schemaTables].sort(),

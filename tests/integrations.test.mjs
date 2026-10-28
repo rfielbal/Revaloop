@@ -29,6 +29,7 @@ const migrations = await Promise.all(
     "0003_sparkling_wrecker",
     "0004_new_ben_parker",
     "0005_typical_stephen_strange",
+    "0006_steep_snowbird",
   ].map((file) =>
     readFile(new URL(`../drizzle/${file}.sql`, import.meta.url), "utf8"),
   ),
@@ -473,6 +474,388 @@ test("a revoked token cannot apply a command even with a cached context", async 
     );
     assert.equal(
       f.db.prepare("SELECT count(*) AS n FROM release_messages").get().n,
+      0,
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+const newRelease = (version = "v2") => ({
+  version,
+  title: "Version de recette",
+  commitSha: "abc123",
+  previewUrl: "https://preview.example.test/",
+  reviewerMessage: "Vérifier le formulaire",
+  expiresInDays: 14,
+  testItems: [
+    { title: "Envoyer un message", description: "Vérifier la confirmation." },
+  ],
+});
+async function orgConnected(f, write = true) {
+  const token = await f.service.createOrganizationToken(f.member, {
+    label: "VisionBuild",
+    write,
+    expiresInDays: 30,
+  });
+  return { token, context: await f.service.authenticate(token.token) };
+}
+test("organization token is hashed and bounded to its organization, existing project tokens stay bounded", async () => {
+  const f = fixture();
+  try {
+    const { context, token } = await orgConnected(f);
+    assert.equal(context.scope, "organization");
+    assert.equal(context.projectId, null);
+    const caps = await f.service.capabilities(context);
+    assert.equal(caps.project, null);
+    assert.ok(caps.capabilities.includes("projects:write"));
+    assert.equal((await f.service.catalog(context)).projects.length, 1);
+    await assert.rejects(f.service.snapshot(context, "p2"), { status: 401 });
+    assert.equal((await f.service.snapshot(context, "p1")).project.id, "p1");
+    assert.equal(
+      JSON.stringify(await f.service.listOrganizationTokens(f.member)).includes(
+        token.token,
+      ),
+      false,
+    );
+    const old = await connected(f);
+    assert.deepEqual(
+      (await f.service.catalog(old.context)).projects.map((p) => p.id),
+      ["p1"],
+    );
+    assert.ok(!old.context.capabilities.includes("releases:write"));
+    await f.service.revokeOrganizationToken(f.member, token.id);
+    await assert.rejects(f.service.authenticate(token.token), { status: 401 });
+  } finally {
+    f.db.close();
+  }
+});
+test("project creation with first release is atomic, idempotent and catalog-version guarded", async () => {
+  const f = fixture();
+  try {
+    const { context } = await orgConnected(f);
+    const before = await f.service.catalog(context);
+    const command = request(before.version, {
+      type: "project.create",
+      name: "Client project",
+      description: "Client provided brief",
+      release: newRelease("v1"),
+    });
+    const created = await f.service.createProject(context, command);
+    assert.equal(created.snapshot.project.name, "Client project");
+    assert.equal(
+      created.snapshot.releases[0].testItems[0].title,
+      "Envoyer un message",
+    );
+    assert.equal(
+      created.snapshot.releases[0].reviewerMessage,
+      "Vérifier le formulaire",
+    );
+    const replay = await f.service.createProject(context, command);
+    assert.equal(replay.alreadyApplied, true);
+    assert.equal(replay.result.projectId, created.result.projectId);
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM client_projects WHERE organization_id=?",
+        )
+        .get("o1").n,
+      2,
+    );
+    await assert.rejects(
+      f.service.createProject(context, {
+        ...command,
+        requestId: crypto.randomUUID(),
+      }),
+      { status: 409 },
+    );
+    await assert.rejects(
+      f.service.createProject(context, {
+        ...command,
+        command: { ...command.command, name: "Changed" },
+      }),
+      { code: "idempotency_conflict" },
+    );
+  } finally {
+    f.db.close();
+  }
+});
+test("organization creation races do not duplicate projects or releases", async () => {
+  const f = fixture();
+  try {
+    const { context } = await orgConnected(f);
+    const catalog = await f.service.catalog(context);
+    const command = request(catalog.version, {
+      type: "project.create",
+      name: "Race project",
+      description: "",
+      release: newRelease("v1"),
+    });
+    const results = await Promise.all([
+      f.service.createProject(context, command),
+      f.service.createProject(context, command),
+    ]);
+    assert.equal(results[0].result.projectId, results[1].result.projectId);
+    assert.equal(results.filter((r) => !r.alreadyApplied).length, 1);
+  } finally {
+    f.db.close();
+  }
+});
+test("invitation secret exists in first response only; retries never rotate and explicit replacement revokes previous", async () => {
+  const f = fixture();
+  try {
+    const { context } = await orgConnected(f);
+    const snap = await f.service.snapshot(context, "p1");
+    const body = {
+      type: "invitation.create",
+      releaseId: "r1",
+      reviewerName: "Client fictif",
+      reviewerEmail: "client@example.test",
+      expiresInDays: 7,
+      replaceExisting: false,
+    };
+    const command = request(snap.version, body);
+    const made = await f.service.command(context, "p1", command);
+    assert.match(made.result.invitePath, /^\/join#token=[A-Za-z0-9_-]{43}$/);
+    assert.equal(made.snapshot.invitations.length, 1);
+    assert.equal(
+      JSON.stringify(made.snapshot).includes("client@example.test"),
+      false,
+    );
+    assert.equal(
+      JSON.stringify(
+        f.db.prepare("SELECT * FROM integration_command_receipts").all(),
+      ).includes(made.result.invitePath.split("=")[1]),
+      false,
+    );
+    const replay = await f.service.command(context, "p1", command);
+    assert.equal(replay.alreadyApplied, true);
+    assert.equal(replay.result.invitePath, undefined);
+    assert.equal(replay.result.secretUnavailable, true);
+    assert.equal(
+      f.db.prepare("SELECT COUNT(*) AS n FROM review_invitations").get().n,
+      1,
+    );
+    await assert.rejects(
+      f.service.command(context, "p1", request(made.snapshot.version, body)),
+      { code: "invitation_exists" },
+    );
+    const rotated = await f.service.command(
+      context,
+      "p1",
+      request(made.snapshot.version, { ...body, replaceExisting: true }),
+    );
+    assert.notEqual(rotated.result.invitePath, made.result.invitePath);
+    assert.equal(
+      rotated.snapshot.invitations.filter((i) => !i.revokedAt).length,
+      1,
+    );
+    const revoked = await f.service.command(
+      context,
+      "p1",
+      request(rotated.snapshot.version, {
+        type: "invitation.revoke",
+        releaseId: "r1",
+      }),
+    );
+    assert.equal(
+      revoked.snapshot.invitations.filter((i) => !i.revokedAt).length,
+      0,
+    );
+  } finally {
+    f.db.close();
+  }
+});
+test("preview updates version and revision while immutable commit and client authority remain unchanged", async () => {
+  const f = fixture();
+  try {
+    const { context } = await orgConnected(f);
+    const before = await f.service.snapshot(context, "p1");
+    const command = request(before.version, {
+      type: "preview.update",
+      releaseId: "r1",
+      previewUrl: "https://changed.example.test/",
+    });
+    const update = await f.service.command(context, "p1", command);
+    assert.equal(update.snapshot.releases[0].previewRevision, 1);
+    assert.equal(
+      update.snapshot.releases[0].previewUrl,
+      "https://changed.example.test/",
+    );
+    assert.equal(update.snapshot.releases[0].commitSha, "abcdef");
+    assert.notEqual(update.snapshot.version, before.version);
+    assert.equal(
+      (await f.service.command(context, "p1", command)).snapshot.releases[0]
+        .previewRevision,
+      1,
+    );
+    assert.throws(
+      () =>
+        parseIntegrationCommand(
+          request(update.snapshot.version, {
+            type: "feedback.transition",
+            feedbackId: "f1",
+            status: "resolved",
+          }),
+        ),
+      { status: 400 },
+    );
+    await assert.rejects(
+      f.service.command(
+        context,
+        "p1",
+        request(update.snapshot.version, {
+          type: "preview.update",
+          releaseId: "r2",
+        }),
+      ),
+      { status: 404 },
+    );
+  } finally {
+    f.db.close();
+  }
+});
+test("new release requires previous closure, unique version and fresh snapshot", async () => {
+  const f = fixture();
+  try {
+    const { context } = await orgConnected(f);
+    let s = await f.service.snapshot(context, "p1");
+    await assert.rejects(
+      f.service.command(
+        context,
+        "p1",
+        request(s.version, { type: "release.create", release: newRelease() }),
+      ),
+      { code: "active_release" },
+    );
+    f.db
+      .prepare("UPDATE review_releases SET status='approved' WHERE id='r1'")
+      .run();
+    s = await f.service.snapshot(context, "p1");
+    const command = request(s.version, {
+      type: "release.create",
+      release: newRelease(),
+    });
+    const created = await f.service.command(context, "p1", command);
+    assert.equal(created.snapshot.releases.length, 2);
+    assert.equal(
+      created.snapshot.releases.find((r) => r.version === "v2").testItems
+        .length,
+      1,
+    );
+    assert.equal(
+      (await f.service.command(context, "p1", command)).alreadyApplied,
+      true,
+    );
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM review_releases WHERE project_id='p1'",
+        )
+        .get().n,
+      2,
+    );
+  } finally {
+    f.db.close();
+  }
+});
+test("read-only credentials cannot create lifecycle objects and revocation invalidates cached organization context", async () => {
+  const f = fixture();
+  try {
+    const { context, token } = await orgConnected(f, false);
+    const catalog = await f.service.catalog(context),
+      s = await f.service.snapshot(context, "p1");
+    await assert.rejects(
+      f.service.createProject(
+        context,
+        request(catalog.version, {
+          type: "project.create",
+          name: "Denied",
+          description: "",
+          release: newRelease(),
+        }),
+      ),
+      { status: 403 },
+    );
+    await assert.rejects(
+      f.service.command(
+        context,
+        "p1",
+        request(s.version, { type: "preview.update", releaseId: "r1" }),
+      ),
+      { status: 403 },
+    );
+    await f.service.revokeOrganizationToken(f.member, token.id);
+    await assert.rejects(f.service.catalog(context), { status: 401 });
+    await assert.rejects(f.service.snapshot(context, "p1"), { status: 401 });
+  } finally {
+    f.db.close();
+  }
+});
+test("invitations and test instructions invalidate both project and catalog revisions without session heartbeat churn", async () => {
+  const f = fixture();
+  try {
+    const { context } = await orgConnected(f);
+    const before = await f.service.snapshot(context, "p1"),
+      catalog = await f.service.catalog(context);
+    f.db
+      .prepare(
+        "INSERT INTO review_test_items VALUES('ti','r1',0,'A test','Description','2026-10-28T10:00:00.000Z')",
+      )
+      .run();
+    assert.notEqual(
+      (await f.service.snapshot(context, "p1")).version,
+      before.version,
+    );
+    assert.notEqual(
+      (await f.service.catalog(context)).version,
+      catalog.version,
+    );
+    const statements = f.db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'integration_reviewer_sessions%'",
+      )
+      .all();
+    assert.equal(statements.length, 0);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("an existing organization initializes its revision through a bounded authenticated catalog read", async () => {
+  const f = fixture();
+  try {
+    const { context, token } = await orgConnected(f);
+    f.db
+      .prepare(
+        "DELETE FROM integration_organization_revisions WHERE organization_id='o1'",
+      )
+      .run();
+    const catalog = await f.service.catalog(context);
+    assert.match(catalog.version, /^[a-f0-9]{64}$/);
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM integration_organization_revisions WHERE organization_id='o1'",
+        )
+        .get().n,
+      1,
+    );
+    const again = await f.service.catalog(context);
+    assert.equal(again.version, catalog.version);
+    await f.service.revokeOrganizationToken(f.member, token.id);
+    f.db
+      .prepare(
+        "DELETE FROM integration_organization_revisions WHERE organization_id='o1'",
+      )
+      .run();
+    await assert.rejects(f.service.catalog(context), { status: 401 });
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM integration_organization_revisions WHERE organization_id='o1'",
+        )
+        .get().n,
       0,
     );
   } finally {

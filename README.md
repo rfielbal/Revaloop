@@ -495,4 +495,4 @@ Copyright 2026 Revaloop contributors.
 
 ## Connecter un espace de travail
 
-Dans un projet, **Connecter un outil** crée un jeton dédié, révocable et limité au projet pour VisionBuild ou un autre client serveur. Lecture de la recette, messages partagés et transitions développeur sont disponibles via l’[API d’intégration v1](docs/INTEGRATIONS.md). La validation cliente et les comptes web restent séparés.
+**Connecter mon espace** crée une connexion révocable pour piloter projets, versions, invitations, previews et retours depuis VisionBuild. **Connecter un outil**, dans un projet, conserve le périmètre réduit historique. Le contrat et les migrations sont décrits dans l’[API d’intégration v1](docs/INTEGRATIONS.md). La validation cliente et les sessions web restent séparées.

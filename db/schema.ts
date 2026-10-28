@@ -507,3 +507,52 @@ export const integrationCommandReceipts = sqliteTable("integration_command_recei
   resultJson:text("result_json").notNull(),
   createdAt:text("created_at").notNull(),
 },table=>[primaryKey({columns:[table.projectId,table.requestId]})]);
+
+export const integrationOrganizationTokens = sqliteTable(
+  "integration_organization_tokens",
+  {
+    id: text("id").primaryKey(),
+    tokenHash: text("token_hash").notNull().unique(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    capabilitiesJson: text("capabilities_json").notNull(),
+    createdAt: text("created_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    revokedAt: text("revoked_at"),
+    lastUsedAt: text("last_used_at"),
+  },
+  (table) => [
+    index("integration_organization_tokens_org_idx").on(
+      table.organizationId,
+      table.createdAt,
+    ),
+  ],
+);
+export const integrationOrganizationRevisions = sqliteTable(
+  "integration_organization_revisions",
+  {
+    organizationId: text("organization_id")
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull().default(0),
+  },
+);
+export const integrationOrganizationReceipts = sqliteTable(
+  "integration_organization_receipts",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    executionId: text("execution_id").notNull(),
+    resultJson: text("result_json").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.organizationId, table.requestId] })],
+);
